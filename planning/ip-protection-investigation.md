@@ -157,3 +157,76 @@ These become follow-on plans only if this investigation returns "go."
 
 - Source consolidation & structure: [`docs/arch/architecture.md`](../docs/arch/architecture.md)
 - DEBUG toggle (dev/release separation already in place): `config.py`, `.debug` marker
+
+---
+
+## Appendix: Additional options considered
+
+Added to round out the option space. None of these displace the primary
+hypothesis (Cython-abi3); documented so the spike doesn't have to revisit them
+and so Gate C has the full menu.
+
+### Extended options matrix
+
+| Option | Protection | Effort | Version-bump fragility | Notes |
+|---|---|---|---|---|
+| Source minification only (python-minifier, pyminifier, Oxyry) | very weak | trivial | none | Renames locals, strips comments/docstrings. Defeats casual viewing only; AST tools recover structure. Useful as a free additive layer on top of any other option, not a standalone answer. |
+| Hybrid: pure-Python shell + compiled sensitive modules | matches inner option | medium | matches inner option | Strategy rather than a separate tool. Keep UI/glue/`adsk` event handlers as `.py` (fast iteration, trivially survives version bumps); compile only modules that are actually sensitive (algorithms, license/auth logic, network calls). Shrinks the blast radius of every concern above — fewer compiled modules to rebuild on a Python bump, fewer `__file__`-relative resource paths to verify, less to codesign/notarize. Recommend defining the "sensitive set" *before* the abi3 spike so the spike compiles a representative slice rather than an arbitrary one. |
+| pybind11 / native C++ extension for surgical hotspots | strongest | high (per module) | high (unless Limited API) | Drop a real `.so`/`.pyd` written in C++ for one or two modules where Cython-level protection isn't enough. Same ABI fragility as full-ABI Cython unless built against the Limited API. Only justified if a specific module is both highly sensitive *and* small/stable enough to port. |
+| Full port of the add-in to C++ | strongest | **5–8× original dev cost** | n/a (different SDK) | Fusion's C++ API is a 1:1 superset of the Python API, so the *Fusion* surface ports mechanically. The cost lives in: (a) replacing every non-stdlib Python dependency (HTTP, JSON, any pandas/numpy/etc.), (b) standing up Win/Mac toolchains + signing/notarization, (c) permanent ~3–5× slowdown of the inner dev loop (compile + restart Fusion + reattach debugger every change), (d) verbose `Ptr<>`/event boilerplate, (e) manual lifetime/threading rules Python hid. Not recommended for a 108-module add-in; listed so it's explicitly off the table. |
+
+### What compilation does *not* hide
+
+Stated explicitly so the Gate C threat-model conversation is grounded:
+
+- **String literals** — user-facing text, URLs, format strings, dict keys
+  survive in the binary. Often what an attacker actually wants (license
+  server URL, API endpoints, secret prompts).
+- **Public API surface** — module/class/method names must remain visible
+  for Fusion and sibling modules to import them.
+- **Inter-module call graph** — Cython compiles per module, so which
+  command calls which helper is observable from import structure alone.
+- **Palette HTML/JS** — client-side, fully readable. Any logic living in
+  a palette is unprotected regardless of what we do to the Python.
+- **Asset files** — icons, JSON, manifest, docs ship as-is.
+- **Anything `__file__`-relative loads** — both the path and the file it
+  points at are visible.
+
+Implication for task #4: when sampling compiled output, also enumerate
+which *strings* survive, not just whether bytecode is recoverable.
+
+### Dev-loop cost (separate from release-time fragility)
+
+The plan covers version-bump fragility at release time but not the
+day-to-day cost of compiled modules in the tree:
+
+- Pure Python today: edit `.py` → "Stop add-in / Run add-in" in Fusion →
+  test. Seconds.
+- With compiled modules in-tree: edit `.pyx`/`.py` → rebuild that module
+  → restart Fusion (it caches loaded extensions and will not pick up a
+  rebuilt `.so` mid-session) → test. Tens of seconds to minutes.
+
+Mitigation that preserves the Objective's "does not disrupt pure-Python
+development" requirement: keep DEBUG/dev mode entirely source — no
+compilation in dev — and compile only for release builds. The existing
+`.debug` marker in `config.py` already provides the switch point.
+Honoring this is a constraint on the (out-of-scope) build pipeline, not
+the spike, but worth noting now so the pipeline isn't designed in a way
+that forces developers through a compile step.
+
+### Layering
+
+The options in both matrices are not mutually exclusive. A plausible
+production stack is:
+
+- **Source minification** (free, additive) +
+- **Cython-abi3 on the sensitive subset** (primary protection, per the
+  hybrid strategy above) +
+- **Server-side for any true crown jewels** (immune to client-side RE) +
+- **PyArmor-style or custom license binding** *separately* if
+  use/redistribution control is required (Gate C, open question #2 —
+  this is a different problem from hiding source).
+
+The spike should still validate one primary mechanism end-to-end
+(Cython-abi3); this note exists so the eventual recommendation isn't
+framed as an exclusive choice when it doesn't have to be.
