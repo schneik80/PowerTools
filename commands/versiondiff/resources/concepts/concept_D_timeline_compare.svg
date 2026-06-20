@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Concept D: Two Horizontal Timelines with Compare
+       Two parallel timelines with vertical diff connectors -->
+  <g fill="none" stroke="#4A4A4A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Top timeline bar -->
+    <line x1="8" y1="20" x2="56" y2="20"/>
+    <!-- Top timeline nodes -->
+    <circle cx="14" cy="20" r="3" fill="#4A4A4A"/>
+    <circle cx="28" cy="20" r="3" fill="#4A4A4A"/>
+    <circle cx="42" cy="20" r="3" fill="none" stroke-width="2"/>
+    <circle cx="54" cy="20" r="3" fill="none" stroke-width="2"/>
+    <!-- Bottom timeline bar -->
+    <line x1="8" y1="44" x2="56" y2="44"/>
+    <!-- Bottom timeline nodes -->
+    <circle cx="14" cy="44" r="3" fill="#4A4A4A"/>
+    <circle cx="28" cy="44" r="3" fill="#4A4A4A"/>
+    <circle cx="38" cy="44" r="3" fill="#0080FF" stroke="#0080FF"/>
+    <circle cx="50" cy="44" r="3" fill="none" stroke="#0080FF" stroke-width="2"/>
+    <!-- Version labels -->
+    <text x="10" y="14" font-family="Arial, Helvetica, sans-serif" font-size="7" fill="#4A4A4A" stroke="none" font-weight="bold">V1</text>
+    <text x="10" y="56" font-family="Arial, Helvetica, sans-serif" font-size="7" fill="#4A4A4A" stroke="none" font-weight="bold">V2</text>
+    <!-- Diff connector lines (dashed) -->
+    <line x1="14" y1="24" x2="14" y2="40" stroke-dasharray="2,2" stroke-width="1" opacity="0.4"/>
+    <line x1="28" y1="24" x2="28" y2="40" stroke-dasharray="2,2" stroke-width="1" opacity="0.4"/>
+    <!-- Changed connector highlighted -->
+    <line x1="42" y1="24" x2="38" y2="40" stroke="#0080FF" stroke-width="1.5" stroke-dasharray="3,2"/>
+    <line x1="54" y1="24" x2="50" y2="40" stroke="#0080FF" stroke-width="1.5" stroke-dasharray="3,2"/>
+  </g>
+</svg>

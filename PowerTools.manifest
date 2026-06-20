@@ -1,0 +1,13 @@
+{
+	"autodeskProduct": "Fusion",
+	"type": "addin",
+	"id": "effdbabf-3947-445e-8241-4ab43992c20a",
+	"author": "IMA LLC",
+	"description": {
+		"": "PowerTools — a consolidated suite of productivity commands for Autodesk Fusion (assembly, document, part-modeling, export, related-data and sharing tools)."
+	},
+	"version": "0.1.0",
+	"runOnStartup": true,
+	"supportedOS": "windows|mac",
+	"editEnabled": true
+}

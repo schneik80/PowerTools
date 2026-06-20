@@ -1,0 +1,134 @@
+# PowerTools for Autodesk Fusion
+
+PowerTools is an Autodesk Fusion add-in that consolidates the full suite of IMA LLC productivity commands — assembly management, document and data tools, part-modeling helpers, exports, related-data templates, and document sharing — into a single installable add-in. It adds commands to the Design workspace toolbar, the Quick Access Toolbar (QAT), and the Drawing workspace that reduce the steps required for common design, data, and collaboration tasks.
+
+This add-in replaces the previously separate PowerTools add-ins (Assembly, Document Tools, Exports, Part Modeling, Related Data, and Share Document). Installing PowerTools gives you every command at once; there is nothing to install piecemeal.
+
+## Contents
+
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Commands](#commands)
+- [Architecture](#architecture)
+- [Support](#support)
+- [License](#license)
+
+## Prerequisites
+
+Before you install and run this add-in, confirm that you have the following:
+
+- **Autodesk Fusion** (any current subscription tier) with Python add-in support enabled
+- **Windows 10/11** or **macOS**
+- An **Autodesk Team Hub** (required for commands that access cloud document references, related data, and sharing)
+
+## Installation
+
+1. Download or clone this repository to your local machine.
+2. In Autodesk Fusion, open the **Add-Ins** dialog by selecting **Utilities** > **Add-Ins**, or press **Shift+S**.
+3. On the **Add-Ins** tab, click the green **+** icon.
+4. Navigate to the folder where you placed the add-in files and select the `PowerTools` folder.
+5. Click **Open**.
+6. Select **PowerTools** in the list, then click **Run**.
+
+To have the add-in load automatically each time Fusion starts, select **Run on Startup** before clicking **Run**.
+
+## Commands
+
+Most commands appear in **Design › Tools › Power Tools**. Some appear in other locations as noted below. Click a command for its detailed guide.
+
+### Assembly
+
+| Command | Location | Description |
+| --- | --- | --- |
+| [Assembly Builder](./docs/Assembly%20Builder.md) | Design › Tools › Power Tools | Build and manage multi-component assemblies from a guided palette. |
+| [New Assembly](./docs/New%20Assembly.md) | Design › Solid | Start a new assembly with the assembly-intent workflow. |
+| [Insert Step](./docs/Insert%20Step.md) | Design › Solid | Insert a STEP file as a referenced component. |
+| [Assembly Statistics](./docs/Assembly%20Statistics.md) | Design › Tools › Power Tools | Report component, occurrence, and reference counts for the active design. |
+| [Get and Update](./docs/Get%20and%20Update.md) | Design › Tools › Power Tools | Fetch and update referenced documents in one step. |
+| [Bottom-Up Update](./docs/Bottom-Up%20Update.md) | Design › Tools › Power Tools | Propagate changes from sub-components up through the assembly. |
+| [Externalize](./docs/Externalize.md) | Design › Tools › Power Tools | Externalize internal components into managed documents. |
+| [Global Parameters](./docs/Global%20Parameters.md) | Design › Tools › Power Tools | View and manage project-wide global parameters. |
+| [Link Global Parameters](./docs/Link%20Global%20Parameters.md) | Design › Tools › Power Tools | Link the active design to shared global parameters. |
+| [Refresh Global Parameters Cache](./docs/Refresh%20Global%20Parameters%20Cache.md) | File › PowerTools Settings | Rebuild the cached global-parameters folder and document index. |
+| [Infer Constraints](./docs/Infer%20Constraints.md) | Design › Tools › Power Tools | Infer assembly joints/constraints from component geometry. |
+| [Component Warning](./docs/Component%20Warning.md) | File › PowerTools Settings | Toggle warnings about component edits that affect references. |
+| [Reference Manager](./docs/Reference%20Manager.md) | Design › Tools › Power Tools | Inspect and manage all external references of the active design. |
+| [Document References](./docs/Document%20References.md) | Design › Tools › Power Tools | List all documents related to the active design. |
+| [Document Refresh](./docs/Document%20Refresh.md) | Design › Tools › Power Tools | Refresh out-of-date references in the active design. |
+
+### Document Tools
+
+| Command | Location | Description |
+| --- | --- | --- |
+| [Document Information](./docs/Document%20Information.md) | Design › Tools › Power Tools | Display cloud data identifiers and metadata for the active document. |
+| [Document History](./docs/Document%20History.md) | Design › Tools › Power Tools | Show the version history of the active document. |
+| [Version Diff](./docs/Version%20Diff.md) | Design › Tools › Power Tools | Compare versions of the active document. |
+| [Assign Part Numbers](./docs/Assign%20Part%20Numbers.md) | Design › Tools › Power Tools | Assign part numbers across the active design. |
+| [Assign Drawing Number](./docs/Assign%20Drawing%20Number.md) | Drawing › Power Tools | Assign a drawing number inside the Drawing workspace. |
+| [Default Folders](./docs/Default%20Folders.md) | Design › Tools › Power Tools | Configure default project folders. |
+| [Favorites](./docs/Favorites.md) | Design › Tools › Power Tools | Manage favorite documents and folders. |
+| [Show In Location](./docs/Show%20In%20Location.md) | File › PowerTools Settings | Open the active document's location in the data panel. |
+| [Toggle Data Pane](./docs/Toggle%20Data%20Pane.md) | Navigation bar | Toggle the visibility of the data panel. |
+| [Recovery Save](./docs/Recovery%20Save.md) | Design › Tools › Power Tools | Periodic recovery autosave for the active document. |
+
+### Exports
+
+| Command | Location | Description |
+| --- | --- | --- |
+| [Export BOM](./docs/Export%20BOM.md) | Design › Tools › Power Tools | Export the bill of materials to CSV. |
+| [Export Mermaid](./docs/Export%20Mermaid.md) | Design › Tools › Power Tools | Export the assembly structure as a Mermaid diagram. |
+
+### Part Modeling
+
+| Command | Location | Description |
+| --- | --- | --- |
+| [Sketch Repair](./docs/SketchFix.md) | Sketch › Modify | Repair common sketch profile issues automatically. |
+| [Under-Constrained Sketch](./docs/SketchUnder.md) | Sketch | Highlight under-constrained sketch geometry. |
+| [Radial Hole Circle](./docs/RadialHoleCircle.md) | Sketch | Add center points for a radial pattern of holes. |
+| [Mirror Derive](./docs/MirrorDerive.md) | Design › Solid | Create a mirrored derived component. |
+| [Hide Objects](./docs/HideObjects.md) | Design › Tools | Quickly hide selected objects. |
+| [Timeline Compute Times](./docs/Timeline%20Compute%20Times.md) | Design › Solid | Measure per-feature timeline compute times. |
+
+### Related Data
+
+| Command | Location | Description |
+| --- | --- | --- |
+| [Create Related Data](./docs/Related%20Data.md) | Design › Solid | Create related documents from configured templates. |
+| [Select Related Data Folder](./docs/Select%20Related%20Data%20Folder.md) | File › PowerTools Settings | Configure the hub/project/folder used for related data. |
+
+### Share
+
+All sharing commands appear in the **Share Menu** flyout on the right-hand Quick Access Toolbar.
+
+| Command | Location | Description |
+| --- | --- | --- |
+| [Get a Share Link](./docs/Get%20a%20Share%20Link.md) | QAT › Share Menu | Create or copy a public share link for the active document. |
+| [Change Share Settings](./docs/Change%20Share%20Settings.md) | QAT › Share Menu | Manage download and password protection for the share link. |
+| [Get Open on Desktop Link](./docs/Get%20Open%20on%20Desktop%20Link.md) | QAT › Share Menu | Get a link that opens the document in the Fusion desktop app. |
+| [Get Open in Team Link](./docs/Get%20Open%20in%20Team%20Link.md) | QAT › Share Menu | Get a link that opens the document in Autodesk Fusion Team. |
+| [Invite to Project](./docs/Invite%20to%20Project.md) | QAT › Share Menu | Invite a collaborator to the active project. |
+| [Document Project Members](./docs/Document%20Project%20Members.md) | QAT › Share Menu | List the members of the active project. |
+
+## Architecture
+
+PowerTools is a standard Fusion Python add-in: `PowerTools.py` starts and stops the add-in, `commands/__init__.py` registers every command, and a single startup bootstrap creates the shared UI access points (the **Power Tools** panel and the **PowerTools Settings** QAT flyout) exactly once. All commands share the vendored utility library `lib/ptAddInUtils` and a merged `config.py`.
+
+For developer-oriented documentation — system context, C4 diagrams, the add-in lifecycle, the shared-access-point model, and the command-module pattern — see **[docs_arch/architecture.md](./docs_arch/architecture.md)**.
+
+## Support
+
+This add-in is developed and maintained by IMA LLC.
+
+---
+
+## License
+
+This project is released under the [GNU General Public License v3.0 or later](LICENSE).
+
+Copyright (C) 2022-2026 IMA LLC.
+
+The shared library at `lib/ptAddInUtils` mixes code under different terms: `general_utils.py`, `event_utils.py`, and `attributes_utils.py` are based on Autodesk, Inc. sample code (distributed under its own license terms — see the source headers); `cache_utils.py`, `date_utils.py`, `log_utils.py`, `upload_utils.py`, and `ui_utils.py` are part of this project (IMA LLC, GPL-3.0-or-later). See each module's source header for details.
+
+---
+
+*Copyright © 2026 IMA LLC. All rights reserved.*

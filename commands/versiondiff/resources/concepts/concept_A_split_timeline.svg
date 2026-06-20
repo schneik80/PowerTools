@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Concept A: Split Timeline / Branch Comparison
+       Two diverging paths from a common root, with version nodes -->
+  <g fill="none" stroke="#4A4A4A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Main trunk line -->
+    <line x1="32" y1="56" x2="32" y2="36"/>
+    <!-- Left branch -->
+    <path d="M32,36 Q32,28 22,22 L14,16"/>
+    <!-- Right branch -->
+    <path d="M32,36 Q32,28 42,22 L50,16"/>
+    <!-- Root node -->
+    <circle cx="32" cy="56" r="3.5" fill="#4A4A4A"/>
+    <!-- Branch point node -->
+    <circle cx="32" cy="36" r="3.5" fill="#4A4A4A"/>
+    <!-- Left version node -->
+    <circle cx="14" cy="16" r="3.5" fill="none" stroke-width="2.5"/>
+    <!-- Right version node -->
+    <circle cx="50" cy="16" r="3.5" fill="none" stroke-width="2.5"/>
+    <!-- Left intermediate node -->
+    <circle cx="22" cy="22" r="2" fill="#4A4A4A"/>
+    <!-- Right intermediate node -->
+    <circle cx="42" cy="22" r="2" fill="#4A4A4A"/>
+    <!-- Diff arrows between the two branches -->
+    <line x1="24" y1="14" x2="40" y2="14" stroke-dasharray="2,2" stroke-width="1.5"/>
+    <polyline points="38,11.5 40,14 38,16.5" stroke-width="1.5"/>
+    <polyline points="26,11.5 24,14 26,16.5" stroke-width="1.5"/>
+  </g>
+</svg>
