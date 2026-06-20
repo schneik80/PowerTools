@@ -1,5 +1,11 @@
-# SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2022-2026 IMA LLC
+# Copyright (C) Industrial Machine Arts LLC WA, USA - All Rights Reserved
+#
+# This source code is protected under international copyright law.  All rights
+# reserved and protected by the copyright holders.
+#
+# This file is confidential and only available to authorized individuals with the
+# permission of the copyright holders.  If you encounter this file and do not have
+# permission, please contact the copyright holders and delete this file.
 """MFGDM GraphQL helpers for reading and writing component custom properties.
 
 The Fusion Desktop Python API does **not** expose user-defined custom
