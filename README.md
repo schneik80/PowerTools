@@ -123,12 +123,12 @@ This add-in is developed and maintained by IMA LLC.
 
 ## License
 
-This project is released under the [GNU General Public License v3.0 or later](LICENSE).
+Copyright (C) Industrial Machine Arts LLC WA, USA — All Rights Reserved.
 
-Copyright (C) 2022-2026 IMA LLC.
+This software is proprietary and confidential. It is protected under international copyright law; all rights are reserved by the copyright holders. It is only available to authorized individuals with the permission of the copyright holders. See [LICENSE](LICENSE) for the full notice.
 
-The shared library at `lib/ptAddInUtils` mixes code under different terms: `general_utils.py`, `event_utils.py`, and `attributes_utils.py` are based on Autodesk, Inc. sample code (distributed under its own license terms — see the source headers); `cache_utils.py`, `date_utils.py`, `log_utils.py`, `upload_utils.py`, and `ui_utils.py` are part of this project (IMA LLC, GPL-3.0-or-later). See each module's source header for details.
+The three Autodesk-sample-derived modules in `lib/ptAddInUtils` — `general_utils.py`, `event_utils.py`, and `attributes_utils.py` — remain under Autodesk, Inc.'s original, permissive license terms (see each file's header), which require that their copyright notice be retained in all copies. The proprietary terms above do not apply to those Autodesk-derived portions.
 
 ---
 
-*Copyright © 2026 IMA LLC. All rights reserved.*
+*Copyright © Industrial Machine Arts LLC WA, USA. All rights reserved.*
