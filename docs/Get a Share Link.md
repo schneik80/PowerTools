@@ -58,7 +58,7 @@ The result dialog confirms that the share link was copied and includes status no
 
 ---
 
-> **Developers:** see the [architecture notes](./Arch/Get%20a%20Share%20Link.md).
+> **Developers:** see the [architecture notes](./arch/Get%20a%20Share%20Link.md).
 
 ---
 

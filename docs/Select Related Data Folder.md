@@ -85,7 +85,7 @@ To remove a hub, open `hub.json` and delete the corresponding entry from the `hu
 
 ---
 
-> **Developers:** see the [architecture notes](./Arch/Select%20Related%20Data%20Folder.md).
+> **Developers:** see the [architecture notes](./arch/Select%20Related%20Data%20Folder.md).
 
 ---
 

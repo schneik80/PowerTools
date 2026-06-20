@@ -35,7 +35,7 @@ The **Insert STEP file…** command appears in one of two locations depending on
 | Assembly Tab preview **enabled** | **Assembly** tab > **Assemble** panel |
 | Assembly Tab preview **not enabled** | **Solid** tab > **Insert** panel |
 
-> **Developers:** see the [architecture notes](./Arch/Insert%20Step.md).
+> **Developers:** see the [architecture notes](./arch/Insert%20Step.md).
 
 ---
 

@@ -38,7 +38,7 @@ Select **Document Information** from the **Power Tools** panel on the **Tools** 
 
 ![access](./assets/docinfo_002.png)
 
-> **Developers:** see the [architecture notes](./Arch/Document%20Information.md).
+> **Developers:** see the [architecture notes](./arch/Document%20Information.md).
 
 [Back to README](../README.md)
 

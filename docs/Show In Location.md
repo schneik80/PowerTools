@@ -36,7 +36,7 @@ This feature runs automatically in the background whenever the add-in is loaded.
 
 To enable or disable the automation, select **Disable Show In Location** (or **Enable Show In Location**) from the **PowerTools Settings** sub-menu in the **File** dropdown on the **Quick Access Toolbar (QAT)**.
 
-> **Developers:** see the [architecture notes](./Arch/Show%20In%20Location.md).
+> **Developers:** see the [architecture notes](./arch/Show%20In%20Location.md).
 
 [Back to README](../README.md)
 

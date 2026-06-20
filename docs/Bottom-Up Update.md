@@ -168,7 +168,7 @@ Default log location is the OS temp folder: `/tmp` (macOS) or `%TEMP%` (Windows)
 | Design intent not applied | Component is read-only | Ensure the document is not locked; review the log for intent-specific errors |
 | Live log viewer does not open | Console.app not found (macOS) or PowerShell unavailable (Windows) | Open the log file manually from the path shown in the Logging tab |
 
-> **Developers:** see the [architecture notes](./Arch/Bottom-Up%20Update.md).
+> **Developers:** see the [architecture notes](./arch/Bottom-Up%20Update.md).
 
 ---
 

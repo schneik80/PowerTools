@@ -37,7 +37,7 @@ The command is a toggle: turn it on to monitor placement, turn it off to work wi
 
 **Component Warning** is accessed from the **QAT File menu › PowerTools Settings**. The menu item label reflects the current state: **Enable Component Warning** when the guard is off, **Disable Component Warning** when it is on. The PowerTools Settings submenu is shared with other PowerTools add-ins and is created automatically on first use.
 
-> **Developers:** see the [architecture notes](./Arch/Component%20Warning.md).
+> **Developers:** see the [architecture notes](./arch/Component%20Warning.md).
 
 ---
 

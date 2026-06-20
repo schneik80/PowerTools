@@ -31,7 +31,7 @@ The **Get and Update** command is located on the Autodesk Fusion **Quick Access 
 
 ![QAT access](./assets/getandupdate.png)
 
-> **Developers:** see the [architecture notes](./Arch/Get%20and%20Update.md).
+> **Developers:** see the [architecture notes](./arch/Get%20and%20Update.md).
 
 ---
 

@@ -50,7 +50,7 @@ If parameter sets appear missing or out of date in the Link Global Parameters di
 
 After running this command, re-open the Link Global Parameters dialog to see the refreshed list of parameter sets.
 
-> **Developers:** see the [architecture notes](./Arch/Link%20Global%20Parameters.md).
+> **Developers:** see the [architecture notes](./arch/Link%20Global%20Parameters.md).
 
 ---
 

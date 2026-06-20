@@ -58,7 +58,7 @@ External component saves and the final root save use the comment **"Updated with
 
 The **Assembly Builder** command is located on the **Utilities** tab, in the **Power Tools** panel of the Autodesk Fusion Design workspace.
 
-> **Developers:** see the [architecture notes](./Arch/Assembly%20Builder.md).
+> **Developers:** see the [architecture notes](./arch/Assembly%20Builder.md).
 
 ---
 

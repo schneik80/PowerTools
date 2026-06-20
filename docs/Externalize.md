@@ -107,7 +107,7 @@ Externalize completed successfully. 9 of 9 replaced this run; 0 from prior run.
 
 The **Externalize** command is located on the **Utilities** tab, in the **Power Tools** panel of the Autodesk Fusion Design workspace.
 
-> **Developers:** see the [architecture notes](./Arch/Externalize.md).
+> **Developers:** see the [architecture notes](./arch/Externalize.md).
 
 ---
 

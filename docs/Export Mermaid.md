@@ -75,7 +75,7 @@ From the design document's **File** drop-down menu in the Quick Access Toolbar, 
 
 ![Access](./assets/exportmermaid_002.png)
 
-> **Developers:** see the [architecture notes](./Arch/Export%20Mermaid.md).
+> **Developers:** see the [architecture notes](./arch/Export%20Mermaid.md).
 
 ---
 

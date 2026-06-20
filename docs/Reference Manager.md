@@ -42,7 +42,7 @@ The **Reference Manager** command is located on the Autodesk Fusion **Quick Acce
 
 ![Reference Manager dialog](./assets/refmanager_001.png)
 
-> **Developers:** see the [architecture notes](./Arch/Reference%20Manager.md).
+> **Developers:** see the [architecture notes](./arch/Reference%20Manager.md).
 
 ---
 

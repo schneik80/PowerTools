@@ -66,7 +66,7 @@ The recipient must have Hub access permissions that include the referenced desig
 
 ---
 
-> **Developers:** see the [architecture notes](./Arch/Get%20Open%20in%20Team%20Link.md).
+> **Developers:** see the [architecture notes](./arch/Get%20Open%20in%20Team%20Link.md).
 
 ---
 

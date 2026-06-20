@@ -31,7 +31,7 @@ Select **Local Recovery Save** from the **File** dropdown on the **Quick Access 
 
 ![access](./assets/recoverysave.png)
 
-> **Developers:** see the [architecture notes](./Arch/Recovery%20Save.md).
+> **Developers:** see the [architecture notes](./arch/Recovery%20Save.md).
 
 [Back to README](../README.md)
 

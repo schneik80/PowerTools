@@ -45,7 +45,7 @@ The **Sketch Under-Constrained** command is available in Fusion's **Sketch** tab
 - The command must be re-run after applying constraints to see updated results.
 - Fixed geometry and driven dimensions are not flagged as under-constrained.
 
-> **Developers:** see the [architecture notes](./Arch/SketchUnder.md).
+> **Developers:** see the [architecture notes](./arch/SketchUnder.md).
 
 ---
 

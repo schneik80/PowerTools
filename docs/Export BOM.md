@@ -56,7 +56,7 @@ From the design document's **File** drop-down menu in the Quick Access Toolbar, 
 
 ![Access](./assets/exportbom_002.png)
 
-> **Developers:** see the [architecture notes](./Arch/Export%20BOM.md).
+> **Developers:** see the [architecture notes](./arch/Export%20BOM.md).
 
 ---
 

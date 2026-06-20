@@ -201,7 +201,7 @@ You can also pin it to the **Shortcuts** (S-key menu) for faster access.
 
 ---
 
-> **Developers:** see the [architecture notes](./Arch/Related%20Data.md).
+> **Developers:** see the [architecture notes](./arch/Related%20Data.md).
 
 ---
 

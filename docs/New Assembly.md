@@ -43,7 +43,7 @@ The New Assembly command opens a docked quick-start palette that helps you popul
 
 The palette docks to the right edge of the Fusion window. Closing it does not disable the automatic trigger — creating another new empty Assembly design opens it again.
 
-> **Developers:** see the [architecture notes](./Arch/New%20Assembly.md).
+> **Developers:** see the [architecture notes](./arch/New%20Assembly.md).
 
 ---
 

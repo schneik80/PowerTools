@@ -130,7 +130,7 @@ Both files use random identifiers. The temporary directory is `%TEMP%` on Window
 - Parameter change detection compares numeric values with tolerance. Expression formatting differences (such as `180.00 deg` vs `180 deg`) do not trigger false positives.
 - The report is a static snapshot. It does not update automatically when the model changes.
 
-> **Developers:** see the [architecture notes](./Arch/Version%20Diff.md).
+> **Developers:** see the [architecture notes](./arch/Version%20Diff.md).
 
 ---
 

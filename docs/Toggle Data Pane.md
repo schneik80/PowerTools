@@ -31,7 +31,7 @@ Select **Toggle Data** on the **Navigation Toolbar** at the bottom of the Fusion
 
 ![access](./assets/toggledata.png)
 
-> **Developers:** see the [architecture notes](./Arch/Toggle%20Data%20Pane.md).
+> **Developers:** see the [architecture notes](./arch/Toggle%20Data%20Pane.md).
 
 [Back to README](../README.md)
 

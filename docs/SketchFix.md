@@ -44,7 +44,7 @@ The **Sketch Repair** command is available in Fusion's **Sketch** tab, in the **
 - Complex sketches with many issues may require multiple repair passes or manual correction.
 - Repair quality depends on sketch geometry tolerance settings configured in Autodesk Fusion.
 
-> **Developers:** see the [architecture notes](./Arch/SketchFix.md).
+> **Developers:** see the [architecture notes](./arch/SketchFix.md).
 
 ---
 

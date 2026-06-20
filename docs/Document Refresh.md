@@ -30,7 +30,7 @@ The **Refresh Active Document** command is located in the **File** dropdown menu
 
 ![File menu access](./assets/docrefresh_001.png)
 
-> **Developers:** see the [architecture notes](./Arch/Document%20Refresh.md).
+> **Developers:** see the [architecture notes](./arch/Document%20Refresh.md).
 
 ---
 

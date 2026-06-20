@@ -20,7 +20,7 @@ The Infer Constraints command looks at an assembly whose components are already 
 - An Autodesk Fusion 3D Design must be active.
 - The assembly should already be **positioned** — the command infers relationships from geometry that is mating in the current pose; it does not move components into place.
 - The design needs **component occurrences** (or solid bodies in the root) that expose analytic **planar** or **cylindrical** faces — typical of imported solids.
-- **Preview API:** creating assembly constraints relies on Fusion's Assembly Constraints API, which Autodesk currently ships as a **preview** capability. On builds where it is unavailable, detection and the preview table still work, but applying a constraint reports an error. Joints (used for centered pairs and grounding) use the released API. See the [architecture notes](./Arch/Infer%20Constraints.md).
+- **Preview API:** creating assembly constraints relies on Fusion's Assembly Constraints API, which Autodesk currently ships as a **preview** capability. On builds where it is unavailable, detection and the preview table still work, but applying a constraint reports an error. Joints (used for centered pairs and grounding) use the released API. See the [architecture notes](./arch/Infer%20Constraints.md).
 
 ## How to use Infer Constraints
 
@@ -39,7 +39,7 @@ The Infer Constraints command looks at an assembly whose components are already 
 
 **Infer Constraints** is on the **Design** workspace **Utilities** tab, in the **Power Tools** panel.
 
-> **Developers:** see the [architecture notes](./Arch/Infer%20Constraints.md).
+> **Developers:** see the [architecture notes](./arch/Infer%20Constraints.md).
 
 ---
 

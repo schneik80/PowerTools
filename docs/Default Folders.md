@@ -62,7 +62,7 @@ Select **PowerTools Add Project Folders** from the **File** dropdown on the **Qu
 
 UI label note: the command is documented as **Add Default Project Folders** and appears in Fusion as **PowerTools Add Project Folders**.
 
-> **Developers:** see the [architecture notes](./Arch/Default%20Folders.md).
+> **Developers:** see the [architecture notes](./arch/Default%20Folders.md).
 
 [Back to README](../README.md)
 

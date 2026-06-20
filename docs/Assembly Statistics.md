@@ -50,7 +50,7 @@ The **Assembly Statistics** command is located on the **Utilities** tab, in the 
 
 ![Toolbar access](./assets/assemblystats_002.png)
 
-> **Developers:** see the [architecture notes](./Arch/Assembly%20Statistics.md).
+> **Developers:** see the [architecture notes](./arch/Assembly%20Statistics.md).
 
 ---
 

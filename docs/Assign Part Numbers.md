@@ -107,7 +107,7 @@ To back out without making any changes, click **Cancel**.
 - After more than 3 consecutive lost-race retries, the command aborts cleanly with an error and no component is stamped.
 - Scheme counters are stored as six-digit numbers; a single scheme can hold up to 999,999 assignments.
 
-> **Developers:** see the [architecture notes](./Arch/Assign%20Part%20Numbers.md).
+> **Developers:** see the [architecture notes](./arch/Assign%20Part%20Numbers.md).
 
 ---
 

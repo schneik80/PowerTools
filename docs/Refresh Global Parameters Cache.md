@@ -30,7 +30,7 @@ The command scans the project root for the `_Global Parameters` folder, enumerat
 
 The **Refresh Global Parameters Cache** command is located under **File › PowerTools Settings** on the Quick Access Toolbar. The PowerTools Settings submenu is shared with other PowerTools add-ins — if it does not yet exist, the command creates it on first run.
 
-> **Developers:** see the [architecture notes](./Arch/Refresh%20Global%20Parameters%20Cache.md).
+> **Developers:** see the [architecture notes](./arch/Refresh%20Global%20Parameters%20Cache.md).
 
 ---
 

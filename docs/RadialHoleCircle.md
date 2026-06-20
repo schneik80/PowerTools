@@ -64,7 +64,7 @@ Both graphics are removed when the command closes.
 - Only one circle can be created per command invocation. Run the command again to place additional circles.
 - The preview is not visible if the sketch is viewed edge-on (the cursor is parallel to the sketch plane).
 
-> **Developers:** see the [architecture notes](./Arch/RadialHoleCircle.md).
+> **Developers:** see the [architecture notes](./arch/RadialHoleCircle.md).
 
 ---
 

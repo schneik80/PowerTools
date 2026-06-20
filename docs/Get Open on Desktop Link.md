@@ -74,7 +74,7 @@ The recipient must have access to all referenced designs through their Hub membe
 
 ---
 
-> **Developers:** see the [architecture notes](./Arch/Get%20Open%20on%20Desktop%20Link.md).
+> **Developers:** see the [architecture notes](./arch/Get%20Open%20on%20Desktop%20Link.md).
 
 ---
 

@@ -51,7 +51,7 @@
 - The command must be run from the **Design workspace**. It is not available in Drawing, Simulation, or Manufacturing workspaces.
 - Multi-body components are each scaled independently using their own origin construction point.
 
-> **Developers:** see the [architecture notes](./Arch/MirrorDerive.md).
+> **Developers:** see the [architecture notes](./arch/MirrorDerive.md).
 
 ---
 

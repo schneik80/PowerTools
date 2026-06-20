@@ -53,4 +53,4 @@ The **Hide Objects** command is available in Fusion's **Tools** tab, in the **Ut
 - The command does not provide a corresponding **Show Objects** operation. Use the browser to restore visibility as needed.
 - Canvas visibility is controlled at the folder level. Individual canvases cannot be targeted independently.
 
-> **Developers:** see the [architecture notes](./Arch/HideObjects.md).
+> **Developers:** see the [architecture notes](./arch/HideObjects.md).

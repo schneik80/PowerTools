@@ -65,7 +65,7 @@ Both files use random identifiers. The temporary directory is `%TEMP%` on Window
 - Compute times reflect the state at the last full timeline regeneration. For the most accurate results, allow Fusion to fully regenerate the model before running the report.
 - The report is a static snapshot. It does not update automatically when the model changes.
 
-> **Developers:** see the [architecture notes](./Arch/Timeline%20Compute%20Times.md).
+> **Developers:** see the [architecture notes](./arch/Timeline%20Compute%20Times.md).
 
 ---
 

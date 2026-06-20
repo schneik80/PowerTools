@@ -44,7 +44,7 @@ Use this command to add collaborators to the Hub project that contains the activ
 
 ---
 
-> **Developers:** see the [architecture notes](./Arch/Invite%20to%20Project.md).
+> **Developers:** see the [architecture notes](./arch/Invite%20to%20Project.md).
 
 ---
 

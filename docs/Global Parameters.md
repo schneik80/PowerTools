@@ -70,7 +70,7 @@ The **Global Parameters** command is located on the **Utilities** tab, in the **
 | Reserved names | Fusion unit names (`mm`, `in`, `ft`, `deg`, `rad`, `kg`, `s`, `pi`, etc.) are not allowed as parameter names |
 | Duplicate names | Each parameter name must be unique within the set |
 
-> **Developers:** see the [architecture notes](./Arch/Global%20Parameters.md).
+> **Developers:** see the [architecture notes](./arch/Global%20Parameters.md).
 
 ---
 

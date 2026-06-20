@@ -31,7 +31,7 @@ Select **History** from the **Quick Access Toolbar (QAT)**.
 
 ![access](./assets/dochistory.PNG)
 
-> **Developers:** see the [architecture notes](./Arch/Document%20History.md).
+> **Developers:** see the [architecture notes](./arch/Document%20History.md).
 
 [Back to README](../README.md)
 

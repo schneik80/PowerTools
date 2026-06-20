@@ -55,7 +55,7 @@ The native Fusion share settings dialog exposes the following options:
 
 ---
 
-> **Developers:** see the [architecture notes](./Arch/Change%20Share%20Settings.md).
+> **Developers:** see the [architecture notes](./arch/Change%20Share%20Settings.md).
 
 ---
 

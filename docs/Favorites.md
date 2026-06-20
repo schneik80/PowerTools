@@ -43,7 +43,7 @@ Inside the dropdown:
 - **Edit Favorites** opens a dialog to remove selected entries.
 - Each saved location appears as a command that navigates directly to that location in the Data Panel.
 
-> **Developers:** see the [architecture notes](./Arch/Favorites.md).
+> **Developers:** see the [architecture notes](./arch/Favorites.md).
 
 [Back to README](../README.md)
 

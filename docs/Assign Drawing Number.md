@@ -81,7 +81,7 @@ The **Assign Drawing Number** command is located on the **Document** tab, in the
 - After more than 3 consecutive lost-race retries against the hub cache, the command aborts cleanly with an error and no attribute is written.
 - Drawings with no `documentReferences` entry (e.g., drawings authored From Scratch) skip the titleblock sync with a log entry; the drawing-side stamp still succeeds.
 
-> **Developers:** see the [architecture notes](./Arch/Assign%20Drawing%20Number.md).
+> **Developers:** see the [architecture notes](./arch/Assign%20Drawing%20Number.md).
 
 ---
 

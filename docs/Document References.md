@@ -54,7 +54,7 @@ The **Document References** command is located on the **Utilities** tab, in the 
 
 ![Document References dialog](./assets/docrefs_001.png)
 
-> **Developers:** see the [architecture notes](./Arch/Document%20References.md).
+> **Developers:** see the [architecture notes](./arch/Document%20References.md).
 
 ---
 

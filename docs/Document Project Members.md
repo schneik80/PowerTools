@@ -55,7 +55,7 @@ From the Fusion Team Members page that this command opens, you can:
 
 ---
 
-> **Developers:** see the [architecture notes](./Arch/Document%20Project%20Members.md).
+> **Developers:** see the [architecture notes](./arch/Document%20Project%20Members.md).
 
 ---
 
