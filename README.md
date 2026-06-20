@@ -113,7 +113,7 @@ All sharing commands appear in the **Share Menu** flyout on the right-hand Quick
 
 PowerTools is a standard Fusion Python add-in: `PowerTools.py` starts and stops the add-in, `commands/__init__.py` registers every command, and a single startup bootstrap creates the shared UI access points (the **Power Tools** panel and the **PowerTools Settings** QAT flyout) exactly once. All commands share the vendored utility library `lib/ptAddInUtils` and a merged `config.py`.
 
-For developer-oriented documentation — system context, C4 diagrams, the add-in lifecycle, the shared-access-point model, and the command-module pattern — see **[docs_arch/architecture.md](./docs_arch/architecture.md)**.
+For developer-oriented documentation — system context, C4 diagrams, the add-in lifecycle, the shared-access-point model, and the command-module pattern — see **[docs/Arch/architecture.md](./docs/Arch/architecture.md)**.
 
 ## Support
 
