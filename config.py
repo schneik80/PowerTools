@@ -29,9 +29,12 @@ from .lib import ptAddInUtils as ptutil
 # 1. Global flags / identity
 # ---------------------------------------------------------------------------
 
-# Master logging gate. When True, more information is written to the Fusion
-# Text Command window. Set False for distribution.
-DEBUG = True
+# Master logging gate. DEBUG is enabled by the presence of a ``.debug`` marker
+# file in the add-in root (next to this module). Developers toggle verbose
+# logging by creating or deleting that file — no code change is required; the
+# flag is evaluated when the add-in loads. The marker file is git-ignored, so it
+# never ships in a distribution (where it is absent and DEBUG is therefore False).
+DEBUG = os.path.isfile(os.path.join(os.path.dirname(__file__), ".debug"))
 
 # Emit structured [PERF] timing lines from the perf_timer context manager in
 # lib/ptAddInUtils. Zero runtime cost when False — useful for diagnosing slow

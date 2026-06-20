@@ -132,3 +132,7 @@ commands/assemblyintent/resources/html/init.js
 cache/
 .claude/
 .cursor/rules/
+
+# Developer-only DEBUG marker: create an empty `.debug` file in the add-in root
+# to enable verbose logging (config.DEBUG). Never committed.
+.debug

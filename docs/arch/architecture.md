@@ -338,9 +338,14 @@ files. It is organized into the following sections:
 | 6. Hub configuration | `COMPANY_HUB`, `COMPANY_HUB_CONFIGS`, `loadHub()`, `reload_hub_config()` | Loads `hub.json` into in-memory hub/project/folder config (Related Data). |
 | 7. Palette IDs | `assembly_builder_palette_id`, `assembly_intent_palette_id` | Assembly palette IDs derived from company + add-in name. |
 
-`DEBUG` should be `True` during development and `False` for distribution.
-`PERF_TRACE` enables `[PERF]` timing lines from `perf_timer` and is useful for
-diagnosing slow Hub operations in the Global Parameters commands.
+`DEBUG` is not hard-coded: it is set to the presence of a `.debug` marker file
+in the add-in root (`DEBUG = os.path.isfile(.../.debug)`). To enable verbose
+logging, a developer creates an empty `.debug` file next to `config.py` and
+reloads the add-in; deleting the file turns logging back off. The marker is
+git-ignored, so a distribution (which has no `.debug` file) always runs with
+`DEBUG` `False`. `PERF_TRACE` enables `[PERF]` timing lines from `perf_timer`
+and is useful for diagnosing slow Hub operations in the Global Parameters
+commands.
 
 ---
 
