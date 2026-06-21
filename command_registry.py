@@ -54,7 +54,7 @@ GROUPS = [
             _cmd("assignpartnumbers", "Assign Part Numbers.md"),
             _cmd("autosave", "Recovery Save.md"),
             _cmd("datatoggle", "Toggle Data Pane.md"),
-            _cmd("defaultfolders", "Default Folders.md"),
+            _cmd("defaultfolders", "Default Folders.md", settings=True),
             _cmd("dochistory", "Document History.md"),
             _cmd("docinfo", "Document Information.md"),
             _cmd("docopen", "Show In Location.md", settings=True),

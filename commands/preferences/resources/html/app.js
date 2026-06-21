@@ -41,6 +41,17 @@
                     )
                 ];
             }
+        },
+        defaultfolders: {
+            label: "Add Project Folders",
+            render: function (cs) {
+                return [
+                    foldersEditor("Basic folder set", cs.basic || [],
+                        function (list) { setCmdSetting("defaultfolders", "basic", list); }),
+                    foldersEditor("Advanced folder set", cs.advanced || [],
+                        function (list) { setCmdSetting("defaultfolders", "advanced", list); })
+                ];
+            }
         }
     };
 
@@ -79,6 +90,24 @@
         lbl.appendChild(checkbox(checked, onchange));
         lbl.appendChild(el("span", { text: text }));
         return lbl;
+    }
+
+    // Editable list of names (one per line). Saves on blur/change.
+    function foldersEditor(title, list, onsave) {
+        var wrap = el("div", { class: "folders-edit" });
+        wrap.appendChild(el("div", { class: "fe-title", text: title }));
+        wrap.appendChild(el("div", { class: "summary",
+            text: "One folder name per line. Saved when you click away." }));
+        var ta = el("textarea", { rows: "8", spellcheck: "false" });
+        ta.value = (list || []).join("\n");
+        ta.addEventListener("change", function () {
+            var lines = ta.value.split("\n")
+                .map(function (s) { return s.trim(); })
+                .filter(function (s) { return s.length; });
+            onsave(lines);
+        });
+        wrap.appendChild(ta);
+        return wrap;
     }
 
     function kv(k, v) {

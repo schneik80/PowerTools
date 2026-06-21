@@ -18,10 +18,34 @@ import os
 from . import config
 from . import command_registry as registry
 
+# Default folder sets for the "Add Project Folders" command (defaultfolders).
+# These were hard-coded in the command; they now seed the user-editable lists.
+DEFAULT_FOLDER_SETS = {
+    "basic": ["Drawings", "Archive", "Obit"],
+    "advanced": [
+        "00 - Products",
+        "01 - Sub Assemblies",
+        "02 - ECAD",
+        "03 - Parts",
+        "04 - Purchased Parts",
+        "05 - 3DPCB Parts",
+        "06 - Drawings",
+        "07 - Documents",
+        "08 - Render",
+        "09 - Manufacture",
+        "10 - Archive",
+        "XX - Obit",
+    ],
+}
+
 # Per-command settings sections (defaults). Keyed by command module name.
 COMMAND_SETTING_DEFAULTS = {
     "componentwarn": {"warn_non_leaf": False},
     "docopen": {"run_on_open": True, "run_on_activate": True},
+    "defaultfolders": {
+        "basic": list(DEFAULT_FOLDER_SETS["basic"]),
+        "advanced": list(DEFAULT_FOLDER_SETS["advanced"]),
+    },
 }
 
 

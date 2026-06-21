@@ -165,3 +165,21 @@ button.secondary:hover { background: var(--bg-hover); }
 .status-no { color: var(--badge-beta); font-weight: 600; }
 .muted { color: var(--text-muted); }
 .hidden { display: none !important; }
+
+textarea {
+    width: 100%;
+    background: var(--bg-input);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    padding: 8px;
+    font-family: inherit;
+    font-size: 12.5px;
+    line-height: 1.5;
+    resize: vertical;
+    margin-top: 4px;
+}
+textarea:focus { outline: none; border-color: var(--accent); }
+.folders-edit { padding: 8px 0; }
+.folders-edit + .folders-edit { border-top: 1px solid var(--border-color); margin-top: 4px; }
+.fe-title { font-weight: 600; margin-bottom: 2px; }
