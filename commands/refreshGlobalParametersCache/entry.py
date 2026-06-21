@@ -22,10 +22,6 @@ CMD_ID = "PTAT-refreshGlobalParametersCache"
 CMD_NAME = "Refresh Global Parameters Cache"
 CMD_Description = "Scan the active project for global parameter sets and update the cache."
 
-# QAT flyout (shared across PowerTools add-ins — create only if absent).
-PT_SETTINGS_ID = "PTSettings"
-PT_SETTINGS_NAME = "PowerTools Settings"
-
 # UI placement (reuse config from other commands)
 WORKSPACE_ID = config.design_workspace
 TAB_ID = config.tools_tab_id
@@ -43,15 +39,15 @@ def start():
     )
     ptutil.add_handler(cmd_def.commandCreated, command_created)
 
-    flyout = _ui_bootstrap.get_pt_settings_flyout()
-    if flyout:
-        control = flyout.controls.addCommand(cmd_def)
+    panel = _ui_bootstrap.get_power_tools_panel()
+    if panel:
+        control = panel.controls.addCommand(cmd_def)
         control.isPromoted = IS_PROMOTED
 
 def stop():
-    flyout = _ui_bootstrap.get_pt_settings_flyout()
-    if flyout:
-        existing = flyout.controls.itemById(CMD_ID)
+    panel = _ui_bootstrap.get_power_tools_panel()
+    if panel:
+        existing = panel.controls.itemById(CMD_ID)
         if existing:
             existing.deleteMe()
     command_definition = ui.commandDefinitions.itemById(CMD_ID)

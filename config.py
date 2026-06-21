@@ -221,3 +221,20 @@ assembly_builder_palette_id = (
 assembly_intent_palette_id = (
     f"{COMPANY_NAME.replace(' ', '_')}_{ADDIN_NAME}_assembly_intent_palette"
 )
+preferences_palette_id = (
+    f"{COMPANY_NAME.replace(' ', '_')}_{ADDIN_NAME}_preferences_palette"
+)
+
+# ---------------------------------------------------------------------------
+# 8. Preferences / user settings store
+# ---------------------------------------------------------------------------
+
+# Per-user preferences live in their own root ``settings/`` folder (git-ignored,
+# created on first run). This is distinct from the runtime ``cache/`` folder.
+SETTINGS_DIR = os.path.join(ADDIN_PATH, "settings")
+SETTINGS_PREFS_FILE = os.path.join(SETTINGS_DIR, "preferences.json")
+
+# Base URL for per-command documentation opened from the Preferences palette.
+# Each command's registry ``doc`` entry is appended (URL-encoded). The repo is
+# private, so these links assume the authorized user has GitHub access.
+DOCS_BASE_URL = "https://github.com/schneik80/PowerTools/blob/release/docs/"

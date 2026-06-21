@@ -129,7 +129,10 @@ commands/relateddata/docs.json
 commands/relateddata/data.json
 commands/assemblybuilder/resources/html/init.js
 commands/assemblyintent/resources/html/init.js
+commands/preferences/resources/html/init.js
 cache/
+# Per-user preferences store (created on first run; never committed).
+settings/
 .claude/
 .cursor/rules/
 

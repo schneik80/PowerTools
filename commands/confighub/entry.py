@@ -12,7 +12,6 @@ import os, os.path
 import json
 from ...lib import ptAddInUtils as ptutil
 from ... import config
-from .. import _ui_bootstrap
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -28,10 +27,6 @@ CMD_Description = (
     "This folder must be configured once for each Team Hub.\n"
     "The Create Related Data command is in the Design workspace -> Create panel."
 )
-
-# QAT flyout (shared across PowerTools add-ins — create only if absent).
-PT_SETTINGS_ID = "PTSettings"
-PT_SETTINGS_NAME = "PowerTools Settings"
 
 # Resource location for command icons, here we assume a sub folder in this directory named "resources".
 ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "")
@@ -50,26 +45,15 @@ def start():
         CMD_ID, CMD_NAME, CMD_Description, ICON_FOLDER
     )
 
-    # Define an event handler for the command created event. It will be called when the button is clicked.
+    # Define an event handler for the command created event. It will be called when the command runs.
     ptutil.add_handler(cmd_def.commandCreated, command_created)
 
-    # ******** Add a button into the UI so the user can run the command. ********
-    # Get the shared PowerTools Settings flyout (created once by the central bootstrap).
-    flyout = _ui_bootstrap.get_pt_settings_flyout()
-    if flyout:
-        # Add the command into the flyout.
-        flyout.controls.addCommand(cmd_def)
+    # No toolbar control: this command is launched from the Preferences palette's
+    # Hub Settings section via ui.commandDefinitions.itemById(CMD_ID).execute().
 
 
 # Executed when add-in is stopped.
 def stop():
-    # Remove only confighub's own control from the shared PowerTools Settings flyout.
-    flyout = _ui_bootstrap.get_pt_settings_flyout()
-    if flyout:
-        command_control = flyout.controls.itemById(CMD_ID)
-        if command_control:
-            command_control.deleteMe()
-
     command_definition = ui.commandDefinitions.itemById(CMD_ID)
     if command_definition:
         command_definition.deleteMe()
