@@ -94,6 +94,16 @@ GROUPS = [
         ],
     },
     {
+        "key": "tools",
+        "label": "Tools",
+        # Launcher commands that open built-in Fusion tools. "Scripts and
+        # Add-ins" sits directly before PowerTools Preferences in the QAT File
+        # dropdown (see commands/scriptsmanager).
+        "commands": [
+            _cmd("scriptsmanager", "Scripts and Add-ins.md"),
+        ],
+    },
+    {
         "key": "share",
         "label": "Share Document",
         "commands": [

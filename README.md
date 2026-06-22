@@ -96,6 +96,12 @@ Most commands appear in **Design › Tools › Power Tools**. Some appear in oth
 | [Create Related Data](./docs/Related%20Data.md) | Design › Solid | Create related documents from configured templates. |
 | [Select Related Data Folder](./docs/Select%20Related%20Data%20Folder.md) | File › PowerTools Settings | Configure the hub/project/folder used for related data. |
 
+### Tools
+
+| Command | Location | Description |
+| --- | --- | --- |
+| [Scripts and Add-ins](./docs/Scripts%20and%20Add-ins.md) | QAT › File menu | Open Fusion's built-in Scripts and Add-Ins manager from the File menu, above PowerTools Preferences. |
+
 ### Share
 
 All sharing commands appear in the **Share Menu** flyout on the right-hand Quick Access Toolbar.
