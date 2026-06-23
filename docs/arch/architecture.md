@@ -82,7 +82,7 @@ C4Component
     Container_Boundary(addin, "Power Tools Add-in") {
         Component(entry, "PowerTools.py", "Python module", "Add-in entry point. run() calls commands.start(); stop() clears handlers then calls commands.stop()")
         Component(config, "config.py", "Python module", "Merged configuration: global flags, shared panel IDs, drawing panel, PTSettings dropdown, settings cache, hub config, palette IDs")
-        Component(cmdInit, "commands/__init__.py", "Python module", "Command registry. Imports all ~41 command modules; on start bootstraps shared access points then starts each command; on stop reverses the order")
+        Component(cmdInit, "commands/__init__.py", "Python module", "Command registry. Imports all ~42 command modules; on start bootstraps shared access points then starts each command; on stop reverses the order")
         Component(bootstrap, "commands/_ui_bootstrap.py", "Python module", "Creates the two shared access points once (Power Tools panel + PTSettings flyout); exposes get_power_tools_panel() / get_pt_settings_flyout() lookups")
 
         Component(asm, "commands/assembly*…", "Command modules", "Assembly: builder, intent, stats, get-and-update, externalize, references, global parameters, insert STEP, …")
@@ -254,6 +254,10 @@ A few ordering constraints are encoded in the `commands` list in
   button positions itself relative to the Insert STEP control.
 - The Share commands keep their original relative order for correct QATRight
   flyout positioning.
+- `scriptsmanager` (Tools group) positions its QAT File-menu control directly
+  before the `PT-preferences` control. The Preferences command is infrastructure
+  and always starts before the registry commands, so the anchor is present; the
+  command falls back to appending if it is ever missing.
 
 ---
 

@@ -18,26 +18,23 @@
 #   * while a selection references a different component than the one being
 #     edited.
 #
-# The guard toggle lives in the "PowerTools Settings" flyout of the QAT File menu
-# as a regular button whose label flips between "Enable Component Warning" and
-# "Disable Component Warning". While enabled and while the
-# Design (Solid) workspace is active, it listens to ui.commandStarting and pops
-# a modal warning before the offending command runs. The warning lets the user
-# create the feature anyway, cancel it, or silence the warning for the active
-# document.
+# Enablement is controlled from the Preferences command (Commands tree): when the
+# command is enabled it loads here and, while the Design (Solid) workspace is
+# active, listens to ui.commandStarting and pops a modal warning before the
+# offending command runs. Its one preference — whether to also warn for non-leaf
+# components — lives in its Preferences settings section (`warn_non_leaf`).
 #
 # Behaviour is inspired by Thomas Axelsson's MIT-licensed "NoComponentWarn"
 # Fusion 360 add-in; this is an independent reimplementation that follows the
 # PowerTools command/handler conventions.
 
-import os
 import time
 
 import adsk.core
 import adsk.fusion
 
 from ...lib import ptAddInUtils as ptutil
-from .. import _ui_bootstrap
+from ... import settings_store
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -46,26 +43,12 @@ CMD_NAME = "Component Warning"
 CMD_ID = "PTAT-componentWarn"
 CMD_Description = (
     "Warn before creating a feature outside of a component (directly in the "
-    "root component or referencing another component). Toggle on/off."
+    "root component or referencing another component)."
 )
-IS_PROMOTED = False
-
-# UI placement: the "PowerTools Settings" flyout in the QAT File menu. The flyout
-# is shared across PowerTools add-ins, so it is created only if absent and removed
-# only once empty (mirroring refreshGlobalParametersCache).
-ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "")
-
-PT_SETTINGS_ID = "PTSettings"
-PT_SETTINGS_NAME = "PowerTools Settings"
 
 # Workspace the guard is active in. Outside this workspace the commandStarting
 # listener is detached so we never interfere with non-design environments.
 SOLID_WORKSPACE_ID = "FusionSolidEnvironment"
-
-# When True, also warn for features created in a component that still has child
-# occurrences (a non-leaf component). Off by default, matching the common case
-# where intermediate sub-assemblies legitimately hold features.
-ONLY_ALLOW_LEAF = False
 
 # A single press of the Sketch button can emit two SketchCreate "starting"
 # events back to back. After the user chooses "create anyway" we suppress any
@@ -105,7 +88,7 @@ CREATION_COMMANDS = (
     ("FusionSurfaceOffsetCommand", False),
 )
 
-# Holds references to the toggle/workspace handlers so they are not released.
+# Holds references to the workspace handlers so they are not released.
 local_handlers = []
 
 # Separate reference list + handle for the commandStarting listener so it can be
@@ -113,22 +96,10 @@ local_handlers = []
 _monitor_handlers = []
 _starting_handler = None
 
-# Module state. Starts enabled; toggled in-memory per session.
-_enabled = True
-# Documents the user silenced via "Stop warning". In-memory only (per session),
-# keyed by Document object identity.
+# Documents the user silenced via "Stop warning". In-memory only (per session).
 _disabled_documents = []
 # Timestamp of the last "create anyway" choice, for the hold-off above.
 _last_continue_time = 0.0
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _toggle_label() -> str:
-    return f"Disable {CMD_NAME}" if _enabled else f"Enable {CMD_NAME}"
 
 
 # ---------------------------------------------------------------------------
@@ -137,18 +108,8 @@ def _toggle_label() -> str:
 
 
 def start():
-    cmd_def = ui.commandDefinitions.addButtonDefinition(
-        CMD_ID, _toggle_label(), CMD_Description, ICON_FOLDER
-    )
-    ptutil.add_handler(cmd_def.commandCreated, command_created)
-
-    flyout = _ui_bootstrap.get_pt_settings_flyout()
-    if flyout:
-        control = flyout.controls.addCommand(cmd_def)
-        control.isPromoted = IS_PROMOTED
-
-    # Attach/detach the guard as the user moves in and out of the Solid
-    # workspace, mirroring the lifetime of the original add-in.
+    # No toolbar control — being enabled in Preferences is what loads this guard.
+    # Attach/detach as the user moves in and out of the Solid workspace.
     ptutil.add_handler(ui.workspaceActivated, workspace_activated)
     ptutil.add_handler(ui.workspacePreDeactivate, workspace_pre_deactivate)
 
@@ -160,51 +121,17 @@ def start():
 
 def stop():
     _detach_monitor()
-
-    flyout = _ui_bootstrap.get_pt_settings_flyout()
-    if flyout:
-        existing = flyout.controls.itemById(CMD_ID)
-        if existing:
-            existing.deleteMe()
-    command_definition = ui.commandDefinitions.itemById(CMD_ID)
-    if command_definition:
-        command_definition.deleteMe()
-
     global local_handlers
     local_handlers = []
 
 
 # ---------------------------------------------------------------------------
-# Toggle + workspace handlers
+# Workspace handlers
 # ---------------------------------------------------------------------------
 
 
-def command_created(args: adsk.core.CommandCreatedEventArgs):
-    ptutil.add_handler(
-        args.command.execute,
-        command_execute,
-        local_handlers=local_handlers,
-    )
-
-
-def command_execute(args: adsk.core.CommandEventArgs):
-    global _enabled
-    _enabled = not _enabled
-    ptutil.log(f"{CMD_NAME}: {'enabled' if _enabled else 'disabled'}")
-
-    cmd_def = ui.commandDefinitions.itemById(CMD_ID)
-    if cmd_def:
-        cmd_def.name = _toggle_label()
-
-    in_solid = app.isStartupComplete and ui.activeWorkspace.id == SOLID_WORKSPACE_ID
-    if _enabled and in_solid:
-        _attach_monitor()
-    else:
-        _detach_monitor()
-
-
 def workspace_activated(args: adsk.core.WorkspaceEventArgs):
-    if _enabled and args.workspace.id == SOLID_WORKSPACE_ID:
+    if args.workspace.id == SOLID_WORKSPACE_ID:
         _attach_monitor()
 
 
@@ -301,8 +228,10 @@ def _evaluate_placement(design: adsk.fusion.Design, edit_component: adsk.fusion.
     if edit_component == design.rootComponent:
         return "You are creating a feature directly in the root component, outside of any component."
 
-    if ONLY_ALLOW_LEAF and edit_component.occurrences.count > 0:
-        # A leaf component has no child occurrences.
+    # User preference: also warn for features created in a non-leaf component
+    # (one that still has child occurrences). Off by default.
+    warn_non_leaf = settings_store.command_setting("componentwarn", "warn_non_leaf", False)
+    if warn_non_leaf and edit_component.occurrences.count > 0:
         return "You are creating a feature in a non-leaf component."
 
     for selection in ui.activeSelections:

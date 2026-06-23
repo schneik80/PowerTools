@@ -7,146 +7,81 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 #
-# Consolidated command registry. Imports every command module from the six
-# merged PowerTools add-ins and starts/stops them around the shared UI
-# access-point bootstrap.
+# Consolidated command registry runner. Imports every command module declared in
+# command_registry.GROUPS, then on start-up creates the shared UI access points,
+# always starts the Preferences command, and starts each registered command only
+# when its group + command are enabled and (for beta commands) beta mode is on.
+# Enablement is read from settings_store at start-up, so changes apply on the
+# next Fusion restart.
+
+import importlib
 
 from . import _ui_bootstrap
+from .preferences import entry as preferences
+from .. import command_registry as registry
+from .. import settings_store
 from ..lib import ptAddInUtils as ptutil
 
-# ── Assembly ──────────────────────────────────────────────────────────────────
-from .assemblybuilder import entry as assemblybuilder
-from .assemblyintent import entry as assemblyintent
-from .assemblystats import entry as assemblystats
-from .getandupdate import entry as getandupdate
-from .bottomupupdate import entry as bottomupupdate
-from .componentwarn import entry as componentwarn
-from .externalize import entry as externalize
-from .globalParameters import entry as globalParameters
-from .inferconstraints import entry as inferconstraints
-from .insertSTEP import entry as insertSTEP
-from .linkGlobalParameters import entry as linkGlobalParameters
-from .refmanager import entry as refmanager
-from .refreshGlobalParametersCache import entry as refreshGlobalParametersCache
-from .refrences import entry as refrences
-from .refresh import entry as refresh
+# Import every registered command module up front (mirrors the previous explicit
+# imports). Enablement is enforced at start(), not at import time.
+MODULES = {
+    cmd["module"]: importlib.import_module(f".{cmd['module']}.entry", __package__)
+    for _, cmd in registry.iter_commands()
+}
 
-# ── Document Tools ────────────────────────────────────────────────────────────
-from .assigndrawingnumber import entry as assigndrawingnumber
-from .assignpartnumbers import entry as assignpartnumbers
-from .autosave import entry as autosave
-from .datatoggle import entry as datatoggle
-from .defaultfolders import entry as defaultfolders
-from .dochistory import entry as dochistory
-from .docinfo import entry as docinfo
-from .docopen import entry as docopen
-from .favorites import entry as favorites
-from .versiondiff import entry as versiondiff
+# Modules whose start() actually ran this session, so stop() only tears those down.
+_started = []
 
-# ── Exports ───────────────────────────────────────────────────────────────────
-from .exportbomcsv import entry as exportbomcsv
-from .exportmermaid import entry as exportmermaid
 
-# ── Part Modeling ─────────────────────────────────────────────────────────────
-from .sketchfix import entry as sketchfix
-from .sketchunderconstrained import entry as sketchunderconstrained
-from .sketchcirclecenterpoint import entry as sketchcirclecenterpoint
-from .timelinecompute import entry as timelinecompute
-from .mirrorderive import entry as mirrorderive
-from .hideobjects import entry as hideobjects
-
-# ── Related Data ──────────────────────────────────────────────────────────────
-from .confighub import entry as confighub
-from .relateddata import entry as relateddata
-
-# ── Share Document ────────────────────────────────────────────────────────────
-from .shareDocument import entry as shareDocument
-from .shareSettings import entry as shareSettings
-from .OpenDesktop import entry as OpenDesktop
-from .OpenInTeam import entry as openInTeam
-from .projectInvite import entry as projectInvite
-from .projectMembers import entry as projectMembers
-
-# Order matters in a few places:
-#   * insertSTEP must start before assemblyintent — the New Assembly launch
-#     button positions itself relative to the Insert STEP control.
-#   * Share-Document commands keep their original relative order for QATRight
-#     flyout positioning.
-commands = [
-    # Assembly
-    assemblybuilder,
-    insertSTEP,
-    assemblyintent,
-    assemblystats,
-    getandupdate,
-    bottomupupdate,
-    componentwarn,
-    externalize,
-    globalParameters,
-    inferconstraints,
-    linkGlobalParameters,
-    refmanager,
-    refreshGlobalParametersCache,
-    refrences,
-    refresh,
-    # Document Tools
-    assigndrawingnumber,
-    assignpartnumbers,
-    autosave,
-    datatoggle,
-    defaultfolders,
-    dochistory,
-    docinfo,
-    docopen,
-    favorites,
-    versiondiff,
-    # Exports
-    exportbomcsv,
-    exportmermaid,
-    # Part Modeling
-    sketchfix,
-    sketchunderconstrained,
-    sketchcirclecenterpoint,
-    timelinecompute,
-    mirrorderive,
-    hideobjects,
-    # Related Data
-    confighub,
-    relateddata,
-    # Share Document
-    shareDocument,
-    shareSettings,
-    OpenDesktop,
-    openInTeam,
-    projectInvite,
-    projectMembers,
-]
+def _should_start(group, cmd, prefs) -> bool:
+    if not prefs.get("groups", {}).get(group["key"], {}).get("enabled", True):
+        return False
+    if cmd.get("beta") and not prefs.get("general", {}).get("beta_mode", False):
+        return False
+    return bool(prefs.get("commands", {}).get(cmd["module"], {}).get("enabled", True))
 
 
 def start():
-    # Create the shared "Power Tools" panel and PTSettings flyout once, before
-    # any command registers its controls.
+    # Shared "Power Tools" panel is created once, before any command registers.
     try:
         _ui_bootstrap.create_shared_access_points()
     except Exception:
         ptutil.handle_error("_ui_bootstrap.create_shared_access_points")
 
-    for command in commands:
+    # Preferences is infrastructure — always available so the user can re-enable
+    # anything they have turned off.
+    try:
+        preferences.start()
+    except Exception:
+        ptutil.handle_error("preferences")
+
+    prefs = settings_store.load()
+    for group, cmd in registry.iter_commands():
+        if not _should_start(group, cmd, prefs):
+            continue
+        module = MODULES[cmd["module"]]
         try:
-            command.start()
+            module.start()
+            _started.append(module)
         except Exception:
-            ptutil.handle_error(command.__name__)
+            ptutil.handle_error(cmd["module"])
 
 
 def stop():
-    for command in commands:
+    # Stop only the commands that actually started, newest first.
+    for module in reversed(_started):
         try:
-            command.stop()
+            module.stop()
         except Exception:
-            ptutil.handle_error(command.__name__)
+            ptutil.handle_error(getattr(module, "__name__", "command"))
+    _started.clear()
 
-    # Remove the shared access points once every command has cleaned up its own
-    # controls.
+    try:
+        preferences.stop()
+    except Exception:
+        ptutil.handle_error("preferences")
+
+    # Remove the shared access points once every command has cleaned up.
     try:
         _ui_bootstrap.remove_shared_access_points()
     except Exception:

@@ -42,12 +42,6 @@ WORKSPACE_ID = "FusionSolidEnvironment"
 
 TABS = [
     {
-        "TAB_ID": "AssemblyTab",
-        "TAB_NAME": "ASSEMBLY",
-        "PANEL_ID": "CreatePanel",
-        "PANEL_NAME": "Create",
-    },
-    {
         "TAB_ID": "SolidTab",
         "TAB_NAME": "SOLID",
         "PANEL_ID": "SolidCreatePanel",
@@ -150,10 +144,14 @@ def _load_templates_for_hub(hub_id: str) -> dict:
 
 # Executed when add-in is run.
 def start():
-    # Create a command Definition.
-    cmd_def = ui.commandDefinitions.addButtonDefinition(
-        CMD_ID, CMD_NAME, CMD_Description, ICON_FOLDER
-    )
+    # Create a command Definition. Reuse an existing one (e.g. after a dev
+    # reload where stop() did not run cleanly) instead of failing on a duplicate
+    # ID; addButtonDefinition returns None when CMD_ID is already registered.
+    cmd_def = ui.commandDefinitions.itemById(CMD_ID)
+    if cmd_def is None:
+        cmd_def = ui.commandDefinitions.addButtonDefinition(
+            CMD_ID, CMD_NAME, CMD_Description, ICON_FOLDER
+        )
 
     # Define an event handler for the command created event. It will be called when the button is clicked.
     ptutil.add_handler(cmd_def.commandCreated, command_created)
@@ -175,6 +173,13 @@ def start():
                 tab_info["PANEL_ID"], tab_info["PANEL_NAME"]
             )
 
+        # Clear any stale controls for this command (persisted ribbon state from
+        # a prior version or an unclean reload) so the button never accumulates.
+        existing = panel.controls.itemById(CMD_ID)
+        while existing is not None:
+            existing.deleteMe()
+            existing = panel.controls.itemById(CMD_ID)
+
         control = panel.controls.addCommand(cmd_def)
         control.isPromoted = IS_PROMOTED
 
@@ -188,9 +193,12 @@ def stop():
         if toolbar_tab:
             panel = toolbar_tab.toolbarPanels.itemById(tab_info["PANEL_ID"])
             if panel:
+                # Remove every control for this command, not just the first, in
+                # case a duplicate was left behind by a prior session.
                 command_control = panel.controls.itemById(CMD_ID)
-                if command_control:
+                while command_control:
                     command_control.deleteMe()
+                    command_control = panel.controls.itemById(CMD_ID)
 
     command_definition = ui.commandDefinitions.itemById(CMD_ID)
     if command_definition:

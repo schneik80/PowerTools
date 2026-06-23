@@ -103,9 +103,14 @@ DEFAULT_ANG_TOL_RAD = math.radians(0.5)
 # Confidence at/above which a candidate row is checked by default.
 AUTO_CHECK_CONF = 0.6
 
-# Guard rail for very large assemblies: the broad phase is O(n^2) over
-# analytic faces.  Above this count we still run, but log that it may be slow.
+# Guard rails for very large assemblies. The broad phase is O(n^2) over analytic
+# faces; the face count - known cheaply right after the linear collect pass and
+# before the quadratic work - is our early estimate of how long it will take.
+#   * At/above FACE_WARN_COUNT we log that it may be slow.
+#   * At/above FACE_CONFIRM_COUNT the wait can be many seconds, so we ask the
+#     user before starting - the one cheap moment we know they may be waiting.
 FACE_WARN_COUNT = 4000
+FACE_CONFIRM_COUNT = 4000
 
 local_handlers = []
 
@@ -113,6 +118,9 @@ local_handlers = []
 # checkbox id is stored on the candidate so command_execute can read it back.
 _candidates: list = []
 _row_counter = 0
+# Once the user okays scanning a large assembly we don't ask again this session
+# (re-asking on every tolerance tweak would be obnoxious).
+_large_scan_confirmed = False
 
 
 # ---------------------------------------------------------------------------
@@ -310,7 +318,11 @@ def command_execute(args: adsk.core.CommandEventArgs):
                     inputs.itemById(cand["joint_dd_id"])
                 )
                 item = dd.selectedItem if dd else None
-                cand["motion"] = item.name if item else DEFAULT_JOINT_TYPE
+                cand["motion"] = (
+                    item.name
+                    if item
+                    else cand.get("default_joint", DEFAULT_JOINT_TYPE)
+                )
             selected.append(cand)
 
     if not selected:
@@ -333,19 +345,35 @@ def command_execute(args: adsk.core.CommandEventArgs):
     redundant = 0
     moved = 0
     max_move_mm = 0.0
-    # Greedy, DOF-aware acceptance (CAD-Mate-Inference Part 2 A.4): apply each
-    # candidate, then ask Fusion's own solver whether it is over-constrained
-    # (a sick healthState). A sick constraint adds no independent DOF reduction
-    # - it closes a cycle in the component graph - so we drop it. This keeps the
-    # maximal non-redundant set without computing the constraint Jacobian
-    # ourselves. Candidates are processed in confidence order so the strongest
-    # relationships seed the spanning structure first.
+    # Apply each selected relationship and immediately check Fusion's own
+    # healthState. A sick (over-constrained) relationship adds no independent
+    # DOF reduction - it closes a cycle already covered by stronger ones - so we
+    # drop it right away.
+    #
+    # Dropping INCREMENTALLY is what keeps the solver stable: it never lets sick
+    # joints accumulate. An earlier version deferred every health check to a
+    # single design.computeAll() at the end; that let the over-constrained
+    # relationships pile up and then crashed Fusion when computeAll tried to
+    # re-solve the tangle. So we do NOT batch and we do NOT force a recompute
+    # here - we keep the assembly healthy one relationship at a time. Strongest-
+    # first ordering means the strong relationships seed the structure and the
+    # weaker redundant ones are the ones that come out sick and drop.
+    #
+    # No progress bar here: this runs inside the command's compute transaction
+    # where the lower-right bar will not repaint.
     for cand in selected:
         try:
             con = _apply_candidate(root, cand)
             if con is not None and _is_sick(con):
+                # Read Fusion's diagnosis before deleting (only valid while the
+                # relationship still exists).
+                reason = _sick_message(con)
                 con.deleteMe()
                 redundant += 1
+                ptutil.log(
+                    f"{CMD_NAME}: dropped redundant {cand['type']} "
+                    f"{cand['label']}" + (f" - {reason}" if reason else "")
+                )
                 continue
             created += 1
             move_mm = cand.get("applied_move_cm", 0.0) * 10.0
@@ -381,9 +409,10 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
 
 def command_destroy(args: adsk.core.CommandEventArgs):
-    global local_handlers, _candidates
+    global local_handlers, _candidates, _large_scan_confirmed
     local_handlers = []
     _candidates = []
+    _large_scan_confirmed = False
 
 
 # ---------------------------------------------------------------------------
@@ -396,9 +425,19 @@ def _add_header_row(inputs, table):
         table.addCommandInput(hdr, HEADER_ROW, col)
 
 
+def _clear_data_rows(inputs):
+    """Remove existing data rows but keep the header row, and return the table.
+    Data-row inputs use a monotonic id counter so rebuilt rows never collide
+    with prior ones."""
+    table = adsk.core.TableCommandInput.cast(inputs.itemById(TABLE_ID))
+    while table.rowCount > HEADER_ROW + 1:
+        table.deleteRow(table.rowCount - 1)
+    return table
+
+
 def _rescan(design, inputs):
     """Run detection with the current tolerances and rebuild the preview table."""
-    global _candidates
+    global _candidates, _large_scan_confirmed
 
     lin_tol = DEFAULT_LIN_TOL_CM
     ang_tol = DEFAULT_ANG_TOL_RAD
@@ -409,18 +448,42 @@ def _rescan(design, inputs):
     if ang_in and ang_in.value > 0:
         ang_tol = ang_in.value
 
-    _candidates, stats = _infer(design, lin_tol, ang_tol)
+    summary = inputs.itemById(SUMMARY_ID)
 
-    table = adsk.core.TableCommandInput.cast(inputs.itemById(TABLE_ID))
-    # Remove existing data rows but keep the header row.  Data-row inputs use a
-    # monotonic id counter so rebuilt rows never collide with prior ones.
-    while table.rowCount > HEADER_ROW + 1:
-        table.deleteRow(table.rowCount - 1)
+    # Collect faces first: this is a linear pass, so the resulting count is a
+    # cheap, early estimate of the O(n^2) broad-phase cost that follows. It is
+    # the one easy moment to tell whether the user is in for a long wait.
+    faces, stats = _collect_faces(design)
+    n_faces = len(faces)
+
+    if n_faces >= FACE_CONFIRM_COUNT and not _large_scan_confirmed:
+        est_pairs = n_faces * (n_faces - 1) // 2
+        res = ui.messageBox(
+            f"This assembly has {n_faces:,} analytic faces, so inferring "
+            f"constraints compares up to {est_pairs:,} face pairs and may take "
+            "a while.\n\nRun the scan now?",
+            CMD_NAME,
+            adsk.core.MessageBoxButtonTypes.YesNoButtonType,
+            adsk.core.MessageBoxIconTypes.QuestionIconType,
+        )
+        if res != adsk.core.DialogResults.DialogYes:
+            _candidates = []
+            _clear_data_rows(inputs)
+            if summary:
+                summary.text = (
+                    f"Scan skipped ({n_faces:,} faces). Click Re-scan to run it, "
+                    "or close and simplify/select a smaller scope first."
+                )
+            return
+        _large_scan_confirmed = True
+
+    _candidates, stats = _infer(design, faces, stats, lin_tol, ang_tol)
+
+    table = _clear_data_rows(inputs)
     for cand in _candidates:
         _add_candidate_row(inputs, table, cand)
 
     checked = sum(1 for c in _candidates if c["default_checked"])
-    summary = inputs.itemById(SUMMARY_ID)
     if summary:
         diag = (
             f"Scanned {stats['occurrences']} occurrence(s) + "
@@ -462,10 +525,11 @@ def _add_candidate_row(inputs, table, cand):
         dd = inputs.addDropDownCommandInput(
             dd_id, "", adsk.core.DropDownStyles.LabeledIconDropDownStyle
         )
+        default_joint = cand.get("default_joint", DEFAULT_JOINT_TYPE)
         for label, folder in JOINT_TYPES:
             dd.listItems.add(
                 label,
-                label == DEFAULT_JOINT_TYPE,
+                label == default_joint,
                 os.path.join(JOINTS_ICON_DIR, folder),
             )
         cand["joint_dd_id"] = dd_id
@@ -532,6 +596,22 @@ def _unit(vec):
     v = vec.copy()
     v.normalize()
     return v
+
+
+def _is_circular_face(face):
+    """True if a planar face is a full disk: a single outer loop bounded by one
+    circular edge. Used to default a centered coincident pair to a Revolute
+    joint (a pin on a round flange is free to spin) instead of a Rigid joint."""
+    try:
+        loops = face.loops
+        if loops.count != 1:
+            return False
+        edges = loops.item(0).edges
+        if edges.count != 1:
+            return False
+        return adsk.core.Circle3D.cast(edges.item(0).geometry) is not None
+    except Exception:
+        return False
 
 
 def _add_body_faces(records, body, src, name):
@@ -635,10 +715,81 @@ def _candidate_strength(c):
     return 1  # coincident plane -> removes 3 DOF
 
 
-def _infer(design, lin_tol, ang_tol):
+# Rank handed to any occurrence we cannot locate in the timeline (e.g. a root
+# body with no occurrence): sorts after everything that does have a position.
+_LATE_RANK = 10**9
+
+
+def _occurrence_timeline_ranks(design):
+    """Map a top-level occurrence's fullPathName -> creation rank (lower =
+    earlier in the timeline, i.e. higher in the browser). Mirrors how the
+    assembly was built up so we can apply relationships in that same order.
+
+    Parametric designs carry the order in the timeline; direct designs have no
+    timeline, so we fall back to root.occurrences order there."""
+    ranks = {}
+    root = design.rootComponent
+    try:
+        if design.designType == adsk.fusion.DesignTypes.ParametricDesignType:
+            tl = design.timeline
+            idx = 0
+            for i in range(tl.count):
+                try:
+                    ent = tl.item(i).entity
+                except Exception:
+                    ent = None
+                occ = adsk.fusion.Occurrence.cast(ent)
+                if occ and occ.fullPathName not in ranks:
+                    ranks[occ.fullPathName] = idx
+                    idx += 1
+    except Exception:
+        pass
+    if not ranks:
+        try:
+            occs = root.occurrences
+            for i in range(occs.count):
+                ranks[occs.item(i).fullPathName] = i
+        except Exception:
+            pass
+    return ranks
+
+
+def _occ_rank(occ, tl_rank):
+    """Timeline rank of an occurrence. A nested (leaf) occurrence is not itself
+    in the timeline, so walk up its assembly context to the top-level ancestor
+    that is, and use that. Unknown -> _LATE_RANK (sorts last)."""
+    cur = occ
+    hops = 0
+    try:
+        while cur is not None and hops < 64:
+            rank = tl_rank.get(cur.fullPathName)
+            if rank is not None:
+                return rank
+            cur = cur.assemblyContext
+            hops += 1
+    except Exception:
+        pass
+    return _LATE_RANK
+
+
+def _pair_timeline_key(cand, tl_rank):
+    """A sortable key placing a candidate by where its component pair sits in
+    the timeline. Pairs anchored to earlier components apply first; both members
+    of a pair share this key, so a pair's rows stay grouped together."""
+    ranks = sorted(_occ_rank(o, tl_rank) for o in _candidate_occurrences(cand))
+    if not ranks:
+        ranks = [_LATE_RANK]
+    while len(ranks) < 2:
+        ranks.append(ranks[-1])
+    return (ranks[0], ranks[1])
+
+
+def _infer(design, faces, stats, lin_tol, ang_tol):
     """Return (candidates, stats): a ranked, de-duplicated candidate list and
-    a dict describing what was scanned (for the diagnostic summary)."""
-    faces, stats = _collect_faces(design)
+    a dict describing what was scanned (for the diagnostic summary).
+
+    *faces* / *stats* come from _collect_faces (done by the caller so it can
+    estimate cost up front)."""
     if len(faces) > FACE_WARN_COUNT:
         ptutil.log(
             f"{CMD_NAME}: {len(faces)} analytic faces - broad phase is O(n^2) "
@@ -672,20 +823,33 @@ def _infer(design, lin_tol, ang_tol):
                 continue
 
             key = (tuple(sorted((a.src, b.src))), cand["type"])
+            cand["pair_key"] = key[0]  # the two parts, for grouping a pair's rows
             if key not in best or cand["confidence"] > best[key]["confidence"]:
                 best[key] = cand
 
     stats["pairs_tested"] = pairs_tested
-    # Order strongest-first so the most-constraining relationships seed the
-    # solution before weaker ones. This is critical: a rigid joint applied AFTER
-    # a concentric constraint on the same parts comes out over-constrained
-    # (sick) and gets dropped, leaving the pair under-constrained. Applying the
-    # rigid joints first keeps them healthy; the now-redundant constraints drop
-    # instead. Ties broken by confidence.
+    # Apply order, outer-to-inner:
+    #   1. Timeline order of the component pair. Following the order the assembly
+    #      was actually built (earliest-anchored pairs first) gives the solver a
+    #      growing fixed reference and matches the user's build intent.
+    #   2. The pair key, so every relationship between the same two parts stays
+    #      contiguous - a pair's whole set is applied together, not split by an
+    #      unrelated stronger relationship elsewhere.
+    #   3. Strength, strongest-first *within* a pair. This is critical: a rigid
+    #      joint applied AFTER a concentric constraint on the same parts comes
+    #      out over-constrained (sick) and gets dropped, leaving the pair
+    #      under-constrained. Applying the rigid joint first keeps it healthy and
+    #      the now-redundant constraint drops instead.
+    #   4. Confidence, as the final tie-break.
+    tl_rank = _occurrence_timeline_ranks(design)
     candidates = sorted(
         best.values(),
-        key=lambda c: (_candidate_strength(c), c["confidence"]),
-        reverse=True,
+        key=lambda c: (
+            _pair_timeline_key(c, tl_rank),
+            c.get("pair_key", ()),
+            -_candidate_strength(c),
+            -c["confidence"],
+        ),
     )
     for c in candidates:
         c["default_checked"] = c["confidence"] >= AUTO_CHECK_CONF
@@ -788,7 +952,7 @@ def _test_coincident(a, b, lin_tol, sin_ang):
     confidence = _clamp01(0.5 * ang_score + 0.5 * gap_score)
 
     # Special case: if the two face centroids coincide as well, the faces are
-    # centered on each other - a rigid joint pinned at the shared centroid fully
+    # centered on each other - a joint pinned at the shared centroid fully
     # locates them with no jump (verified). Otherwise a coincident assembly
     # constraint (which leaves the in-plane DOF free) is the right relationship.
     try:
@@ -796,10 +960,22 @@ def _test_coincident(a, b, lin_tol, sin_ang):
     except Exception:
         centered = False
 
+    # When both centered faces are circular disks (e.g. a pin face on a round
+    # flange) the natural relationship is rotation about the shared axis, so
+    # default that row to a Revolute joint; any other centered pair defaults to
+    # Rigid. The user can still override via the row's joint-type dropdown.
+    circular = centered and _is_circular_face(a.face) and _is_circular_face(b.face)
+    default_joint = "Revolute" if circular else DEFAULT_JOINT_TYPE
+
+    if centered:
+        detail = f"centered ({default_joint.lower()})"
+    else:
+        detail = "flush faces"
+
     opposed = a.dir.dotProduct(b.dir) < 0.0
     return {
         "type": "Coincident",
-        "detail": "centered (rigid)" if centered else "flush faces",
+        "detail": detail,
         "label": f"{a.name} ↔ {b.name}",
         "confidence": confidence,
         "face_a": a.face,
@@ -808,6 +984,7 @@ def _test_coincident(a, b, lin_tol, sin_ang):
         "is_flipped": opposed,
         "offset_cm": gap,
         "centered": centered,
+        "default_joint": default_joint,
     }
 
 
@@ -837,6 +1014,18 @@ def _is_sick(constraint):
         )
     except Exception:
         return False
+
+
+def _sick_message(constraint):
+    """Fusion's own error/warning text for a sick constraint or joint, used to
+    log *why* it was dropped. Both AssemblyConstraint and Joint expose
+    errorOrWarningMessage, which is populated only for the Warning/Error states
+    and empty otherwise. Reading it can raise, so it is guarded; returns '' when
+    unavailable. Read this BEFORE deleteMe() - it is invalid afterwards."""
+    try:
+        return constraint.errorOrWarningMessage or ""
+    except Exception:
+        return ""
 
 
 def _moving_occurrences(face_a, face_b):
@@ -954,12 +1143,13 @@ def _create_joint(joints, face_a, face_b, flip, motion):
 
 def _apply_rigid_centered_joint(root, cand):
     """Centered-coincident special case: a Joint with both inputs on the faces'
-    center keypoints, using the motion type the user picked (default Rigid).
+    center keypoints, using the motion type the user picked (default Revolute
+    for circular disk faces, otherwise Rigid).
     Because the centroids already coincide this is position-preserving; the flip
     that preserves position is chosen by trial as for constraints."""
     joints = root.joints
     fa, fb = cand["face_a"], cand["face_b"]
-    motion = cand.get("motion", DEFAULT_JOINT_TYPE)
+    motion = cand.get("motion", cand.get("default_joint", DEFAULT_JOINT_TYPE))
     occs = _moving_occurrences(fa, fb)
 
     best = None  # (move, flip)

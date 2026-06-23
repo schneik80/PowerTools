@@ -10,7 +10,7 @@
 import adsk.core, adsk.fusion
 import os
 from ...lib import ptAddInUtils as ptutil
-from ... import config
+from ... import settings_store
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -23,27 +23,9 @@ CMD_Description = "Create default project folders if they do not exist"
 INPUT_FOLDER_SET = "folderSet"
 INPUT_PREVIEW = "folderPreview"
 
-# Predefined folder sets
-BASIC_FOLDERS = [
-    "Drawings",
-    "Archive",
-    "Obit",
-]
-
-ADVANCED_FOLDERS = [
-    "00 - Products",
-    "01 - Sub Assemblies",
-    "02 - ECAD",
-    "03 - Parts",
-    "04 - Purchased Parts",
-    "05 - 3DPCB Parts",
-    "06 - Drawings",
-    "07 - Documents",
-    "08 - Render",
-    "09 - Manufacture",
-    "10 - Archive",
-    "XX - Obit",
-]
+# The Basic / Advanced folder sets are user-configurable in the Preferences
+# palette (Add Project Folders section) and read at runtime from the settings
+# store; see _folder_set().
 
 # Local list of event handlers used to maintain a reference so
 # they are not released and garbage collected.
@@ -64,13 +46,27 @@ def _get_existing_lower() -> list[str]:
         return []
 
 
+def _folder_set(option_key: str) -> list[str]:
+    """Return the user-configurable folder list for 'basic' or 'advanced'.
+
+    Edited in the Preferences palette and stored under
+    command_settings.defaultfolders; falls back to the canonical defaults in
+    settings_store.
+    """
+    fallback = settings_store.COMMAND_SETTING_DEFAULTS["defaultfolders"].get(option_key, [])
+    value = settings_store.command_setting("defaultfolders", option_key, fallback)
+    if not isinstance(value, list):
+        return list(fallback)
+    return [str(name) for name in value if str(name).strip()]
+
+
 def _build_preview(folder_set_name: str, existing_lower: list[str]) -> str:
     """
     Return a plain-text preview of the folders for the chosen set.
     Folders that already exist in the project are marked so the user
     knows they will be skipped.
     """
-    folders = BASIC_FOLDERS if folder_set_name == "Basic" else ADVANCED_FOLDERS
+    folders = _folder_set("basic" if folder_set_name == "Basic" else "advanced")
     lines = []
     for name in folders:
         if name.casefold() in existing_lower:
@@ -148,7 +144,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     # --- Preview (read-only text box) -----------------------------------
     existing_lower = _get_existing_lower()
     initial_preview = _build_preview("Basic", existing_lower)
-    num_preview_rows = max(len(BASIC_FOLDERS), len(ADVANCED_FOLDERS)) + 1
+    num_preview_rows = max(len(_folder_set("basic")), len(_folder_set("advanced"))) + 1
 
     inputs.addTextBoxCommandInput(
         INPUT_PREVIEW,
@@ -195,8 +191,8 @@ def command_execute(args: adsk.core.CommandEventArgs):
         )
         use_advanced = dropdown.selectedItem.name == "Advanced"
 
-        # Target folder list
-        folders_to_create = ADVANCED_FOLDERS if use_advanced else BASIC_FOLDERS
+        # Target folder list (user-configurable in Preferences)
+        folders_to_create = _folder_set("advanced" if use_advanced else "basic")
 
         # Project root
         project = app.data.activeProject

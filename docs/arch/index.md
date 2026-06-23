@@ -69,6 +69,10 @@ matching end-user guide lives in [`../`](..).
 - [Related Data](Related%20Data.md)
 - [Select Related Data Folder](Select%20Related%20Data%20Folder.md)
 
+**Tools**
+
+- [Scripts and Add-ins](Scripts%20and%20Add-ins.md)
+
 **Share**
 
 - [Get a Share Link](Get%20a%20Share%20Link.md)

@@ -73,7 +73,12 @@ def get_pt_settings_flyout():
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 def create_shared_access_points():
-    """Create the two shared access points once, before any command starts."""
+    """Create the shared "Power Tools" panel once, before any command starts.
+
+    (The old "PowerTools Settings" QAT flyout is gone — those settings were
+    consolidated into the Preferences command, which registers its own single
+    QAT File entry.)
+    """
     workspace = _ui().workspaces.itemById(config.design_workspace)
     if workspace is not None:
         tab = workspace.toolbarTabs.itemById(config.tools_tab_id)
@@ -84,25 +89,13 @@ def create_shared_access_points():
                 config.my_panel_id, config.my_panel_name, config.my_panel_after, False
             )
 
-    qat = _ui().toolbars.itemById("QAT")
-    if qat is not None:
-        file_dd = adsk.core.DropDownControl.cast(
-            qat.controls.itemById("FileSubMenuCommand")
-        )
-        if file_dd is not None and file_dd.controls.itemById(
-            config.PT_SETTINGS_DROPDOWN_ID
-        ) is None:
-            file_dd.controls.addDropDown(
-                config.PT_SETTINGS_DROPDOWN_NAME, "", config.PT_SETTINGS_DROPDOWN_ID
-            )
-
 
 def remove_shared_access_points():
-    """Remove the two shared access points once, after every command has stopped.
+    """Remove the shared "Power Tools" panel once, after every command has stopped.
 
     By the time this runs each command has already removed its own control, so
-    the panel / flyout should be empty; they are deleted unconditionally, and the
-    Tools tab is deleted only if it has no remaining panels.
+    the panel should be empty; it is deleted unconditionally, and the Tools tab
+    is deleted only if it has no remaining panels.
     """
     workspace = _ui().workspaces.itemById(config.design_workspace)
     if workspace is not None:
@@ -112,7 +105,3 @@ def remove_shared_access_points():
         tab = workspace.toolbarTabs.itemById(config.tools_tab_id)
         if tab is not None and tab.toolbarPanels.count == 0:
             tab.deleteMe()
-
-    flyout = get_pt_settings_flyout()
-    if flyout is not None:
-        flyout.deleteMe()
