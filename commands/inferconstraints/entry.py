@@ -86,7 +86,6 @@ DEFAULT_JOINT_TYPE = "Rigid"
 LIN_TOL_ID = "ic_lin_tol"
 ANG_TOL_ID = "ic_ang_tol"
 RESCAN_ID = "ic_rescan"
-PRUNE_REDUNDANT_ID = "ic_prune_redundant"
 PREVIEW_SEL_ID = "ic_preview_sel"
 TABLE_ID = "ic_table"
 SUMMARY_ID = "ic_summary"
@@ -103,26 +102,6 @@ DEFAULT_ANG_TOL_RAD = math.radians(0.5)
 
 # Confidence at/above which a candidate row is checked by default.
 AUTO_CHECK_CONF = 0.6
-
-# Redundancy-handling modes (the "Redundant constraints" dropdown). Applied in
-# apply order, each relationship is kept or dropped based on Fusion's health
-# state:
-#   * KEEP_ALL   - never drop; every selected relationship is applied and kept
-#                  (the assembly may end up over-constrained).
-#   * SMART      - drop a sick (over-constrained) relationship ONLY when its
-#                  part-pair already carries an earlier relationship, i.e. an
-#                  intra-pair redundancy. A sick relationship on a NEW pair is a
-#                  kinematic-loop closure (e.g. the 4th link of a 4-bar) and is
-#                  kept. Detection already collapses same-(pair, type) duplicates,
-#                  so a same-pair drop only removes a redundant cross-type
-#                  leftover. This is the default - the middle ground.
-#   * AGGRESSIVE - drop every sick relationship (smallest constraint set; can
-#                  break legitimate loop closures).
-PRUNE_KEEP_ALL = "Keep all"
-PRUNE_SMART = "Smart (remove same-pair redundancy)"
-PRUNE_AGGRESSIVE = "Aggressive (remove all over-constrained)"
-PRUNE_MODES = [PRUNE_KEEP_ALL, PRUNE_SMART, PRUNE_AGGRESSIVE]
-DEFAULT_PRUNE_MODE = PRUNE_SMART
 
 # Guard rails for very large assemblies. The broad phase is sub-quadratic in
 # practice (faces are grouped by type and swept along x; see _infer), but a big
@@ -210,23 +189,6 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     )
     rescan = inputs.addBoolValueInput(RESCAN_ID, "Re-scan", False)
     rescan.tooltip = "Re-run detection with the current tolerances."
-
-    # How to handle relationships Fusion flags as over-constrained once applied.
-    # See the PRUNE_* mode notes above and the apply loop in command_execute.
-    prune = inputs.addDropDownCommandInput(
-        PRUNE_REDUNDANT_ID, "Redundant constraints", adsk.core.DropDownStyles.TextListDropDownStyle
-    )
-    for mode in PRUNE_MODES:
-        prune.listItems.add(mode, mode == DEFAULT_PRUNE_MODE)
-    prune.tooltip = (
-        "What to do with relationships Fusion flags as over-constrained:\n"
-        "- Keep all: apply every selected relationship (may over-constrain).\n"
-        "- Smart: drop only an over-constrained relationship whose two parts are "
-        "already joined by another relationship; keep loop-closing relationships "
-        "between new pairs (e.g. the 4th link of a 4-bar). Recommended.\n"
-        "- Aggressive: drop every over-constrained relationship (smallest set; "
-        "can break kinematic loops)."
-    )
 
     # Selection input used purely to highlight the selected row's component pair
     # in the graphics. ui.activeSelections does not highlight while a command
@@ -345,14 +307,6 @@ def _highlight_selected_row(inputs, table):
     _highlight_candidate(inputs, cand)
 
 
-def _selected_prune_mode(inputs):
-    """The redundancy-handling mode chosen in the dropdown, defaulting to
-    DEFAULT_PRUNE_MODE if the input is missing for any reason."""
-    dd = adsk.core.DropDownCommandInput.cast(inputs.itemById(PRUNE_REDUNDANT_ID))
-    item = dd.selectedItem if dd else None
-    return item.name if item else DEFAULT_PRUNE_MODE
-
-
 def command_execute(args: adsk.core.CommandEventArgs):
     ptutil.log(f"{CMD_NAME} Command Execute Event")
 
@@ -362,7 +316,6 @@ def command_execute(args: adsk.core.CommandEventArgs):
         return
 
     inputs = args.command.commandInputs
-    prune_mode = _selected_prune_mode(inputs)
     selected = []
     for cand in _candidates:
         chk = adsk.core.BoolValueCommandInput.cast(inputs.itemById(cand["chk_id"]))
@@ -373,11 +326,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
                     inputs.itemById(cand["joint_dd_id"])
                 )
                 item = dd.selectedItem if dd else None
-                cand["motion"] = (
-                    item.name
-                    if item
-                    else cand.get("default_joint", DEFAULT_JOINT_TYPE)
-                )
+                cand["motion"] = item.name if item else DEFAULT_JOINT_TYPE
             selected.append(cand)
 
     if not selected:
@@ -400,66 +349,21 @@ def command_execute(args: adsk.core.CommandEventArgs):
     redundant = 0
     moved = 0
     max_move_mm = 0.0
-    # Apply each selected relationship and (unless mode is KEEP_ALL) check
-    # Fusion's own healthState immediately. A sick (over-constrained) relationship
-    # adds no independent DOF reduction, but there are two very different reasons
-    # it can be sick, and they need opposite treatment:
-    #
-    #   * Intra-pair redundancy - its two parts are ALREADY joined by an earlier
-    #     relationship (e.g. a concentric left over once a centered joint already
-    #     locks the pair). This adds nothing and should drop.
-    #   * Inter-pair loop closure - its two parts are a NEW pair, but they are
-    #     already indirectly connected through a chain, so this relationship
-    #     closes a kinematic loop (the classic 4th link of a 4-bar). Fusion flags
-    #     it over-constrained, yet dropping it leaves the loop open. It must stay.
-    #
-    # SMART mode (default) distinguishes the two by tracking which part-pairs have
-    # already been constrained: it drops a sick relationship only when its pair is
-    # already in that set (intra-pair) and keeps a sick relationship on a new pair
-    # (loop closure). Detection already keeps at most one relationship per
-    # (pair, type) - two flush faces between the same parts collapse to a single
-    # coincident upstream - so a same-pair drop only ever removes a genuinely
-    # redundant *cross-type* leftover, never a valid multi-face set. AGGRESSIVE
-    # drops every sick one (smallest set, may break loops); KEEP_ALL never reads
-    # healthState.
-    #
-    # Dropping INCREMENTALLY is what keeps the solver stable: it never lets sick
-    # joints accumulate. An earlier version deferred every health check to a
-    # single design.computeAll() at the end; that let the over-constrained
-    # relationships pile up and then crashed Fusion when computeAll tried to
-    # re-solve the tangle. So we do NOT batch and we do NOT force a recompute
-    # here. Strongest-first ordering means the strong relationships seed the
-    # structure and the weaker redundant ones are the ones that come out sick.
-    #
-    # No progress bar here: this runs inside the command's compute transaction
-    # where the lower-right bar will not repaint.
-    applied_pairs = set()
+    # Greedy, DOF-aware acceptance (CAD-Mate-Inference Part 2 A.4): apply each
+    # candidate, then ask Fusion's own solver whether it is over-constrained
+    # (a sick healthState). A sick constraint adds no independent DOF reduction
+    # - it closes a cycle in the component graph - so we drop it. This keeps the
+    # maximal non-redundant set without computing the constraint Jacobian
+    # ourselves. Candidates are processed in confidence order so the strongest
+    # relationships seed the spanning structure first.
     for cand in selected:
         try:
             con = _apply_candidate(root, cand)
-            pair = cand.get("pair_key")
-            if (
-                prune_mode != PRUNE_KEEP_ALL
-                and con is not None
-                and _is_sick(con)
-            ):
-                # AGGRESSIVE drops any sick relationship; SMART drops only an
-                # intra-pair redundancy (a new pair is a loop closure - keep it).
-                intra_pair = pair is not None and pair in applied_pairs
-                if prune_mode == PRUNE_AGGRESSIVE or intra_pair:
-                    # Read Fusion's diagnosis before deleting (only valid while
-                    # the relationship still exists).
-                    reason = _sick_message(con)
-                    con.deleteMe()
-                    redundant += 1
-                    ptutil.log(
-                        f"{CMD_NAME}: dropped redundant {cand['type']} "
-                        f"{cand['label']}" + (f" - {reason}" if reason else "")
-                    )
-                    continue
+            if con is not None and _is_sick(con):
+                con.deleteMe()
+                redundant += 1
+                continue
             created += 1
-            if pair is not None:
-                applied_pairs.add(pair)
             move_mm = cand.get("applied_move_cm", 0.0) * 10.0
             if move_mm > POS_TOL_CM * 10.0:
                 moved += 1
@@ -664,11 +568,10 @@ def _add_candidate_row(inputs, table, cand):
         dd = inputs.addDropDownCommandInput(
             dd_id, "", adsk.core.DropDownStyles.LabeledIconDropDownStyle
         )
-        default_joint = cand.get("default_joint", DEFAULT_JOINT_TYPE)
         for label, folder in JOINT_TYPES:
             dd.listItems.add(
                 label,
-                label == default_joint,
+                label == DEFAULT_JOINT_TYPE,
                 os.path.join(JOINTS_ICON_DIR, folder),
             )
         cand["joint_dd_id"] = dd_id
@@ -746,22 +649,6 @@ def _unit(vec):
     v = vec.copy()
     v.normalize()
     return v
-
-
-def _is_circular_face(face):
-    """True if a planar face is a full disk: a single outer loop bounded by one
-    circular edge. Used to default a centered coincident pair to a Revolute
-    joint (a pin on a round flange is free to spin) instead of a Rigid joint."""
-    try:
-        loops = face.loops
-        if loops.count != 1:
-            return False
-        edges = loops.item(0).edges
-        if edges.count != 1:
-            return False
-        return adsk.core.Circle3D.cast(edges.item(0).geometry) is not None
-    except Exception:
-        return False
 
 
 def _add_body_faces(records, body, src, name):
@@ -868,75 +755,6 @@ def _candidate_strength(c):
     return 1  # coincident plane -> removes 3 DOF
 
 
-# Rank handed to any occurrence we cannot locate in the timeline (e.g. a root
-# body with no occurrence): sorts after everything that does have a position.
-_LATE_RANK = 10**9
-
-
-def _occurrence_timeline_ranks(design):
-    """Map a top-level occurrence's fullPathName -> creation rank (lower =
-    earlier in the timeline, i.e. higher in the browser). Mirrors how the
-    assembly was built up so we can apply relationships in that same order.
-
-    Parametric designs carry the order in the timeline; direct designs have no
-    timeline, so we fall back to root.occurrences order there."""
-    ranks = {}
-    root = design.rootComponent
-    try:
-        if design.designType == adsk.fusion.DesignTypes.ParametricDesignType:
-            tl = design.timeline
-            idx = 0
-            for i in range(tl.count):
-                try:
-                    ent = tl.item(i).entity
-                except Exception:
-                    ent = None
-                occ = adsk.fusion.Occurrence.cast(ent)
-                if occ and occ.fullPathName not in ranks:
-                    ranks[occ.fullPathName] = idx
-                    idx += 1
-    except Exception:
-        pass
-    if not ranks:
-        try:
-            occs = root.occurrences
-            for i in range(occs.count):
-                ranks[occs.item(i).fullPathName] = i
-        except Exception:
-            pass
-    return ranks
-
-
-def _occ_rank(occ, tl_rank):
-    """Timeline rank of an occurrence. A nested (leaf) occurrence is not itself
-    in the timeline, so walk up its assembly context to the top-level ancestor
-    that is, and use that. Unknown -> _LATE_RANK (sorts last)."""
-    cur = occ
-    hops = 0
-    try:
-        while cur is not None and hops < 64:
-            rank = tl_rank.get(cur.fullPathName)
-            if rank is not None:
-                return rank
-            cur = cur.assemblyContext
-            hops += 1
-    except Exception:
-        pass
-    return _LATE_RANK
-
-
-def _pair_timeline_key(cand, tl_rank):
-    """A sortable key placing a candidate by where its component pair sits in
-    the timeline. Pairs anchored to earlier components apply first; both members
-    of a pair share this key, so a pair's rows stay grouped together."""
-    ranks = sorted(_occ_rank(o, tl_rank) for o in _candidate_occurrences(cand))
-    if not ranks:
-        ranks = [_LATE_RANK]
-    while len(ranks) < 2:
-        ranks.append(ranks[-1])
-    return (ranks[0], ranks[1])
-
-
 def _infer(design, faces, stats, lin_tol, ang_tol):
     """Return (candidates, stats): a ranked, de-duplicated candidate list and
     a dict describing what was scanned (for the diagnostic summary).
@@ -998,33 +816,20 @@ def _infer(design, faces, stats, lin_tol, ang_tol):
                     continue
 
                 key = (tuple(sorted((a_src, b.src))), cand["type"])
-                cand["pair_key"] = key[0]  # the two parts, for grouping rows
                 if key not in best or cand["confidence"] > best[key]["confidence"]:
                     best[key] = cand
 
     stats["pairs_tested"] = pairs_tested
-    # Apply order, outer-to-inner:
-    #   1. Timeline order of the component pair. Following the order the assembly
-    #      was actually built (earliest-anchored pairs first) gives the solver a
-    #      growing fixed reference and matches the user's build intent.
-    #   2. The pair key, so every relationship between the same two parts stays
-    #      contiguous - a pair's whole set is applied together, not split by an
-    #      unrelated stronger relationship elsewhere.
-    #   3. Strength, strongest-first *within* a pair. This is critical: a rigid
-    #      joint applied AFTER a concentric constraint on the same parts comes
-    #      out over-constrained (sick) and gets dropped, leaving the pair
-    #      under-constrained. Applying the rigid joint first keeps it healthy and
-    #      the now-redundant constraint drops instead.
-    #   4. Confidence, as the final tie-break.
-    tl_rank = _occurrence_timeline_ranks(design)
+    # Order strongest-first so the most-constraining relationships seed the
+    # solution before weaker ones. This is critical: a rigid joint applied AFTER
+    # a concentric constraint on the same parts comes out over-constrained
+    # (sick) and gets dropped, leaving the pair under-constrained. Applying the
+    # rigid joints first keeps them healthy; the now-redundant constraints drop
+    # instead. Ties broken by confidence.
     candidates = sorted(
         best.values(),
-        key=lambda c: (
-            _pair_timeline_key(c, tl_rank),
-            c.get("pair_key", ()),
-            -_candidate_strength(c),
-            -c["confidence"],
-        ),
+        key=lambda c: (_candidate_strength(c), c["confidence"]),
+        reverse=True,
     )
     for c in candidates:
         c["default_checked"] = c["confidence"] >= AUTO_CHECK_CONF
@@ -1127,7 +932,7 @@ def _test_coincident(a, b, lin_tol, sin_ang):
     confidence = _clamp01(0.5 * ang_score + 0.5 * gap_score)
 
     # Special case: if the two face centroids coincide as well, the faces are
-    # centered on each other - a joint pinned at the shared centroid fully
+    # centered on each other - a rigid joint pinned at the shared centroid fully
     # locates them with no jump (verified). Otherwise a coincident assembly
     # constraint (which leaves the in-plane DOF free) is the right relationship.
     try:
@@ -1135,22 +940,10 @@ def _test_coincident(a, b, lin_tol, sin_ang):
     except Exception:
         centered = False
 
-    # When both centered faces are circular disks (e.g. a pin face on a round
-    # flange) the natural relationship is rotation about the shared axis, so
-    # default that row to a Revolute joint; any other centered pair defaults to
-    # Rigid. The user can still override via the row's joint-type dropdown.
-    circular = centered and _is_circular_face(a.face) and _is_circular_face(b.face)
-    default_joint = "Revolute" if circular else DEFAULT_JOINT_TYPE
-
-    if centered:
-        detail = f"centered ({default_joint.lower()})"
-    else:
-        detail = "flush faces"
-
     opposed = a.dir.dotProduct(b.dir) < 0.0
     return {
         "type": "Coincident",
-        "detail": detail,
+        "detail": "centered (rigid)" if centered else "flush faces",
         "label": f"{a.name} ↔ {b.name}",
         "confidence": confidence,
         "face_a": a.face,
@@ -1159,7 +952,6 @@ def _test_coincident(a, b, lin_tol, sin_ang):
         "is_flipped": opposed,
         "offset_cm": gap,
         "centered": centered,
-        "default_joint": default_joint,
     }
 
 
@@ -1189,18 +981,6 @@ def _is_sick(constraint):
         )
     except Exception:
         return False
-
-
-def _sick_message(constraint):
-    """Fusion's own error/warning text for a sick constraint or joint, used to
-    log *why* it was dropped. Both AssemblyConstraint and Joint expose
-    errorOrWarningMessage, which is populated only for the Warning/Error states
-    and empty otherwise. Reading it can raise, so it is guarded; returns '' when
-    unavailable. Read this BEFORE deleteMe() - it is invalid afterwards."""
-    try:
-        return constraint.errorOrWarningMessage or ""
-    except Exception:
-        return ""
 
 
 def _moving_occurrences(face_a, face_b):
@@ -1318,13 +1098,12 @@ def _create_joint(joints, face_a, face_b, flip, motion):
 
 def _apply_rigid_centered_joint(root, cand):
     """Centered-coincident special case: a Joint with both inputs on the faces'
-    center keypoints, using the motion type the user picked (default Revolute
-    for circular disk faces, otherwise Rigid).
+    center keypoints, using the motion type the user picked (default Rigid).
     Because the centroids already coincide this is position-preserving; the flip
     that preserves position is chosen by trial as for constraints."""
     joints = root.joints
     fa, fb = cand["face_a"], cand["face_b"]
-    motion = cand.get("motion", cand.get("default_joint", DEFAULT_JOINT_TYPE))
+    motion = cand.get("motion", DEFAULT_JOINT_TYPE)
     occs = _moving_occurrences(fa, fb)
 
     best = None  # (move, flip)

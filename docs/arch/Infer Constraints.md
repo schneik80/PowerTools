@@ -17,13 +17,7 @@ Each candidate gets a confidence score from its angular and positional residuals
 
 **Applying without moving parts.** Before anything is created, the command captures the current pose (the API equivalent of *Capture Position*). The first selected relationship grounds the first browser component to its parent (`Occurrence.isGroundToParent`), fixing a reference for everything that follows. The "first browser component" is taken from the timeline (parametric designs) because `root.occurrences` is not in browser order. For each relationship the command tries the small set of offset/flip (and joint isFlipped) options, measures how far the affected components move — translation **and** rotation — and keeps the option that preserves position. On typical positioned assemblies this is zero movement.
 
-**Avoiding over-constraint.** Relationships are always applied **strongest-first** (rigid joints, then concentric, then coincident). After each one is applied, Fusion's own solver can be asked whether it is healthy; a relationship that adds no independent constraint is marked over-constrained ("sick"). What happens next depends on the **Redundant constraints** dropdown:
-
-- **Keep all** — health state is never read; every selected relationship is applied and kept, so the result may be over-constrained.
-- **Smart** (default) — the command tracks which **part-pairs** have already been constrained and drops a sick relationship only when its pair is **already in that set** (an *intra-pair redundancy* — for example a concentric left over once a centered joint already locks the pair). A sick relationship between a **new** pair is treated as an *inter-pair loop closure* — its parts are already indirectly connected through a chain, so it closes a kinematic loop such as the fourth link of a four-bar — and is **kept** despite the sick flag. Detection already keeps at most one relationship per (pair, type) — two flush faces between the same parts collapse to a single coincident upstream — so a same-pair drop only ever removes a genuinely redundant *cross-type* leftover, never a valid multi-face set. This is the middle ground between the two extremes.
-- **Aggressive** — every sick relationship is dropped. Using the solver as the rank oracle this way keeps the largest non-redundant set — a spanning structure plus the independent extra relationships that further locate parts — which mirrors the spanning-tree / degree-of-freedom approach from the underlying research, but it can also remove legitimate loop closures.
-
-In every mode that prunes, order matters: applying the strongest relationships first keeps them healthy and lets the redundant weaker ones drop, rather than the reverse. Pruning is always **incremental** (checked and dropped one relationship at a time); the command never batches a deferred `computeAll()` health sweep, which previously let over-constrained relationships pile up and crash the solver.
+**Avoiding over-constraint.** Relationships are applied **strongest-first** (rigid joints, then concentric, then coincident), and after each one Fusion's own solver is asked whether it is healthy. A relationship that adds no independent constraint — it closes a cycle already covered by stronger ones — is marked over-constrained ("sick") and the command removes it. Using the solver as the rank oracle keeps the largest non-redundant set — a spanning structure plus the independent extra relationships that further locate parts — which mirrors the spanning-tree / degree-of-freedom approach from the underlying research. Order matters: applying the strongest relationships first keeps them healthy and lets the redundant weaker ones drop, rather than the reverse. Pruning is **incremental** (checked and dropped one relationship at a time); the command never batches a deferred `computeAll()` health sweep, which previously let over-constrained relationships pile up and crash the solver.
 
 > **Parametric vs. direct designs:** the over-constraint check reads each relationship's health state, which Fusion only reports in **parametric** designs. In a **direct** design there is no timeline, so relationships report an *Unknown* health state and the redundancy check cannot prune them — everything selected is applied. Grounding and position preservation work in both.
 
@@ -90,7 +84,7 @@ sequenceDiagram
   loop Each selected relationship (strongest first)
     Cmd->>API: Create joint or assembly constraint (position-preserving)
     API-->>Cmd: healthState
-    Cmd->>API: Delete it if over-constrained (Smart: same-pair only; Aggressive: any)
+    Cmd->>API: Delete it if over-constrained (sick)
   end
   Cmd-->>User: Report created / skipped-redundant / moved
 ```
