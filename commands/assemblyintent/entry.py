@@ -833,6 +833,17 @@ def _palette_incoming(html_args: adsk.core.HTMLEventArgs):
 
     palette = ui.palettes.itemById(PALETTE_ID)
 
+    if action == "htmlReady":
+        # The page finished loading and is asking for current state. Push it
+        # now via sendInfoToHTML rather than trusting the browser to have
+        # re-read init.js — on Windows the embedded browser caches init.js
+        # across palette recreations and can serve a stale/empty copy, which
+        # left the galleries blank. This guarantees a fresh repaint.
+        if palette:
+            _send_palette_init(palette)
+        html_args.returnData = "OK"
+        return
+
     if action == "createComponent":
         msg = _action_create_component(data)
         if msg:

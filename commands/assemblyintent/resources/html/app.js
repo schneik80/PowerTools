@@ -193,4 +193,12 @@
             return 'OK';
         }
     };
+
+    // Tell the backend the page is loaded so it can push fresh state via
+    // sendInfoToHTML. The initial paint above uses window.__ptInit from
+    // init.js, but on Windows Fusion's embedded browser caches init.js by URL
+    // across palette recreations and may serve a stale/empty copy — so we
+    // never rely on init.js alone for the live doc lists. This handshake
+    // guarantees the galleries are repainted from current data on every open.
+    send('htmlReady', {});
 })();
