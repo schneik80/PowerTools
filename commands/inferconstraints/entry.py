@@ -107,19 +107,10 @@ AUTO_CHECK_CONF = 0.6
 # faces; the face count - known cheaply right after the linear collect pass and
 # before the quadratic work - is our early estimate of how long it will take.
 #   * At/above FACE_WARN_COUNT we log that it may be slow.
-#   * At/above FACE_PROGRESS_COUNT we show the lower-right progress bar (below it
-#     the scan finishes near-instantly and a progress bar would only flicker).
 #   * At/above FACE_CONFIRM_COUNT the wait can be many seconds, so we ask the
 #     user before starting - the one cheap moment we know they may be waiting.
 FACE_WARN_COUNT = 4000
-FACE_PROGRESS_COUNT = 400
 FACE_CONFIRM_COUNT = 4000
-# Likewise for apply: show progress once this many relationships are being
-# created (each does several constraint create/delete + solve trials).
-APPLY_PROGRESS_COUNT = 25
-# Refresh the progress bar every Nth step only - setting progressValue forces an
-# adsk.doEvents() repaint, which is not free, so we avoid doing it every step.
-PROGRESS_TICK = 16
 
 local_handlers = []
 
@@ -354,52 +345,47 @@ def command_execute(args: adsk.core.CommandEventArgs):
     redundant = 0
     moved = 0
     max_move_mm = 0.0
-    # Greedy, DOF-aware acceptance (CAD-Mate-Inference Part 2 A.4): apply each
-    # candidate, then ask Fusion's own solver whether it is over-constrained
-    # (a sick healthState). A sick constraint adds no independent DOF reduction
-    # - it closes a cycle in the component graph - so we drop it. This keeps the
-    # maximal non-redundant set without computing the constraint Jacobian
-    # ourselves. Candidates are processed in confidence order so the strongest
-    # relationships seed the spanning structure first.
+    # Apply each selected relationship and immediately check Fusion's own
+    # healthState. A sick (over-constrained) relationship adds no independent
+    # DOF reduction - it closes a cycle already covered by stronger ones - so we
+    # drop it right away.
     #
-    # Applying drives a solve per relationship and can be slow on a big
-    # selection, so show the lower-right progress bar (not a dialog) for all but
-    # the smallest batches.
-    progress = None
-    if len(selected) >= APPLY_PROGRESS_COUNT:
-        progress = _begin_progress(
-            f"{CMD_NAME}: applying relationships  %p%  (%v/%m)", len(selected)
-        )
-    try:
-        for idx, cand in enumerate(selected):
-            _progress_tick(progress, idx)
-            try:
-                con = _apply_candidate(root, cand)
-                if con is not None and _is_sick(con):
-                    # Capture Fusion's own diagnosis (over-constrained vs. a true
-                    # conflict) before deleting - the message is only readable
-                    # while the constraint still exists.
-                    reason = _sick_message(con)
-                    con.deleteMe()
-                    redundant += 1
-                    ptutil.log(
-                        f"{CMD_NAME}: dropped redundant {cand['type']} "
-                        f"{cand['label']}" + (f" - {reason}" if reason else "")
-                    )
-                    continue
-                created += 1
-                move_mm = cand.get("applied_move_cm", 0.0) * 10.0
-                if move_mm > POS_TOL_CM * 10.0:
-                    moved += 1
-                    max_move_mm = max(max_move_mm, move_mm)
-            except Exception as apply_err:
-                failed += 1
+    # Dropping INCREMENTALLY is what keeps the solver stable: it never lets sick
+    # joints accumulate. An earlier version deferred every health check to a
+    # single design.computeAll() at the end; that let the over-constrained
+    # relationships pile up and then crashed Fusion when computeAll tried to
+    # re-solve the tangle. So we do NOT batch and we do NOT force a recompute
+    # here - we keep the assembly healthy one relationship at a time. Strongest-
+    # first ordering means the strong relationships seed the structure and the
+    # weaker redundant ones are the ones that come out sick and drop.
+    #
+    # No progress bar here: this runs inside the command's compute transaction
+    # where the lower-right bar will not repaint.
+    for cand in selected:
+        try:
+            con = _apply_candidate(root, cand)
+            if con is not None and _is_sick(con):
+                # Read Fusion's diagnosis before deleting (only valid while the
+                # relationship still exists).
+                reason = _sick_message(con)
+                con.deleteMe()
+                redundant += 1
                 ptutil.log(
-                    f"{CMD_NAME}: failed to apply {cand['type']} "
-                    f"{cand['label']}: {apply_err}"
+                    f"{CMD_NAME}: dropped redundant {cand['type']} "
+                    f"{cand['label']}" + (f" - {reason}" if reason else "")
                 )
-    finally:
-        _end_progress(progress)
+                continue
+            created += 1
+            move_mm = cand.get("applied_move_cm", 0.0) * 10.0
+            if move_mm > POS_TOL_CM * 10.0:
+                moved += 1
+                max_move_mm = max(max_move_mm, move_mm)
+        except Exception as apply_err:
+            failed += 1
+            ptutil.log(
+                f"{CMD_NAME}: failed to apply {cand['type']} "
+                f"{cand['label']}: {apply_err}"
+            )
 
     msg = f"Applied {created} relationship(s)."
     if redundant:
@@ -449,40 +435,6 @@ def _clear_data_rows(inputs):
     return table
 
 
-def _progress_tick(progress, value, force=False):
-    """Advance the lower-right progress bar, repainting only every PROGRESS_TICK
-    steps (a progressValue write forces an adsk.doEvents() repaint, which is not
-    free). No-op when progress is None so callers stay branch-free."""
-    if progress is None:
-        return
-    if force or value % PROGRESS_TICK == 0:
-        try:
-            progress.progressValue = value
-            adsk.doEvents()  # let Fusion repaint; we run on the main thread
-        except Exception:
-            pass
-
-
-def _begin_progress(message, maximum):
-    """Show the non-modal lower-right progress bar (not a dialog). Returns the
-    ProgressBar, or None if it could not be shown."""
-    try:
-        bar = ui.progressBar
-        bar.show(message, 0, max(1, maximum), False)
-        return bar
-    except Exception as bar_err:
-        ptutil.log(f"{CMD_NAME}: progress bar unavailable ({bar_err})")
-        return None
-
-
-def _end_progress(progress):
-    if progress is not None:
-        try:
-            progress.hide()
-        except Exception:
-            pass
-
-
 def _rescan(design, inputs):
     """Run detection with the current tolerances and rebuild the preview table."""
     global _candidates, _large_scan_confirmed
@@ -525,17 +477,7 @@ def _rescan(design, inputs):
             return
         _large_scan_confirmed = True
 
-    progress = None
-    if n_faces >= FACE_PROGRESS_COUNT:
-        progress = _begin_progress(
-            f"{CMD_NAME}: comparing faces  %p%  (%v/%m)", n_faces
-        )
-    try:
-        _candidates, stats = _infer(
-            design, faces, stats, lin_tol, ang_tol, progress
-        )
-    finally:
-        _end_progress(progress)
+    _candidates, stats = _infer(design, faces, stats, lin_tol, ang_tol)
 
     table = _clear_data_rows(inputs)
     for cand in _candidates:
@@ -842,13 +784,12 @@ def _pair_timeline_key(cand, tl_rank):
     return (ranks[0], ranks[1])
 
 
-def _infer(design, faces, stats, lin_tol, ang_tol, progress=None):
+def _infer(design, faces, stats, lin_tol, ang_tol):
     """Return (candidates, stats): a ranked, de-duplicated candidate list and
     a dict describing what was scanned (for the diagnostic summary).
 
     *faces* / *stats* come from _collect_faces (done by the caller so it can
-    estimate cost up front); *progress*, if given, is the lower-right progress
-    bar advanced once per outer face during the O(n^2) broad phase."""
+    estimate cost up front)."""
     if len(faces) > FACE_WARN_COUNT:
         ptutil.log(
             f"{CMD_NAME}: {len(faces)} analytic faces - broad phase is O(n^2) "
@@ -863,7 +804,6 @@ def _infer(design, faces, stats, lin_tol, ang_tol, progress=None):
     pairs_tested = 0
     n = len(faces)
     for i in range(n):
-        _progress_tick(progress, i)
         a = faces[i]
         for j in range(i + 1, n):
             b = faces[j]
