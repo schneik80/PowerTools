@@ -86,6 +86,7 @@ DEFAULT_JOINT_TYPE = "Rigid"
 LIN_TOL_ID = "ic_lin_tol"
 ANG_TOL_ID = "ic_ang_tol"
 RESCAN_ID = "ic_rescan"
+PRUNE_REDUNDANT_ID = "ic_prune_redundant"
 PREVIEW_SEL_ID = "ic_preview_sel"
 TABLE_ID = "ic_table"
 SUMMARY_ID = "ic_summary"
@@ -102,6 +103,25 @@ DEFAULT_ANG_TOL_RAD = math.radians(0.5)
 
 # Confidence at/above which a candidate row is checked by default.
 AUTO_CHECK_CONF = 0.6
+
+# Redundancy-handling modes (the "Redundant constraints" dropdown). Applied in
+# apply order, each relationship is kept or dropped based on Fusion's health
+# state:
+#   * KEEP_ALL   - never drop; every selected relationship is applied and kept
+#                  (the assembly may end up over-constrained).
+#   * SMART      - drop a sick (over-constrained) relationship ONLY when its
+#                  part-pair already carries another relationship, i.e. an
+#                  intra-pair redundancy. A sick relationship on a NEW pair is a
+#                  kinematic-loop closure (e.g. the 4th link of a 4-bar) and is
+#                  kept. This is the default - the middle ground between the two
+#                  extremes.
+#   * AGGRESSIVE - drop every sick relationship (smallest constraint set; can
+#                  break legitimate loop closures).
+PRUNE_KEEP_ALL = "Keep all"
+PRUNE_SMART = "Smart (remove same-pair redundancy)"
+PRUNE_AGGRESSIVE = "Aggressive (remove all over-constrained)"
+PRUNE_MODES = [PRUNE_KEEP_ALL, PRUNE_SMART, PRUNE_AGGRESSIVE]
+DEFAULT_PRUNE_MODE = PRUNE_SMART
 
 # Guard rails for very large assemblies. The broad phase is O(n^2) over analytic
 # faces; the face count - known cheaply right after the linear collect pass and
@@ -181,6 +201,23 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     )
     rescan = inputs.addBoolValueInput(RESCAN_ID, "Re-scan", False)
     rescan.tooltip = "Re-run detection with the current tolerances."
+
+    # How to handle relationships Fusion flags as over-constrained once applied.
+    # See the PRUNE_* mode notes above and the apply loop in command_execute.
+    prune = inputs.addDropDownCommandInput(
+        PRUNE_REDUNDANT_ID, "Redundant constraints", adsk.core.DropDownStyles.TextListDropDownStyle
+    )
+    for mode in PRUNE_MODES:
+        prune.listItems.add(mode, mode == DEFAULT_PRUNE_MODE)
+    prune.tooltip = (
+        "What to do with relationships Fusion flags as over-constrained:\n"
+        "- Keep all: apply every selected relationship (may over-constrain).\n"
+        "- Smart: drop only an over-constrained relationship whose two parts are "
+        "already joined by another relationship; keep loop-closing relationships "
+        "between new pairs (e.g. the 4th link of a 4-bar). Recommended.\n"
+        "- Aggressive: drop every over-constrained relationship (smallest set; "
+        "can break kinematic loops)."
+    )
 
     # Selection input used purely to highlight the selected row's component pair
     # in the graphics. ui.activeSelections does not highlight while a command
@@ -299,6 +336,46 @@ def _highlight_selected_row(inputs, table):
     _highlight_candidate(inputs, cand)
 
 
+def _selected_prune_mode(inputs):
+    """The redundancy-handling mode chosen in the dropdown, defaulting to
+    DEFAULT_PRUNE_MODE if the input is missing for any reason."""
+    dd = adsk.core.DropDownCommandInput.cast(inputs.itemById(PRUNE_REDUNDANT_ID))
+    item = dd.selectedItem if dd else None
+    return item.name if item else DEFAULT_PRUNE_MODE
+
+
+def _is_parallel(d1, d2, sin_ang):
+    """True if two unit directions are parallel OR anti-parallel within the
+    angular tolerance (|sin(angle)| <= sin_ang). Anti-parallel still counts: two
+    coincident faces can mate from opposite sides yet share the same line."""
+    if d1 is None or d2 is None:
+        return False
+    try:
+        return d1.crossProduct(d2).length <= sin_ang
+    except Exception:
+        return False
+
+
+def _geometrically_redundant(cand, kept, sin_ang):
+    """True if cand duplicates the DOF of a relationship already kept on the same
+    part-pair: same family (Concentric / Coincident) AND parallel principal
+    direction (axis for concentric, normal for coincident).
+
+    This is the guard that keeps Smart pruning from dropping VALID multi-
+    constraint pairs - concentric + a perpendicular coincident (a revolute), or
+    two coincident faces with different normals (a slider). Those differ in
+    family or in direction, so they are not redundant. Only a genuine overlap - a
+    second coincident parallel to the first, or a second collinear concentric -
+    returns True. *kept* is the list of {"type", "dir"} descriptors already
+    applied to this pair."""
+    fam = cand.get("type")
+    d = cand.get("dir")
+    for k in kept:
+        if k.get("type") == fam and _is_parallel(d, k.get("dir"), sin_ang):
+            return True
+    return False
+
+
 def command_execute(args: adsk.core.CommandEventArgs):
     ptutil.log(f"{CMD_NAME} Command Execute Event")
 
@@ -308,6 +385,15 @@ def command_execute(args: adsk.core.CommandEventArgs):
         return
 
     inputs = args.command.commandInputs
+    prune_mode = _selected_prune_mode(inputs)
+    # Angular tolerance for the per-pair redundancy guard (Smart mode): two
+    # principal directions within this angle are treated as parallel. Read from
+    # the dialog so it tracks the same tolerance detection used.
+    ang_tol = DEFAULT_ANG_TOL_RAD
+    ang_in = inputs.itemById(ANG_TOL_ID)
+    if ang_in and ang_in.value > 0:
+        ang_tol = ang_in.value
+    sin_ang = math.sin(ang_tol)
     selected = []
     for cand in _candidates:
         chk = adsk.core.BoolValueCommandInput.cast(inputs.itemById(cand["chk_id"]))
@@ -345,37 +431,73 @@ def command_execute(args: adsk.core.CommandEventArgs):
     redundant = 0
     moved = 0
     max_move_mm = 0.0
-    # Apply each selected relationship and immediately check Fusion's own
-    # healthState. A sick (over-constrained) relationship adds no independent
-    # DOF reduction - it closes a cycle already covered by stronger ones - so we
-    # drop it right away.
+    # Apply each selected relationship and (unless mode is KEEP_ALL) check
+    # Fusion's own healthState immediately. A sick (over-constrained) relationship
+    # adds no independent DOF reduction at the pair level, but there are two very
+    # different reasons it can be sick, and they need opposite treatment:
+    #
+    #   * Intra-pair redundancy - its two parts are ALREADY joined by another
+    #     relationship applied earlier (e.g. a concentric, a coincident AND a
+    #     centered joint all stacked on the same pair). This extra genuinely
+    #     over-constrains and should drop.
+    #   * Inter-pair loop closure - its two parts are a NEW pair, but they are
+    #     already indirectly connected through a chain, so this relationship
+    #     closes a kinematic loop (the classic 4th link of a 4-bar). Fusion flags
+    #     it over-constrained, yet dropping it leaves the loop open. It must stay.
+    #
+    # SMART mode (default) distinguishes the two with a per-pair redundancy guard
+    # (_geometrically_redundant): it drops a sick relationship only when its pair
+    # already carries a kept relationship of the SAME family AND a PARALLEL
+    # principal direction - a true DOF overlap (a second parallel coincident, a
+    # second collinear concentric). A sick relationship that is a new pair (loop
+    # closure), a different family (concentric + coincident -> revolute), or a
+    # different direction (two coincident faces -> slider) is KEPT: the sick flag
+    # alone is not enough to drop it, because Fusion can flag a genuinely
+    # independent constraint over-constrained. AGGRESSIVE drops every sick one
+    # (smallest set, may break loops); KEEP_ALL never reads healthState.
     #
     # Dropping INCREMENTALLY is what keeps the solver stable: it never lets sick
     # joints accumulate. An earlier version deferred every health check to a
     # single design.computeAll() at the end; that let the over-constrained
     # relationships pile up and then crashed Fusion when computeAll tried to
     # re-solve the tangle. So we do NOT batch and we do NOT force a recompute
-    # here - we keep the assembly healthy one relationship at a time. Strongest-
-    # first ordering means the strong relationships seed the structure and the
-    # weaker redundant ones are the ones that come out sick and drop.
+    # here. Strongest-first ordering means the strong relationships seed the
+    # structure and the weaker redundant ones are the ones that come out sick.
     #
     # No progress bar here: this runs inside the command's compute transaction
     # where the lower-right bar will not repaint.
+    applied_by_pair = {}
     for cand in selected:
         try:
             con = _apply_candidate(root, cand)
-            if con is not None and _is_sick(con):
-                # Read Fusion's diagnosis before deleting (only valid while the
-                # relationship still exists).
-                reason = _sick_message(con)
-                con.deleteMe()
-                redundant += 1
-                ptutil.log(
-                    f"{CMD_NAME}: dropped redundant {cand['type']} "
-                    f"{cand['label']}" + (f" - {reason}" if reason else "")
+            pair = cand.get("pair_key")
+            if (
+                prune_mode != PRUNE_KEEP_ALL
+                and con is not None
+                and _is_sick(con)
+            ):
+                # AGGRESSIVE drops any sick relationship. SMART drops only a true
+                # intra-pair overlap (same family + parallel direction); a new
+                # pair, a different family, or a different direction is kept.
+                smart_drop = pair is not None and _geometrically_redundant(
+                    cand, applied_by_pair.get(pair, []), sin_ang
                 )
-                continue
+                if prune_mode == PRUNE_AGGRESSIVE or smart_drop:
+                    # Read Fusion's diagnosis before deleting (only valid while
+                    # the relationship still exists).
+                    reason = _sick_message(con)
+                    con.deleteMe()
+                    redundant += 1
+                    ptutil.log(
+                        f"{CMD_NAME}: dropped redundant {cand['type']} "
+                        f"{cand['label']}" + (f" - {reason}" if reason else "")
+                    )
+                    continue
             created += 1
+            if pair is not None:
+                applied_by_pair.setdefault(pair, []).append(
+                    {"type": cand.get("type"), "dir": cand.get("dir")}
+                )
             move_mm = cand.get("applied_move_cm", 0.0) * 10.0
             if move_mm > POS_TOL_CM * 10.0:
                 moved += 1
@@ -934,6 +1056,10 @@ def _test_concentric(a, b, lin_tol, sin_ang):
         "is_mate": True,
         "is_flipped": False,
         "offset_cm": 0.0,
+        # Principal direction (cylinder axis). Used by the per-pair redundancy
+        # guard in command_execute to tell a true DOF overlap from an
+        # independent constraint on the same pair.
+        "dir": a.dir,
     }
 
 
@@ -985,6 +1111,9 @@ def _test_coincident(a, b, lin_tol, sin_ang):
         "offset_cm": gap,
         "centered": centered,
         "default_joint": default_joint,
+        # Principal direction (plane normal); see the redundancy-guard note in
+        # _test_concentric.
+        "dir": a.dir,
     }
 
 

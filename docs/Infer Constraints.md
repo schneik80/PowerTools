@@ -2,7 +2,7 @@
 
 [Back to PowerTools Assembly](../README.md)
 
-The Infer Constraints command looks at an assembly whose components are already in their final spatial position — most often a STEP import — but which has no relationships between them, and proposes relationships based on the geometry that is already mating. It detects coaxial cylindrical faces (shaft-in-hole) and flush planar faces, grounds the first component, and lists what it finds with a confidence score so you can choose which relationships to apply. Everything it applies is **position-preserving** — components do not move when a relationship is created — and it automatically skips redundant relationships so the assembly is not over-constrained.
+The Infer Constraints command looks at an assembly whose components are already in their final spatial position — most often a STEP import — but which has no relationships between them, and proposes relationships based on the geometry that is already mating. It detects coaxial cylindrical faces (shaft-in-hole) and flush planar faces, grounds the first component, and lists what it finds with a confidence score so you can choose which relationships to apply. Everything it applies is **position-preserving** — components do not move when a relationship is created — and it can skip redundant relationships so the assembly is not over-constrained, while keeping the relationships that close kinematic loops.
 
 ## What you can do
 
@@ -13,7 +13,11 @@ The Infer Constraints command looks at an assembly whose components are already 
 - Review every inferred relationship in a preview table with the participating components and a confidence score, and click a row's **Components** button to highlight that pair in the graphics.
 - Adjust the linear and angular tolerances and re-scan to widen or tighten detection.
 - Select exactly which relationships to apply; high-confidence rows are pre-selected.
-- Apply everything in one step without moving the components, and let the command **drop redundant relationships** that would over-constrain the assembly.
+- Apply everything in one step without moving the components.
+- Choose how the command handles **redundant relationships** that would over-constrain the assembly, via the **Redundant constraints** dropdown:
+  - **Keep all** — apply every selected relationship, even if it over-constrains the assembly.
+  - **Smart (remove same-pair redundancy)** — *default.* Drop an over-constrained relationship only when its two parts are already joined by another relationship, and **keep loop-closing relationships** between parts that are only indirectly connected (for example, the fourth link of a four-bar linkage).
+  - **Aggressive (remove all over-constrained)** — drop every relationship Fusion flags as over-constrained. Produces the smallest constraint set but can break legitimate kinematic loops.
 
 ## Prerequisites
 
@@ -31,7 +35,8 @@ The Infer Constraints command looks at an assembly whose components are already 
 5. (Optional) Adjust **Linear tolerance** or **Angular tolerance** and click **Re-scan** to refine the results. Looser tolerances find more (and weaker) candidates; tighter tolerances keep only near-exact matches.
 6. For any centered (Joint) row, choose the motion type from its dropdown (Rigid by default).
 7. Check the relationships you want to apply. Rows with a confidence of 0.60 or higher are checked for you.
-8. Click **OK** to apply. The command captures the current position first, then applies the selected relationships — grounding first, then strongest relationships first — and reports how many were created, how many redundant ones were skipped, and whether anything moved.
+8. Choose a **Redundant constraints** mode. The default, **Smart**, removes only same-pair redundancy while preserving loop closures; choose **Keep all** to apply everything, or **Aggressive** for the smallest constraint set.
+9. Click **OK** to apply. The command captures the current position first, then applies the selected relationships — grounding first, then strongest relationships first — and reports how many were created, how many redundant ones were skipped, and whether anything moved.
 
 > **Note:** Inferring relationships is inherently ambiguous — research on this problem puts the realistic single-best-answer accuracy near 73%. Treat the list as ranked suggestions and review the low-confidence rows before applying.
 
