@@ -123,9 +123,11 @@ PRUNE_AGGRESSIVE = "Aggressive (remove all over-constrained)"
 PRUNE_MODES = [PRUNE_KEEP_ALL, PRUNE_SMART, PRUNE_AGGRESSIVE]
 DEFAULT_PRUNE_MODE = PRUNE_SMART
 
-# Guard rails for very large assemblies. The broad phase is O(n^2) over analytic
-# faces; the face count - known cheaply right after the linear collect pass and
-# before the quadratic work - is our early estimate of how long it will take.
+# Guard rails for very large assemblies. The broad phase is sub-quadratic in
+# practice (faces are grouped by type and swept along x; see _infer), but a big
+# enough assembly can still take a while. The face count - known cheaply right
+# after the linear collect pass and before the pairwise work - is our early
+# estimate of how long it will take.
 #   * At/above FACE_WARN_COUNT we log that it may be slow.
 #   * At/above FACE_CONFIRM_COUNT the wait can be many seconds, so we ask the
 #     user before starting - the one cheap moment we know they may be waiting.
@@ -141,6 +143,12 @@ _row_counter = 0
 # Once the user okays scanning a large assembly we don't ask again this session
 # (re-asking on every tolerance tweak would be obnoxious).
 _large_scan_confirmed = False
+# Faces collected once per dialog session and reused on every re-scan. The model
+# geometry cannot change while the command dialog is open, so re-reading it on
+# each tolerance tweak is wasted work - only the tolerance-dependent inference
+# needs to re-run. Both are cleared in command_destroy.
+_faces_cache = None
+_stats_cache = None
 
 
 # ---------------------------------------------------------------------------
@@ -532,9 +540,12 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
 def command_destroy(args: adsk.core.CommandEventArgs):
     global local_handlers, _candidates, _large_scan_confirmed
+    global _faces_cache, _stats_cache
     local_handlers = []
     _candidates = []
     _large_scan_confirmed = False
+    _faces_cache = None
+    _stats_cache = None
 
 
 # ---------------------------------------------------------------------------
@@ -557,6 +568,46 @@ def _clear_data_rows(inputs):
     return table
 
 
+def _collect_faces_cached(design):
+    """Collect faces once per dialog session and reuse them on re-scan.
+
+    Geometry is static while the command dialog is open, so re-reading it on
+    every tolerance change is wasted work; only the tolerance-dependent inference
+    needs to re-run. Returns (faces, stats); stats is a fresh copy each call so
+    _infer's pairs_tested write does not pollute the cached original."""
+    global _faces_cache, _stats_cache
+    if _faces_cache is None:
+        _faces_cache, _stats_cache = _collect_faces(design)
+    return _faces_cache, dict(_stats_cache)
+
+
+def _begin_scan_progress(message):
+    """Show a one-shot busy indicator for the scan and force a single repaint so
+    it actually appears before the (blocking) scan runs.
+
+    We call adsk.doEvents() exactly ONCE here, never inside the scan loop:
+    per-iteration doEvents from a command handler is the re-entrancy crash vector
+    that commit ce4e768 removed. A single doEvents during this read-only phase
+    (no geometry is mutated) just lets the status bar paint. Returns the
+    ProgressBar, or None if it could not be shown."""
+    try:
+        bar = ui.progressBar
+        bar.showBusy(message)
+        adsk.doEvents()
+        return bar
+    except Exception as bar_err:
+        ptutil.log(f"{CMD_NAME}: scan indicator unavailable ({bar_err})")
+        return None
+
+
+def _end_scan_progress(bar):
+    if bar is not None:
+        try:
+            bar.hide()
+        except Exception:
+            pass
+
+
 def _rescan(design, inputs):
     """Run detection with the current tolerances and rebuild the preview table."""
     global _candidates, _large_scan_confirmed
@@ -572,34 +623,46 @@ def _rescan(design, inputs):
 
     summary = inputs.itemById(SUMMARY_ID)
 
-    # Collect faces first: this is a linear pass, so the resulting count is a
-    # cheap, early estimate of the O(n^2) broad-phase cost that follows. It is
-    # the one easy moment to tell whether the user is in for a long wait.
-    faces, stats = _collect_faces(design)
-    n_faces = len(faces)
+    # Show a busy indicator up front so the user sees the scan is running before
+    # the dialog appears (the first scan blocks command_created). It is hidden in
+    # the finally below, including on the large-assembly opt-out path.
+    bar = _begin_scan_progress(f"{CMD_NAME}: scanning assembly…")
+    try:
+        # Collect faces (cached for the dialog). The count is a cheap, early
+        # estimate of the broad-phase cost that follows - the one easy moment to
+        # tell whether the user is in for a long wait.
+        faces, stats = _collect_faces_cached(design)
+        n_faces = len(faces)
 
-    if n_faces >= FACE_CONFIRM_COUNT and not _large_scan_confirmed:
-        est_pairs = n_faces * (n_faces - 1) // 2
-        res = ui.messageBox(
-            f"This assembly has {n_faces:,} analytic faces, so inferring "
-            f"constraints compares up to {est_pairs:,} face pairs and may take "
-            "a while.\n\nRun the scan now?",
-            CMD_NAME,
-            adsk.core.MessageBoxButtonTypes.YesNoButtonType,
-            adsk.core.MessageBoxIconTypes.QuestionIconType,
-        )
-        if res != adsk.core.DialogResults.DialogYes:
-            _candidates = []
-            _clear_data_rows(inputs)
-            if summary:
-                summary.text = (
-                    f"Scan skipped ({n_faces:,} faces). Click Re-scan to run it, "
-                    "or close and simplify/select a smaller scope first."
-                )
-            return
-        _large_scan_confirmed = True
+        if n_faces >= FACE_CONFIRM_COUNT and not _large_scan_confirmed:
+            _end_scan_progress(bar)
+            bar = None
+            est_pairs = n_faces * (n_faces - 1) // 2
+            res = ui.messageBox(
+                f"This assembly has {n_faces:,} analytic faces, so inferring "
+                f"constraints compares up to {est_pairs:,} face pairs and may "
+                "take a while.\n\nRun the scan now?",
+                CMD_NAME,
+                adsk.core.MessageBoxButtonTypes.YesNoButtonType,
+                adsk.core.MessageBoxIconTypes.QuestionIconType,
+            )
+            if res != adsk.core.DialogResults.DialogYes:
+                _candidates = []
+                _clear_data_rows(inputs)
+                if summary:
+                    summary.text = (
+                        f"Scan skipped ({n_faces:,} faces). Click Re-scan to run "
+                        "it, or close and simplify/select a smaller scope first."
+                    )
+                return
+            _large_scan_confirmed = True
+            bar = _begin_scan_progress(
+                f"{CMD_NAME}: comparing {n_faces:,} faces…"
+            )
 
-    _candidates, stats = _infer(design, faces, stats, lin_tol, ang_tol)
+        _candidates, stats = _infer(design, faces, stats, lin_tol, ang_tol)
+    finally:
+        _end_scan_progress(bar)
 
     table = _clear_data_rows(inputs)
     for cand in _candidates:
@@ -698,7 +761,15 @@ class _FaceRec:
         "dir",
         "radius",
         "area",
-        "bbox",
+        # Axis-aligned bounding box as plain floats. Cached once here so the hot
+        # broad-phase loop compares scalars instead of re-reading BoundingBox3D /
+        # Point3D properties across the API boundary on every pair.
+        "min_x",
+        "min_y",
+        "min_z",
+        "max_x",
+        "max_y",
+        "max_z",
         "face",
     )
 
@@ -710,7 +781,10 @@ class _FaceRec:
         self.dir = direction
         self.radius = radius
         self.area = face.area
-        self.bbox = face.boundingBox
+        bb = face.boundingBox
+        mn, mx = bb.minPoint, bb.maxPoint
+        self.min_x, self.min_y, self.min_z = mn.x, mn.y, mn.z
+        self.max_x, self.max_y, self.max_z = mx.x, mx.y, mx.z
         self.face = face
 
 
@@ -812,14 +886,17 @@ def _collect_faces(design):
     return records, stats
 
 
-def _bbox_near(b1, b2, tol):
+def _bbox_near(a, b, tol):
+    """True if two faces' axis-aligned bounding boxes overlap (inflated by tol).
+    Operates on the scalar bounds cached on each _FaceRec, so this runs with no
+    API crossings in the broad-phase inner loop."""
     return (
-        b1.minPoint.x - tol <= b2.maxPoint.x
-        and b2.minPoint.x - tol <= b1.maxPoint.x
-        and b1.minPoint.y - tol <= b2.maxPoint.y
-        and b2.minPoint.y - tol <= b1.maxPoint.y
-        and b1.minPoint.z - tol <= b2.maxPoint.z
-        and b2.minPoint.z - tol <= b1.maxPoint.z
+        a.min_x - tol <= b.max_x
+        and b.min_x - tol <= a.max_x
+        and a.min_y - tol <= b.max_y
+        and b.min_y - tol <= a.max_y
+        and a.min_z - tol <= b.max_z
+        and b.min_z - tol <= a.max_z
     )
 
 
@@ -914,8 +991,8 @@ def _infer(design, faces, stats, lin_tol, ang_tol):
     estimate cost up front)."""
     if len(faces) > FACE_WARN_COUNT:
         ptutil.log(
-            f"{CMD_NAME}: {len(faces)} analytic faces - broad phase is O(n^2) "
-            "and may be slow."
+            f"{CMD_NAME}: {len(faces)} analytic faces - large scan, the broad "
+            "phase may take a moment."
         )
 
     sin_ang = math.sin(ang_tol)
@@ -923,31 +1000,53 @@ def _infer(design, faces, stats, lin_tol, ang_tol):
     # between the same two parts collapse to the strongest one.
     best = {}
 
+    # Broad phase. Two cheap structural facts cut this well below the naive
+    # O(n^2) all-pairs scan, while still testing exactly the same pairs in
+    # detail:
+    #   * Cross-type pairs never match (a plane never mates a cylinder), so group
+    #     faces by type and only compare within a group.
+    #   * Sort each group by bounding-box min-x, then sweep: once a later face
+    #     starts beyond the current face's x-extent (+ tolerance), no further
+    #     face in the sorted group can overlap it either, so the inner loop
+    #     breaks. On a spread-out assembly this drops the practical cost toward
+    #     O(n*k) for k local neighbours. The full 3-axis _bbox_near still gates
+    #     every surviving pair, so the candidate set is identical.
+    groups = {"cyl": [], "plane": []}
+    for r in faces:
+        bucket = groups.get(r.ftype)
+        if bucket is not None:
+            bucket.append(r)
+    for bucket in groups.values():
+        bucket.sort(key=lambda r: r.min_x)
+
     pairs_tested = 0
-    n = len(faces)
-    for i in range(n):
-        a = faces[i]
-        for j in range(i + 1, n):
-            b = faces[j]
-            if a.src == b.src:
-                continue  # faces on the same part
-            if a.ftype != b.ftype:
-                continue
-            if not _bbox_near(a.bbox, b.bbox, lin_tol):
-                continue
+    for ftype, bucket in groups.items():
+        m = len(bucket)
+        for i in range(m):
+            a = bucket[i]
+            a_max_x = a.max_x
+            a_src = a.src
+            for j in range(i + 1, m):
+                b = bucket[j]
+                if b.min_x - lin_tol > a_max_x:
+                    break  # sorted by min-x: nothing later can overlap in x
+                if a_src == b.src:
+                    continue  # faces on the same part
+                if not _bbox_near(a, b, lin_tol):
+                    continue
 
-            pairs_tested += 1
-            if a.ftype == "cyl":
-                cand = _test_concentric(a, b, lin_tol, sin_ang)
-            else:
-                cand = _test_coincident(a, b, lin_tol, sin_ang)
-            if cand is None:
-                continue
+                pairs_tested += 1
+                if ftype == "cyl":
+                    cand = _test_concentric(a, b, lin_tol, sin_ang)
+                else:
+                    cand = _test_coincident(a, b, lin_tol, sin_ang)
+                if cand is None:
+                    continue
 
-            key = (tuple(sorted((a.src, b.src))), cand["type"])
-            cand["pair_key"] = key[0]  # the two parts, for grouping a pair's rows
-            if key not in best or cand["confidence"] > best[key]["confidence"]:
-                best[key] = cand
+                key = (tuple(sorted((a_src, b.src))), cand["type"])
+                cand["pair_key"] = key[0]  # the two parts, for grouping rows
+                if key not in best or cand["confidence"] > best[key]["confidence"]:
+                    best[key] = cand
 
     stats["pairs_tested"] = pairs_tested
     # Apply order, outer-to-inner:

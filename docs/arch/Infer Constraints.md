@@ -7,7 +7,7 @@ When the command opens, it traverses every leaf occurrence (and any root-level s
 
 Detection runs in two phases:
 
-- **Broad phase** — face pairs from different parts are pre-filtered by bounding-box proximity (inflated by the linear tolerance) so only nearby faces are tested in detail.
+- **Broad phase** — faces are grouped by type (planar/cylindrical, since cross-type pairs never mate) and each group is sorted by bounding-box min-x and swept: the inner loop stops once a later face starts beyond the current face's x-extent plus the linear tolerance. Surviving pairs are confirmed with a full three-axis bounding-box overlap test (using bounds cached as plain floats on each face record to avoid per-pair API reads) so only nearby faces are tested in detail. This keeps the candidate set identical to an exhaustive all-pairs scan while bringing the practical cost well below O(n²). The collected faces are cached for the life of the dialog, so changing a tolerance and re-scanning re-runs only the inference, not the geometry collection.
 - **Narrow phase** — the analytic surface parameters are compared:
   - *Concentric:* both cylinder axes are parallel (within the angular tolerance) and collinear (axis-to-axis distance within the linear tolerance). Differing radii are allowed and reported as shaft-in-hole. Applied as a **coincident assembly constraint** between the cylindrical faces.
   - *Coincident:* both plane normals are parallel and the signed gap along the normal is within the linear tolerance. Applied as a **coincident assembly constraint** (which leaves the in-plane sliding free).
