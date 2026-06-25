@@ -133,6 +133,11 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         # The special substring that identifies Related Data documents.
         _related_marker = subString  # " ‹+› "
         _active_doc_id = doc.designDataFile.id if doc.designDataFile else None
+        _active_project_id = None
+        try:
+            _active_project_id = doc.designDataFile.parentProject.id
+        except Exception:
+            pass
 
         def _is_drawing(data_file):
             try:
@@ -317,12 +322,30 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                     url = candidate
             except Exception:
                 pass
+            path = None
+            try:
+                parts = []
+                current = file.parentFolder
+                depth = 0
+                while current is not None and depth < 10:
+                    if current.isRoot:
+                        break
+                    parts.insert(0, current.name)
+                    current = current.parentFolder
+                    depth += 1
+                proj = file.parentProject
+                path = proj.name + (" / " + " / ".join(parts) if parts else "")
+                if _active_project_id and proj.id != _active_project_id:
+                    path = f"⚠️ {path}\n(Cross Project Reference)"
+            except Exception:
+                pass
             return {
                 "name": file.name,
                 "id": file.id,
                 "url": url,
                 "file": file,
                 "thumb": None,
+                "path": path,
             }
 
         for file in parentDataFiles or []:
@@ -382,7 +405,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
             grp = group.children
 
-            def _set_row_tooltip(input_obj, item_name, thumb_path, action_text=None):
+            def _set_row_tooltip(input_obj, item_name, thumb_path, action_text=None, path=None):
                 short_desc = (
                     f"{action_text}: {item_name}" if action_text else item_name
                 )
@@ -390,6 +413,11 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                     input_obj.tooltip = short_desc
                 except Exception:
                     pass
+                if path:
+                    try:
+                        input_obj.tooltipDescription = path
+                    except Exception:
+                        pass
                 try:
                     input_obj.toolClipFilename = thumb_path
                 except Exception:
@@ -407,7 +435,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                 name_in = grp.addTextBoxCommandInput(
                     f"{prefix}_name_{i}", "", html.escape(item["name"]), 1, True
                 )
-                _set_row_tooltip(name_in, item["name"], thumb_path)
+                _set_row_tooltip(name_in, item["name"], thumb_path, path=item.get("path"))
 
                 if item.get("file"):
                     open_btn = grp.addBoolValueInput(
@@ -418,13 +446,14 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                         item["name"],
                         thumb_path,
                         "Open in Fusion",
+                        path=item.get("path"),
                     )
                     _fusion_btns[f"{prefix}_open_{i}"] = item["file"]
                 else:
                     open_btn = grp.addTextBoxCommandInput(
                         f"{prefix}_nopen_{i}", "", "–", 1, True
                     )
-                    _set_row_tooltip(open_btn, item["name"], thumb_path)
+                    _set_row_tooltip(open_btn, item["name"], thumb_path, path=item.get("path"))
 
                 if item.get("url"):
                     web_btn = grp.addBoolValueInput(
@@ -435,13 +464,14 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                         item["name"],
                         thumb_path,
                         "Open in web browser",
+                        path=item.get("path"),
                     )
                     _browser_btns[f"{prefix}_web_{i}"] = item["url"]
                 else:
                     web_btn = grp.addTextBoxCommandInput(
                         f"{prefix}_nweb_{i}", "", "–", 1, True
                     )
-                    _set_row_tooltip(web_btn, item["name"], thumb_path)
+                    _set_row_tooltip(web_btn, item["name"], thumb_path, path=item.get("path"))
 
                 table.addCommandInput(name_in, i, 0)
                 table.addCommandInput(open_btn, i, 1)
