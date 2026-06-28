@@ -1,4 +1,5 @@
 # Change Cycle Color — Architecture
+
 [← Change Cycle Color guide](../Change%20Cycle%20Color.md)
 
 ## Architecture
