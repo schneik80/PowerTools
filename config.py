@@ -147,20 +147,12 @@ SETTINGS_FILE = os.path.join(CACHE_DIR, "settings.json")
 
 
 def load_settings() -> dict:
-    if not os.path.exists(SETTINGS_FILE):
-        return {}
-    try:
-        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+    data = ptutil.read_json(SETTINGS_FILE, {})
+    return data if isinstance(data, dict) else {}
 
 
 def save_settings(settings: dict) -> None:
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-        json.dump(settings, f, indent=2)
+    ptutil.write_json_atomic(SETTINGS_FILE, settings)
 
 
 # ---------------------------------------------------------------------------

@@ -312,7 +312,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
         progressBar = ui.progressBar
         progressBar.showBusy("Getting Document References…", True)
-        adsk.doEvents
+        adsk.doEvents()
 
         def make_file_data(file):
             url = None
@@ -373,7 +373,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         all_items = docParents + docChildren + docDrawings + docFasteners + docRelated
         for fd in all_items:
             progressBar.showBusy(f"Fetching thumbnail: {fd['name'][:40]}…", True)
-            adsk.doEvents
+            adsk.doEvents()
             fd["thumb"] = fetch_thumbnail(fd["file"])
 
         # Walk the parent chain recursively to find root assemblies.
@@ -384,7 +384,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         # Fetch thumbnails for roots.
         for fd in docRoots:
             progressBar.showBusy(f"Fetching root thumbnail: {fd['name'][:40]}…", True)
-            adsk.doEvents
+            adsk.doEvents()
             fd["thumb"] = fetch_thumbnail(fd["file"])
 
         progressBar.hide()

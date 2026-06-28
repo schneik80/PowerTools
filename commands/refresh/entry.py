@@ -51,12 +51,46 @@ def stop():
 def command_created(args: adsk.core.CommandCreatedEventArgs):
     ptutil.log(f"{CMD_NAME} Command Event")
 
-    # this handles the document close and reopen
-    id = app.activeDocument.dataFile.id
-    sF = app.data.findFileById(id)
+    # Refresh pulls the latest Team Hub version by closing and reopening the
+    # active document. Closing first is required so Fusion reloads the file from
+    # the Hub instead of re-activating the already-open (stale) copy.
     doc_a = app.activeDocument
+    if doc_a.dataFile is None:
+        ui.messageBox(
+            "The active document must be saved to Team Hub before it can be refreshed.",
+            CMD_NAME,
+        )
+        return
+
+    source_file = app.data.findFileById(doc_a.dataFile.id)
+    if source_file is None:
+        ui.messageBox("Could not locate this document in Team Hub.", CMD_NAME)
+        return
+
+    # close(False) discards unsaved edits — a destructive action, so confirm first.
+    if doc_a.isModified:
+        result = ui.messageBox(
+            "This document has unsaved changes that will be discarded when it is "
+            "refreshed to the latest Team Hub version.\n\nContinue?",
+            CMD_NAME,
+            adsk.core.MessageBoxButtonTypes.YesNoButtonType,
+            adsk.core.MessageBoxIconTypes.WarningIconType,
+        )
+        if result != adsk.core.DialogResults.DialogYes:
+            return
+
+    # Open the looked-up file only after the stale copy is closed; if the open
+    # fails the original is already gone, so surface it rather than failing silently.
     doc_a.close(False)
-    app.documents.open(sF)
+    try:
+        app.documents.open(source_file)
+    except Exception:
+        ptutil.handle_error(CMD_NAME)
+        ui.messageBox(
+            "Could not reopen the document after refresh. Reopen it from "
+            "Team Hub via the Data Panel or the File menu.",
+            CMD_NAME,
+        )
 
 
 # This event handler is called when the command terminates.

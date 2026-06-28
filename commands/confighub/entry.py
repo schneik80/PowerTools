@@ -9,7 +9,6 @@
 
 import adsk.core
 import os, os.path
-import json
 from ...lib import ptAddInUtils as ptutil
 from ... import config
 
@@ -61,11 +60,8 @@ def stop():
 
 def _load_hubs():
     """Return the hubs list from hub.json, or an empty list if the file does not exist."""
-    if not os.path.isfile(HUB_JSON_PATH):
-        return []
-    with open(HUB_JSON_PATH) as f:
-        data = json.load(f)
-    return data.get("hubs", [])
+    data = ptutil.read_json(HUB_JSON_PATH, {})
+    return data.get("hubs", []) if isinstance(data, dict) else []
 
 
 def _resolve_hub_for_folder(folder):
@@ -163,8 +159,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     if not replaced:
         hubs.append(new_entry)
 
-    with open(HUB_JSON_PATH, "w") as f:
-        json.dump({"hubs": hubs}, f, indent=2)
+    ptutil.write_json_atomic(HUB_JSON_PATH, {"hubs": hubs})
 
     ptutil.log(f"{CMD_NAME} hub.json updated: {hubs}")
 

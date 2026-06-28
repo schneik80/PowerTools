@@ -71,20 +71,12 @@ def start():
 
 # Executed when add-in is stopped.
 def stop():
-    # Get the various UI elements for this command
-    qat = ui.toolbars.itemById("QATRight")
-    command_control = qat.controls.itemById(CMD_ID)
+    # Remove this command's control from the shared QATRight "Share Menu" flyout.
+    # The helper deletes the flyout itself only once its last control is gone, so
+    # sibling share commands are never torn down out from under each other.
+    ptutil.remove_from_qat_right_flyout(CMD_ID, "shareDropMenu")
+
     command_definition = ui.commandDefinitions.itemById(CMD_ID)
-    dropDown = qat.controls.itemById("shareMenu")
-
-    # Delete the button command control
-    if command_control:
-        command_control.deleteMe()
-
-    if dropDown:
-        dropDown.deleteMe()
-
-    # Delete the command definition
     if command_definition:
         command_definition.deleteMe()
 

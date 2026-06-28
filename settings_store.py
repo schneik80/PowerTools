@@ -17,6 +17,7 @@ import os
 
 from . import config
 from . import command_registry as registry
+from .lib import ptAddInUtils as ptutil
 
 # Default folder sets for the "Add Project Folders" command (defaultfolders).
 # These were hard-coded in the command; they now seed the user-editable lists.
@@ -90,21 +91,15 @@ def load() -> dict:
     if not os.path.isfile(config.SETTINGS_PREFS_FILE):
         save(_migrate_legacy(defaults))
         return load()
-    try:
-        with open(config.SETTINGS_PREFS_FILE, "r", encoding="utf-8") as f:
-            stored = json.load(f)
-        if not isinstance(stored, dict):
-            stored = {}
-    except Exception:
+    stored = ptutil.read_json(config.SETTINGS_PREFS_FILE, {})
+    if not isinstance(stored, dict):
         stored = {}
     # Merge over defaults so newly added groups/commands pick up their defaults.
     return _deep_merge(defaults, stored)
 
 
 def save(data: dict) -> None:
-    os.makedirs(config.SETTINGS_DIR, exist_ok=True)
-    with open(config.SETTINGS_PREFS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+    ptutil.write_json_atomic(config.SETTINGS_PREFS_FILE, data)
 
 
 # ── Convenience accessors ─────────────────────────────────────────────────────

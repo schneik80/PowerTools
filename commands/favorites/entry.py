@@ -8,7 +8,7 @@
 # permission, please contact the copyright holders and delete this file.
 
 import adsk.core, adsk.fusion
-import os, json, traceback
+import os, traceback
 from ...lib import ptAddInUtils as ptutil
 from ... import config
 
@@ -266,28 +266,23 @@ def _remove_legacy_cache() -> None:
 
 
 def _load_favorites() -> list:
-    """Load the favorites list for the active hub from its per-hub cache file."""
-    cache_file = _hub_cache_file(_active_hub_id)
-    if not os.path.exists(cache_file):
-        return []
-    try:
-        with open(cache_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data.get("favorites", [])
-    except Exception:
-        ptutil.log(
-            f"Favorites: failed to load cache '{cache_file}'\n{traceback.format_exc()}",
-            adsk.core.LogLevels.ErrorLogLevel,
-        )
-        return []
+    """Load the favorites list for the active hub from its per-hub cache file.
+
+    A missing or corrupt cache yields an empty list (the favorites cache is
+    rebuildable by the user), per the read_json contract.
+    """
+    data = ptutil.read_json(_hub_cache_file(_active_hub_id), {})
+    return data.get("favorites", []) if isinstance(data, dict) else []
 
 
 def _save_favorites(favorites: list) -> None:
-    """Persist the favorites list for the active hub to its per-hub cache file."""
-    cache_file = _hub_cache_file(_active_hub_id)
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    with open(cache_file, "w", encoding="utf-8") as f:
-        json.dump({"hub_id": _active_hub_id, "favorites": favorites}, f, indent=2)
+    """Persist the favorites list for the active hub to its per-hub cache file.
+
+    Written atomically so an interrupted save can never corrupt the user's
+    favorites, which have no cloud backing.
+    """
+    payload = {"hub_id": _active_hub_id, "favorites": favorites}
+    ptutil.write_json_atomic(_hub_cache_file(_active_hub_id), payload)
 
 
 # ---------------------------------------------------------------------------

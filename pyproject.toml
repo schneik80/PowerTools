@@ -1,0 +1,68 @@
+# Dev-tooling configuration for the PowerTools Fusion 360 add-in.
+#
+# IMPORTANT: This file configures developer tools (Ruff, mypy, pytest) ONLY. It
+# is NOT a package manifest and adds NO runtime dependency to the add-in. Fusion
+# loads PowerTools.py and the commands/ tree directly through its own embedded
+# Python and ignores this file entirely. None of the tools below are ever
+# imported by the add-in; they run on the developer machine against the source.
+#
+# The one Fusion-specific constraint: `import adsk.*` only resolves inside
+# Fusion. mypy is therefore configured to ignore the missing `adsk` imports, and
+# the pytest suite stubs `adsk` (see tests/conftest.py) so modules can be
+# imported under test. The first tests target pure-logic helpers that have no
+# Fusion dependency at all.
+
+[project]
+name = "powertools-addin"
+version = "0.0.0"
+description = "Autodesk Fusion 360 PowerTools add-in (tooling metadata only)."
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+# Install with: uv pip install -e ".[dev]"  (or: pip install ruff mypy pytest)
+dev = ["ruff>=0.5", "mypy>=1.10", "pytest>=8.0"]
+
+# ── Ruff (lint + format) ──────────────────────────────────────────────────────
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+# Generated/vendored assets and tool dirs are not ours to lint.
+extend-exclude = ["cache", "settings", "**/resources/**", "docs"]
+
+[tool.ruff.lint]
+# Focused, high-signal starting set:
+#   F  pyflakes      — undefined names, unused imports (real bugs)
+#   E/W pycodestyle  — style
+#   I  isort         — import ordering
+#   B  flake8-bugbear— likely bugs, incl. B018 useless expression
+#                      (B018 is exactly what would have caught the
+#                      `adsk.doEvents` (missing parens) no-op bug)
+select = ["F", "E", "W", "I", "B"]
+# Line length is owned by `ruff format`; don't double-report it in lint.
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# The shared utils package intentionally re-exports its submodules' public names
+# via wildcard so callers can do `ptutil.<name>`. Adding explicit __all__ is a
+# planned follow-up (task T18); until then, silence the wildcard warnings here.
+"lib/ptAddInUtils/__init__.py" = ["F403", "F401"]
+
+# ── mypy (advisory; not a gate) ───────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.12"
+# `adsk` is unavailable outside Fusion — never error on its absence.
+ignore_missing_imports = true
+follow_imports = "silent"
+# Keep permissive for now; tighten per-module as type hints are added.
+warn_return_any = false
+warn_unused_ignores = false
+exclude = ["cache/", "settings/", "resources/", "docs/"]
+
+[[tool.mypy.overrides]]
+module = ["adsk.*"]
+ignore_missing_imports = true
+
+# ── pytest ────────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
