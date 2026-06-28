@@ -52,6 +52,7 @@ ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resource
 SAVE_LOC_ID = "save_location"
 SAME_AS_DOC = "Same as Document"
 CREATE_SUBFOLDER = "Create Sub-folder"
+REPLACE_ALL_ID = "replace_all_instances"
 
 LOG_ENABLE_ID = "enable_log"
 LOG_PATH_ID = "log_path"
@@ -160,6 +161,16 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         "is externalized automatically. The component selector is disabled."
     )
 
+    replace_all = main_inputs.addBoolValueInput(
+        REPLACE_ALL_ID, "Replace all instances", True, "", True
+    )
+    replace_all.tooltip = (
+        "When checked, every occurrence of the selected component in the active "
+        "assembly is replaced with the new external document — not just the "
+        "selected one.\n"
+        "Forced on (and disabled) while Externalize All is checked."
+    )
+
     save_loc = main_inputs.addDropDownCommandInput(
         SAVE_LOC_ID,
         "Save Location",
@@ -235,14 +246,22 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
             sel_input = adsk.core.SelectionCommandInput.cast(
                 inputs.itemById("occurrence_sel")
             )
+            replace_all_input = adsk.core.BoolValueCommandInput.cast(
+                inputs.itemById(REPLACE_ALL_ID)
+            )
             if bool_input.value:
                 sel_input.isVisible = False
                 sel_input.isEnabled = False
                 sel_input.setSelectionLimits(0, 1)
+                # Externalize All replaces every occurrence already, so this is
+                # forced on and locked while it is checked.
+                replace_all_input.value = True
+                replace_all_input.isEnabled = False
             else:
                 sel_input.isVisible = True
                 sel_input.isEnabled = True
                 sel_input.setSelectionLimits(1, 1)
+                replace_all_input.isEnabled = True
             return
 
         if changed_input.id == LOG_ENABLE_ID:
@@ -311,6 +330,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
         externalize_all = adsk.core.BoolValueCommandInput.cast(
             inputs.itemById("externalize_all")
         ).value
+        replace_all_instances = adsk.core.BoolValueCommandInput.cast(
+            inputs.itemById(REPLACE_ALL_ID)
+        ).value
         save_location = adsk.core.DropDownCommandInput.cast(
             inputs.itemById(SAVE_LOC_ID)
         ).selectedItem.name
@@ -331,7 +353,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
             existing_sub = _find_existing_subfolder(cloud_folder, active_data_file.name)
             target_folder = existing_sub if existing_sub is not None else cloud_folder
 
-        pending = _build_pending_list(design, externalize_all, inputs)
+        pending = _build_pending_list(
+            design, externalize_all, replace_all_instances, inputs
+        )
         if pending is None:
             return  # user-facing message already shown
         if not pending:
@@ -365,6 +389,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
                     active_data_file=active_data_file,
                     target_folder=target_folder,
                     externalize_all=externalize_all,
+                    replace_all_instances=replace_all_instances,
                     resume_info=resume_info,
                     runnable_total=total,
                     skipped_resume=skipped_resume,
@@ -456,11 +481,16 @@ class _RunnerHandler(adsk.core.CustomEventHandler):
                 # because of it.
                 pass
 
-            replaced = self._run_loop(
+            replaced, replaced_instances = self._run_loop(
                 runnable, target_folder, total, log_writer, progress_bar
             )
             self._finalize(
-                parent_doc, replaced, total, skipped_resume, log_writer
+                parent_doc,
+                replaced,
+                replaced_instances,
+                total,
+                skipped_resume,
+                log_writer,
             )
         except Exception:
             log_writer(
@@ -482,14 +512,18 @@ class _RunnerHandler(adsk.core.CustomEventHandler):
         design = adsk.fusion.Design.cast(app.activeProduct)
         if design is None:
             log_writer("ERROR: no active design when handler started")
-            return 0
+            return 0, 0
         root = design.rootComponent
 
         replaced = 0
+        replaced_instances = 0
         no_cancel = lambda: False
 
         for idx, data in enumerate(runnable, 1):
             comp_name = data["comp_name"]
+            instances = data["instances"]
+            instance_count = len(instances)
+            suffix = "" if instance_count == 1 else f" ({instance_count} instances)"
 
             try:
                 progress_bar.message = f"Externalizing {comp_name} (%v of %m)"
@@ -521,14 +555,18 @@ class _RunnerHandler(adsk.core.CustomEventHandler):
                         f"({time.monotonic() - upload_t0:.1f}s)"
                     )
 
-                log_writer(f"[{idx}/{total}] replacing {comp_name}…")
-                data["occ"].deleteMe()
-                root.occurrences.addByInsert(df, data["transform"], True)
+                log_writer(f"[{idx}/{total}] replacing {comp_name}{suffix}…")
+                for occ, transform in instances:
+                    occ.deleteMe()
+                    root.occurrences.addByInsert(df, transform, True)
                 replaced += 1
-                log_writer(f"[{idx}/{total}] replaced {comp_name}")
+                replaced_instances += instance_count
+                log_writer(f"[{idx}/{total}] replaced {comp_name}{suffix}")
 
                 # Local recovery checkpoint — keeps work safe across crashes
                 # without creating a new parent cloud version every iteration.
+                # Written only after every instance of this component is
+                # replaced, so resume never skips a half-replaced component.
                 _temp_save(log_writer)
 
                 log_writer(
@@ -545,9 +583,17 @@ class _RunnerHandler(adsk.core.CustomEventHandler):
                     f'[{idx}/{total}] error on "{comp_name}":\n{traceback.format_exc()}'
                 )
 
-        return replaced
+        return replaced, replaced_instances
 
-    def _finalize(self, parent_doc, replaced, total, skipped_resume, log_writer):
+    def _finalize(
+        self,
+        parent_doc,
+        replaced,
+        replaced_instances,
+        total,
+        skipped_resume,
+        log_writer,
+    ):
         # Single cloud-committing save for the parent. One new parent version
         # for the whole run, no matter how many components were replaced.
         if replaced > 0:
@@ -559,18 +605,25 @@ class _RunnerHandler(adsk.core.CustomEventHandler):
         if replaced == total:
             footer = (
                 f"Externalize completed successfully. {replaced} of {total} replaced "
-                f"this run; {skipped_resume} from prior run."
+                f"this run ({replaced_instances} occurrences); "
+                f"{skipped_resume} from prior run."
             )
         else:
             footer = (
                 f"Externalize finished with skips. {replaced} of {total} replaced "
-                f"this run; {skipped_resume} from prior run."
+                f"this run ({replaced_instances} occurrences); "
+                f"{skipped_resume} from prior run."
             )
         log_writer(footer)
 
         try:
             ui.messageBox(
                 f"{replaced} of {total} components were externalized this run."
+                + (
+                    f"\n{replaced_instances} occurrences replaced in total."
+                    if replaced_instances != replaced
+                    else ""
+                )
                 + (
                     f"\nResumed from prior run: {skipped_resume} already done."
                     if skipped_resume
@@ -626,27 +679,28 @@ def _snapshot_local_component_names():
     return names
 
 
-def _build_pending_list(design, externalize_all, inputs):
-    """Build the [{occ, component, comp_name, transform}, …] list for the run.
+def _build_pending_list(design, externalize_all, replace_all_instances, inputs):
+    """Build the per-component run list for the run.
+
+    Each entry groups every occurrence to replace for a single component::
+
+        {"component": comp, "comp_name": name,
+         "instances": [(occ, transform), …]}
+
+    Occurrences are grouped by component name (the cloud-file identity used
+    everywhere else in this command). Grouping makes the checkpoint atomic per
+    component: the CHECKPOINT marker is only written once every instance of a
+    component has been replaced, so an interrupted run resumes correctly even
+    when a component had multiple instances.
 
     Returns an empty list if there are no local components, or None on a user-facing
     error (in which case a messageBox has already been shown)."""
     root = design.rootComponent
 
     if externalize_all:
-        pending = []
-        for i in range(root.occurrences.count):
-            occ = root.occurrences.item(i)
-            if occ.component.parentDesign == design:
-                pending.append(
-                    {
-                        "occ": occ,
-                        "component": occ.component,
-                        "comp_name": occ.component.name,
-                        "transform": occ.transform2,
-                    }
-                )
-        return pending
+        # Externalize All always replaces every occurrence of every local
+        # component, so grouping here implicitly replaces all instances.
+        return _group_local_occurrences(design, root, name_filter=None)
 
     sel_input = adsk.core.SelectionCommandInput.cast(inputs.itemById("occurrence_sel"))
     if sel_input.selectionCount == 0:
@@ -672,14 +726,43 @@ def _build_pending_list(design, externalize_all, inputs):
         )
         return []
 
+    comp = occ.component
+    if replace_all_instances:
+        # Replace every first-level occurrence of the selected component.
+        return _group_local_occurrences(design, root, name_filter=comp.name)
+
     return [
         {
-            "occ": occ,
-            "component": occ.component,
-            "comp_name": occ.component.name,
-            "transform": occ.transform2,
+            "component": comp,
+            "comp_name": comp.name,
+            "instances": [(occ, occ.transform2)],
         }
     ]
+
+
+def _group_local_occurrences(design, root, name_filter):
+    """Group local first-level occurrences into per-component run entries.
+
+    When ``name_filter`` is set, only occurrences whose component name matches
+    are included; otherwise every local component is included. Entry order
+    follows first encounter in the occurrence list."""
+    entries: dict = {}
+    order: list = []
+    for i in range(root.occurrences.count):
+        occ = root.occurrences.item(i)
+        comp = occ.component
+        if comp.parentDesign != design:
+            continue
+        name = comp.name
+        if name_filter is not None and name != name_filter:
+            continue
+        entry = entries.get(name)
+        if entry is None:
+            entry = {"component": comp, "comp_name": name, "instances": []}
+            entries[name] = entry
+            order.append(entry)
+        entry["instances"].append((occ, occ.transform2))
+    return order
 
 
 # ---------------------------------------------------------------------------
@@ -869,6 +952,7 @@ def _write_log_header(
     active_data_file,
     target_folder,
     externalize_all,
+    replace_all_instances,
     resume_info,
     runnable_total,
     skipped_resume,
@@ -888,6 +972,7 @@ def _write_log_header(
         )
         fh.write(f"Target folder: {target_folder.name}\n")
         fh.write(f"Externalize All: {externalize_all}\n")
+        fh.write(f"Replace all instances: {replace_all_instances}\n")
         fh.write(f"Resume requested: {resume_info.get('should_resume', False)}\n")
         fh.write(
             f"Components to process: {runnable_total}  "
