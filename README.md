@@ -52,6 +52,7 @@ Most commands appear in **Design › Tools › Power Tools**. Some appear in oth
 | [Refresh Global Parameters Cache](./docs/Refresh%20Global%20Parameters%20Cache.md) | File › PowerTools Settings | Rebuild the cached global-parameters folder and document index. |
 | [Infer Constraints](./docs/Infer%20Constraints.md) | Design › Tools › Power Tools | Infer assembly joints/constraints from component geometry. |
 | [Component Warning](./docs/Component%20Warning.md) | File › PowerTools Settings | Toggle warnings about component edits that affect references. |
+| [Change Cycle Color](./docs/Change%20Cycle%20Color.md) | Design › Right-click menu | Set the per-component color used by Fusion's Color Cycling Toggle on selected components. |
 | [Reference Manager](./docs/Reference%20Manager.md) | Design › Tools › Power Tools | Inspect and manage all external references of the active design. |
 | [Document References](./docs/Document%20References.md) | Design › Tools › Power Tools | List all documents related to the active design. |
 | [Document Refresh](./docs/Document%20Refresh.md) | Design › Tools › Power Tools | Refresh out-of-date references in the active design. |

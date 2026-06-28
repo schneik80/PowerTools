@@ -25,6 +25,18 @@
                 ];
             }
         },
+        changecyclecolor: {
+            label: "Change Cycle Color",
+            render: function (cs) {
+                return [
+                    labelCheck(
+                        "Show in the right-click context menu",
+                        cs.show_in_context_menu !== false,
+                        function (v) { setCmdSetting("changecyclecolor", "show_in_context_menu", v); }
+                    )
+                ];
+            }
+        },
         docopen: {
             label: "Show In Location",
             render: function (cs) {

@@ -33,6 +33,7 @@ matching end-user guide lives in [`../`](..).
 - [Refresh Global Parameters Cache](Refresh%20Global%20Parameters%20Cache.md)
 - [Infer Constraints](Infer%20Constraints.md)
 - [Component Warning](Component%20Warning.md)
+- [Change Cycle Color](Change%20Cycle%20Color.md)
 - [Reference Manager](Reference%20Manager.md)
 - [Document References](Document%20References.md)
 - [Document Refresh](Document%20Refresh.md)

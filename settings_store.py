@@ -42,6 +42,7 @@ DEFAULT_FOLDER_SETS = {
 # Per-command settings sections (defaults). Keyed by command module name.
 COMMAND_SETTING_DEFAULTS = {
     "componentwarn": {"warn_non_leaf": False},
+    "changecyclecolor": {"show_in_context_menu": True},
     "docopen": {"run_on_open": True, "run_on_activate": True},
     "defaultfolders": {
         "basic": list(DEFAULT_FOLDER_SETS["basic"]),

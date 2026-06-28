@@ -36,6 +36,7 @@ GROUPS = [
             _cmd("getandupdate", "Get and Update.md"),
             _cmd("bottomupupdate", "Bottom-Up Update.md"),
             _cmd("componentwarn", "Component Warning.md", settings=True),
+            _cmd("changecyclecolor", "Change Cycle Color.md", settings=True),
             _cmd("externalize", "Externalize.md"),
             _cmd("globalParameters", "Global Parameters.md"),
             _cmd("inferconstraints", "Infer Constraints.md", beta=True),
