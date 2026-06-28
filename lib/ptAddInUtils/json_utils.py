@@ -9,11 +9,6 @@
 
 """Shared JSON read/write helpers.
 
-Every PowerTools cache, settings, and config file is small JSON. These two
-helpers replace the ~20 hand-rolled ``open()`` + ``json.load/dump`` + try/except
-blocks scattered across the add-in so the read/write contract stays uniform and,
-critically, so that *writes are atomic*.
-
 ``write_json_atomic`` writes to a temporary file in the same directory and then
 swaps it into place with ``os.replace`` (atomic on Windows and POSIX). A crash,
 exception, or power loss mid-write therefore can never truncate or corrupt an
