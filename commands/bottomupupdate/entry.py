@@ -293,18 +293,47 @@ def traverse_assembly(component, parent_dict, _memo=None):
 
 def sort_dag_bottom_up(assembly_dict):
     """
-    Sorts the dictionary as a DAG in bottom-up order.
+    Sorts the dictionary as a DAG in bottom-up (leaves-first) order.
+
+    Performs a depth-first, post-order traversal: a node is appended only
+    after every one of its children has been appended, so each component's
+    dependencies always precede it in the result.
+
+    Two sets keep the traversal both correct and efficient:
+
+    - ``emitted`` records components already appended. A component shared by
+      several sub-assemblies (a "diamond" dependency) is therefore emitted
+      exactly once, and the walk stays O(V + E) instead of re-descending a
+      shared subtree once per path that reaches it (worst case exponential).
+    - ``in_progress`` marks the components currently on the DFS stack (the
+      "VISITING" state). Fusion assemblies are acyclic, but if a malformed
+      graph ever presented a back edge this breaks and reports it instead of
+      recursing until the interpreter raises RecursionError.
+
     :param assembly_dict: The dictionary representing the assembly structure.
-    :return: A list of components in bottom-up order.
+    :return: A list of unique component names in bottom-up order.
     """
     sorted_components = []
+    emitted = set()
+    in_progress = set()
 
     def traverse_dag(node):
-        for child_name, child_data in node["children"].items():
+        name = node["component"].name
+        if name in emitted:
+            return  # Shared sub-assembly already placed; do not re-walk it.
+        if name in in_progress:
+            # A cycle is impossible for a real Fusion assembly; guard anyway so
+            # a malformed graph degrades gracefully instead of overflowing.
+            ptutil.log(f"Cycle detected at component '{name}'; skipping re-entry.")
+            return
+        in_progress.add(name)
+        for child_data in node["children"].values():
             traverse_dag(child_data)
-        sorted_components.append(node["component"].name)
+        in_progress.discard(name)
+        emitted.add(name)
+        sorted_components.append(name)
 
-    for key, value in assembly_dict.items():
+    for value in assembly_dict.values():
         traverse_dag(value)
 
     return sorted_components

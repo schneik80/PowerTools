@@ -27,6 +27,7 @@ matching end-user guide lives in [`../`](..).
 - [Assembly Statistics](Assembly%20Statistics.md)
 - [Get and Update](Get%20and%20Update.md)
 - [Bottom-Up Update](Bottom-Up%20Update.md)
+  - [Bottom-Up Update — Dependency Ordering (DAG)](Bottom-Up%20Update%20Dependency%20Ordering.md)
 - [Externalize](Externalize.md)
 - [Global Parameters](Global%20Parameters.md)
 - [Link Global Parameters](Link%20Global%20Parameters.md)

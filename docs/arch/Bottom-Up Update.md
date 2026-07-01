@@ -91,6 +91,8 @@ sequenceDiagram
 
 ### Topological sort
 
+> **Deep dive:** the full DAG-ordering engine — invariants, diamond handling, the tri-color cycle guard, complexity analysis, DFS-vs-Kahn's rationale, and recommended further hardening — is documented separately in [Bottom-Up Update — Dependency Ordering (DAG)](Bottom-Up%20Update%20Dependency%20Ordering.md). The summary below is the high-level view.
+
 The command must process components in an order where every component's dependencies are saved before the component that uses them. It achieves this through a two-phase algorithm.
 
 **Phase 1 — Build the dependency tree (`traverse_assembly`)**
@@ -114,7 +116,7 @@ The result is a directed acyclic graph (DAG) where each node points to its child
 
 **Phase 2 — Post-order traversal (`sort_dag_bottom_up`)**
 
-The sort walks the DAG using a depth-first, post-order traversal. For any given node it recurses into all children before appending the node itself to the output list. This guarantees that a component only appears in the list *after* all of its dependencies have already been appended.
+The sort walks the DAG using a depth-first, post-order traversal. For any given node it recurses into all children before appending the node itself to the output list. This guarantees that a component only appears in the list *after* all of its dependencies have already been appended. An `emitted` set makes a component shared by several sub-assemblies appear **exactly once** (and keeps the walk O(V + E) rather than re-descending shared subtrees), while an `in_progress` set guards against an unexpected cycle instead of recursing until the interpreter overflows.
 
 ```
 traverse_dag("Bracket")
