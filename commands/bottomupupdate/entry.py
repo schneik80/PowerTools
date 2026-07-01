@@ -615,13 +615,14 @@ def execute_command_with_timeout(
         if command_definition.execute():
             return True, f"{command_label} executed successfully"
 
-        adsk.doEvents()
         if timeout_seconds > 0 and (time.time() - start_time) >= timeout_seconds:
             return (
                 False,
                 f"{command_label} timed out after {timeout_seconds} seconds",
             )
-        time.sleep(poll_interval)
+        # Pump events across the poll interval so the UI stays responsive and the
+        # command's async work keeps advancing instead of freezing on a bare sleep.
+        ptutil.pump_events_for(poll_interval)
 
 
 
@@ -1089,8 +1090,8 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 ptutil.log(f"   Rebuilding component: {component_name}")
                 write_log_entry(f"   Rebuilding component: {component_name}")
                 while not des.computeAll():  # Force compute until complete
-                    adsk.doEvents()
-                    time.sleep(0.1)  # Optional: Add a small delay to observe the update
+                    # Keep the UI responsive while the compute settles.
+                    ptutil.pump_events_for(0.1)
                 ptutil.log(f"   Rebuild complete: {component_name}")
                 write_log_entry(f"   Rebuilt {component_name}")
 

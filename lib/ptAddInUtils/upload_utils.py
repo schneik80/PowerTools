@@ -27,6 +27,8 @@ is for `Document.save` flows where the standard polling cadence works.
 import time
 import adsk.core
 
+from .general_utils import pump_events_for
+
 
 DEFAULT_UPLOAD_TIMEOUT_SECONDS = 300
 DEFAULT_POLL_INTERVAL_SECONDS = 0.5
@@ -174,7 +176,7 @@ def _wait_via_upload_state(
             msg = f"Upload timed out for {context_label} after {timeout_seconds}s"
             log(f"[wait_for_upload] {msg}")
             return False, msg
-        time.sleep(poll_interval)
+        pump_events_for(poll_interval)
 
     log(
         f"[wait_for_upload] {context_label}: poll loop exited "
@@ -225,7 +227,7 @@ def _wait_via_is_complete(
             )
             log(f"[wait_for_upload] {msg}")
             return False, msg
-        time.sleep(poll_interval)
+        pump_events_for(poll_interval)
 
     if getattr(future, "error", False):
         error_description = getattr(
@@ -320,4 +322,4 @@ def _wait_via_document_state(
             log(f"[wait_for_upload] {msg}")
             return False, msg
 
-        time.sleep(poll_interval)
+        pump_events_for(poll_interval)

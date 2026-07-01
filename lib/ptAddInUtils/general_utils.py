@@ -62,6 +62,32 @@ def log(
     app.log(message, level, adsk.core.LogTypes.ConsoleLogType)
 
 
+def pump_events_for(seconds: float, tick_seconds: float = 0.03) -> None:
+    """Wait ``seconds`` while keeping the Fusion UI and upload pipeline alive.
+
+    Fusion commands run on the UI thread, so a bare ``time.sleep`` freezes the
+    whole application for its duration and also starves Fusion's asynchronous
+    save/upload pipeline of the ``adsk.doEvents()`` pumping it needs to advance.
+    This waits the same total time but pumps events every ``tick_seconds`` so the
+    UI stays responsive (progress dialog, Cancel) and background uploads keep
+    progressing, without busy-spinning at 100% CPU.
+
+    Arguments:
+    seconds -- Total time to wait. Values <= 0 pump once and return.
+    tick_seconds -- Maximum gap between ``adsk.doEvents()`` pumps.
+    """
+    if seconds <= 0:
+        adsk.doEvents()
+        return
+    tick = max(0.005, min(tick_seconds, seconds))
+    end = time.monotonic() + seconds
+    while True:
+        adsk.doEvents()
+        if time.monotonic() >= end:
+            return
+        time.sleep(tick)
+
+
 def clipText(linkText):
     """Utility function to copy text to the clipboard.
 
