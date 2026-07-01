@@ -36,7 +36,10 @@ def open_live_log_viewer(log_file_path: str):
             return True, "Opened live log viewer in Console.app"
 
         if sys.platform == "win32":
-            command = f'Get-Content -Path "{log_file_path}" -Wait'
+            # Single-quote the path and double any embedded single quotes so a
+            # crafted path cannot break out of the string and inject PowerShell.
+            safe_path = log_file_path.replace("'", "''")
+            command = f"Get-Content -Path '{safe_path}' -Wait"
             subprocess.Popen(
                 [
                     "powershell",

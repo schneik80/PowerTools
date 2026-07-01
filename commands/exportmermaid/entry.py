@@ -8,7 +8,7 @@
 # permission, please contact the copyright holders and delete this file.
 
 import adsk.core, adsk.fusion
-import os, base64, webbrowser, json
+import os, re, base64, webbrowser, json
 from ...lib import ptAddInUtils as ptutil
 from ... import config
 
@@ -110,7 +110,8 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
         # Show file save dialog
         dlgResult = folderDlg.showDialog()
         if dlgResult == adsk.core.DialogResults.DialogOK:
-            filepath = os.path.join(folderDlg.folder, parentOcc + ".mmd")
+            safe_name = re.sub(r'[<>:"/\\|?*]', "_", os.path.basename(parentOcc))
+            filepath = os.path.join(folderDlg.folder, safe_name + ".mmd")
             # Write the results to the file
             with open(filepath, "w") as f:
                 f.write(resultString)

@@ -86,8 +86,21 @@ def _migrate_legacy(defaults: dict) -> dict:
     return defaults
 
 
+# Memoized merged preferences. The start-up gating loop plus the convenience
+# accessors below call load() dozens of times per session; without this each
+# call re-read and re-parsed the file and re-ran the deep-merge. Invalidated by
+# save() (the only in-process writer).
+_cache = None
+
+
 def load() -> dict:
-    """Return the full preferences dict, creating defaults on first run."""
+    """Return the full preferences dict, creating defaults on first run.
+
+    The merged result is memoized; save() clears the cache.
+    """
+    global _cache
+    if _cache is not None:
+        return _cache
     defaults = _defaults()
     if not os.path.isfile(config.SETTINGS_PREFS_FILE):
         save(_migrate_legacy(defaults))
@@ -96,11 +109,14 @@ def load() -> dict:
     if not isinstance(stored, dict):
         stored = {}
     # Merge over defaults so newly added groups/commands pick up their defaults.
-    return _deep_merge(defaults, stored)
+    _cache = _deep_merge(defaults, stored)
+    return _cache
 
 
 def save(data: dict) -> None:
+    global _cache
     ptutil.write_json_atomic(config.SETTINGS_PREFS_FILE, data)
+    _cache = None
 
 
 # ── Convenience accessors ─────────────────────────────────────────────────────
@@ -129,6 +145,8 @@ def validate(data) -> bool:
         and isinstance(data.get("general"), dict)
         and isinstance(data.get("groups"), dict)
         and isinstance(data.get("commands"), dict)
+        # Reject imported files carrying unexpected top-level keys.
+        and set(data).issubset(_defaults().keys())
     )
 
 

@@ -8,6 +8,7 @@
 # permission, please contact the copyright holders and delete this file.
 
 import adsk.core, adsk.fusion
+import html
 import os
 from urllib.parse import quote
 from ...lib import ptAddInUtils as ptutil
@@ -124,7 +125,8 @@ def command_execute(args: adsk.core.CommandEventArgs):
         # Copy the shared link to the clipboard
         ptutil.clipText(shareLink)
 
-        resultString = f"An <b>Open in Team</b> link for {app.activeDocument.name} was added to the clipboard."
+        doc_name = html.escape(app.activeDocument.name)
+        resultString = f"An <b>Open in Team</b> link for {doc_name} was added to the clipboard."
 
         if app.activeProduct.productType == "DesignProductType":
             rootComp = app.activeProduct.rootComponent

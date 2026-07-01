@@ -515,9 +515,12 @@ def on_input_changed(args: adsk.core.InputChangedEventArgs):
 
     elif btn_id in _browser_btns:
         url = _browser_btns[btn_id]
+        if not url.startswith(("http://", "https://")):
+            ui.messageBox("Refusing to open non-web URL:\n{}".format(url))
+            return
         try:
             if os.name == "nt":
-                subprocess.Popen(["start", url], shell=True)
+                os.startfile(url)
             else:
                 subprocess.Popen(["open", url])
         except Exception:

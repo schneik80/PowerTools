@@ -70,10 +70,12 @@ def clipText(linkText):
     """
     if os.name == "nt":
         subprocess.run(
-            ["clip.exe"], input=linkText.strip().encode("utf-8"), check=True, shell=True
+            ["clip.exe"], input=linkText.strip().encode("utf-8"), check=True
         )
     else:
-        os.system(f'echo "{linkText.strip()}" | pbcopy')
+        subprocess.run(
+            ["pbcopy"], input=linkText.strip().encode("utf-8"), check=True
+        )
     app.log(f"link: {linkText} was added to clipboard")
 
 

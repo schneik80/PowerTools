@@ -346,7 +346,7 @@ def _palette_incoming(html_args: adsk.core.HTMLEventArgs):
 
         elif action == "openDoc":
             url = data.get("url")
-            if url:
+            if url and url.startswith(("http://", "https://")):
                 import webbrowser
 
                 webbrowser.open(url)

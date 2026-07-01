@@ -519,6 +519,18 @@ class _RunnerHandler(adsk.core.CustomEventHandler):
         replaced_instances = 0
         no_cancel = lambda: False
 
+        # Snapshot the target folder's files once. The per-component existence
+        # check below is then an O(1) dict lookup instead of a fresh linear scan
+        # of the *growing* folder every iteration (which was O(m*k)). Files
+        # uploaded during this run are inserted into the map so later components
+        # still find them. Keep the FIRST match per name to match the prior scan.
+        existing_by_name = {}
+        target_files = target_folder.dataFiles
+        for i in range(target_files.count):
+            item = target_files.item(i)
+            if item.name not in existing_by_name:
+                existing_by_name[item.name] = item
+
         for idx, data in enumerate(runnable, 1):
             comp_name = data["comp_name"]
             instances = data["instances"]
@@ -532,7 +544,7 @@ class _RunnerHandler(adsk.core.CustomEventHandler):
                 pass
 
             try:
-                df = _find_existing_cloud_file(target_folder, comp_name)
+                df = existing_by_name.get(comp_name)
                 if df is not None:
                     log_writer(f"[{idx}/{total}] reused {comp_name}")
                 else:
@@ -550,6 +562,9 @@ class _RunnerHandler(adsk.core.CustomEventHandler):
                             f"[{idx}/{total}] upload failed for {comp_name} — skipping"
                         )
                         continue
+                    # Record it so a later component with the same name reuses
+                    # this upload instead of creating a duplicate.
+                    existing_by_name[comp_name] = df
                     log_writer(
                         f"[{idx}/{total}] uploaded {comp_name} "
                         f"({time.monotonic() - upload_t0:.1f}s)"
@@ -887,16 +902,6 @@ def _find_existing_subfolder(parent_folder: adsk.core.DataFolder, name: str):
         folder = sub_folders.item(i)
         if folder.name == name:
             return folder
-    return None
-
-
-def _find_existing_cloud_file(cloud_folder: adsk.core.DataFolder, comp_name: str):
-    """Return the DataFile whose name matches comp_name, or None."""
-    data_files = cloud_folder.dataFiles
-    for i in range(data_files.count):
-        item = data_files.item(i)
-        if item.name == comp_name:
-            return item
     return None
 
 

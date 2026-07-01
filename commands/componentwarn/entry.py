@@ -100,6 +100,9 @@ _starting_handler = None
 _disabled_documents = []
 # Timestamp of the last "create anyway" choice, for the hold-off above.
 _last_continue_time = 0.0
+# The "also warn for non-leaf components" preference, read once when the monitor
+# attaches rather than on every commandStarting event (see _attach_monitor).
+_warn_non_leaf = False
 
 
 # ---------------------------------------------------------------------------
@@ -141,9 +144,14 @@ def workspace_pre_deactivate(args: adsk.core.WorkspaceEventArgs):
 
 def _attach_monitor():
     """Begin listening to commandStarting. No-op if already listening."""
-    global _starting_handler
+    global _starting_handler, _warn_non_leaf
     if _starting_handler is not None:
         return
+    # Read the preference once here instead of on every commandStarting event.
+    # Re-entering the Solid workspace re-attaches and so re-reads it.
+    _warn_non_leaf = bool(
+        settings_store.command_setting("componentwarn", "warn_non_leaf", False)
+    )
     _starting_handler = ptutil.add_handler(
         ui.commandStarting, command_starting, local_handlers=_monitor_handlers
     )
@@ -229,9 +237,9 @@ def _evaluate_placement(design: adsk.fusion.Design, edit_component: adsk.fusion.
         return "You are creating a feature directly in the root component, outside of any component."
 
     # User preference: also warn for features created in a non-leaf component
-    # (one that still has child occurrences). Off by default.
-    warn_non_leaf = settings_store.command_setting("componentwarn", "warn_non_leaf", False)
-    if warn_non_leaf and edit_component.occurrences.count > 0:
+    # (one that still has child occurrences). Off by default. Read once on
+    # attach (see _attach_monitor) rather than on every commandStarting event.
+    if _warn_non_leaf and edit_component.occurrences.count > 0:
         return "You are creating a feature in a non-leaf component."
 
     for selection in ui.activeSelections:

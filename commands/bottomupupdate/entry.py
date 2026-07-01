@@ -261,24 +261,34 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     open_view.isEnabled = log_enable.value
 
 
-def traverse_assembly(component, parent_dict):
+def traverse_assembly(component, parent_dict, _memo=None):
     """
     Recursively traverses the assembly and creates a dictionary for each component.
     :param component: The root component to traverse.
     :param parent_dict: The dictionary to store child components.
+    :param _memo: Internal cache keyed by component name. The first time a
+        component is seen its subtree is walked and its node cached; every later
+        occurrence of that same component reuses the already-built node instead
+        of re-walking its subtree. This preserves the produced structure (and so
+        the bottom-up order) while avoiding O(refs) re-walks of shared
+        sub-assemblies. Fusion assemblies are acyclic, so reuse cannot recurse
+        infinitely.
     """
+    if _memo is None:
+        _memo = {}
     for occurrence in component.occurrences:
         child_component = occurrence.component
-        if child_component.name not in parent_dict:
-            # Add the child component to the dictionary
-            parent_dict[child_component.name] = {
-                "component": child_component,
-                "children": {},
-            }
-        # Recursively traverse the child component
-        traverse_assembly(
-            child_component, parent_dict[child_component.name]["children"]
-        )
+        name = child_component.name
+        node = _memo.get(name)
+        if node is None:
+            # First time we have seen this component: build it and walk down.
+            node = {"component": child_component, "children": {}}
+            _memo[name] = node
+            parent_dict[name] = node
+            traverse_assembly(child_component, node["children"], _memo)
+        else:
+            # Already built elsewhere; reuse the same subtree under this parent.
+            parent_dict[name] = node
 
 
 def sort_dag_bottom_up(assembly_dict):
@@ -804,6 +814,15 @@ def command_execute(args: adsk.core.CommandEventArgs):
         # Counter for progress tracking
         processed_count = resume_start_index
 
+        # Map component name -> component once. The per-component lookup below
+        # then costs O(1) instead of design.allComponents.itemByName's O(n)
+        # linear scan, which made the whole loop O(n^2). Keep the FIRST match
+        # per name to preserve itemByName's semantics.
+        components_by_name = {}
+        for comp in design.allComponents:
+            if comp.name not in components_by_name:
+                components_by_name[comp.name] = comp
+
         # Process each component in bottom-up dependency order
         for component_name in bottom_up_order[resume_start_index:]:
             if component_name == "RootComponent":  # Skip the root assembly itself
@@ -813,15 +832,18 @@ def command_execute(args: adsk.core.CommandEventArgs):
                     f"Skipping root component ({processed_count} of {docCount})"
                 )
                 continue
-            component = design.allComponents.itemByName(component_name)
+            component = components_by_name.get(component_name)
             if not component:  # Component not found, skip it
                 processed_count += 1
                 progress_bar.progressValue = processed_count
                 progress_bar.message = f"Component not found: {component_name} ({processed_count} of {docCount})"
                 continue
+            # Walk the parentDesign.parentDocument chain once and reuse it below
+            # instead of re-marshalling it 3-6x per iteration.
+            parent_document = component.parentDesign.parentDocument
             # Get the design data file for this component
             design_data_file = getattr(
-                component.parentDesign.parentDocument, "designDataFile", None
+                parent_document, "designDataFile", None
             )
             if design_data_file is None:
                 log_entry = f"Skipping Component (no designDataFile): {component_name}"
@@ -836,7 +858,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
             try:
                 # Get the project name to check if it's a standard component
                 parent_project = (
-                    component.parentDesign.parentDocument.dataFile.parentProject.name
+                    parent_document.dataFile.parentProject.name
                 )
             except Exception:
                 parent_project = None
@@ -854,7 +876,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
             # Skip already saved components if option is enabled
             target_doc_version = None
             try:
-                target_doc_version = component.parentDesign.parentDocument.version
+                target_doc_version = parent_document.version
             except Exception:
                 target_doc_version = None
 

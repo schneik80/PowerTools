@@ -9,6 +9,7 @@
 
 import adsk.core, adsk.fusion
 import os
+import re
 from ...lib import ptAddInUtils as ptutil
 from ... import config
 
@@ -167,7 +168,8 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
         # Show file save dialog
         dlgResult = folderDlg.showDialog()
         if dlgResult == adsk.core.DialogResults.DialogOK:
-            filepath = os.path.join(folderDlg.folder, parentOcc + ".csv")
+            safe_name = re.sub(r'[<>:"/\\|?*]', "_", os.path.basename(parentOcc))
+            filepath = os.path.join(folderDlg.folder, safe_name + ".csv")
             # Write the results to the file
             with open(filepath, "w") as f:
                 f.write(resultString)
@@ -187,6 +189,21 @@ def command_destroy(args: adsk.core.CommandEventArgs):
     ptutil.log(f"{CMD_NAME} Command Destroy Event")
 
 
+def _csv_cell(value) -> str:
+    """Neutralize CSV/formula injection for a single cell value.
+
+    Cells whose first character is one a spreadsheet may treat as a formula
+    (= + - @) or a control character (tab/CR) are prefixed with a single
+    quote so they are imported as literal text. Names, part numbers, and
+    materials can flow from shared documents authored by others, so they are
+    treated as untrusted.
+    """
+    text = str(value)
+    if text and text[0] in ("=", "+", "-", "@", "\t", "\r"):
+        text = "'" + text
+    return text
+
+
 # walk thru the assembly
 def traverseAssembly(bom):
     mStr = ""
@@ -195,11 +212,11 @@ def traverseAssembly(bom):
             if item["sub"] < 1:
                 mStr += (
                     '"'
-                    + item["name"]
+                    + _csv_cell(item["name"])
                     + '","'
-                    + str(item["pn"])
+                    + _csv_cell(item["pn"])
                     + '","'
-                    + str(item["material"])
+                    + _csv_cell(item["material"])
                     + '",'
                     + str(item["instances"])
                     + ",EA"
@@ -210,11 +227,11 @@ def traverseAssembly(bom):
         for item in bom:
             mStr += (
                 '"'
-                + item["name"]
+                + _csv_cell(item["name"])
                 + '","'
-                + str(item["pn"])
+                + _csv_cell(item["pn"])
                 + '","'
-                + str(item["material"])
+                + _csv_cell(item["material"])
                 + '",'
                 + str(item["instances"])
                 + ",EA"
