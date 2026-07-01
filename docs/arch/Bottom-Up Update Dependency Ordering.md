@@ -218,57 +218,82 @@ acyclicity, and branch order simply follows `occurrences` order.
 
 ## 9. Resume interaction
 
-`bottom_up_order` is written verbatim into the checkpoint log. On the next run,
-`_analyze_resume_state()` compares the freshly computed order with the logged
-one (`dag_matches`) and resumes from the component after the last
-`SAVE_UPLOAD_COMPLETE` checkpoint via `list.index()`. Because the order is now
-**duplicate-free**, `index()` is unambiguous and the resume start point is
-exact. A log produced by an older (pre-dedup) build simply fails the
-`dag_matches` equality and triggers a safe full run — never an incorrect resume.
+The bottom-up order is written into the checkpoint log as `doc_id|name` lines,
+and each per-document checkpoint records `doc_id=…`. On the next run,
+`_analyze_resume_state()` compares the freshly computed **document-id** order
+with the logged one (`dag_matches`) and resumes from the document after the last
+`SAVE_UPLOAD_COMPLETE` checkpoint via `list.index()` on the id list. Keying on
+`doc_id` makes resume **rename-robust** (renaming a component no longer
+invalidates the run) and unambiguous (ids are unique). A log produced by an
+older name-keyed build simply fails the `dag_matches` equality and triggers a
+safe full run — never an incorrect resume.
 
 ---
 
-## 10. Recommended further hardening
+## 10. Hardening status
 
-These are deliberately **not** applied yet because they ripple beyond the two
-ordering functions (into `components_by_name`, the resume log format, and
-checkpoint parsing) and warrant their own change with fresh test coverage. They
-are recorded here so the next pass has a clear target.
+**Implemented — the document-id migration (`document_dag.py`).** Items 1 and 2
+below have landed: the live path (`command_created` / `command_execute`) now
+builds a **document-level DAG keyed by `dataFile.id`** via
+`document_bottom_up_order()` and iterates real save units. Internal
+sub-components fold into their owning document, multi-component documents
+collapse to one node, `docCount` counts real save operations, and the graph is
+collision-safe by construction (distinct documents sharing a component name stay
+distinct). The resume log/checkpoints moved to `doc_id` in lockstep (§9). The
+component-name functions (`traverse_assembly` / `sort_dag_bottom_up`) are
+retained as the tested reference implementation and are removable once the id
+path is verified inside Fusion.
 
-1. **Key the graph by a stable identity, not `name`.** Component names are not
-   guaranteed unique across referenced external documents. Two distinct
-   components sharing a name currently collapse to one node (the second is
-   silently skipped). Keying `traverse_assembly`'s memo and the `emitted`/
-   `in_progress` sets by `component.entityToken` (or resolving straight to
-   `dataFile.id`) removes that latent skip. *Trade-off:* the processing loop,
-   logs, and resume checkpoints are name-oriented today and would need to move
-   to the stable key in lockstep.
-2. **Build a document-level DAG directly.** The true work unit is the *document*,
-   not the component. Constructing nodes keyed by `dataFile.id` — collapsing
-   internal sub-components into their owning document up front — yields a smaller
-   graph, makes `docCount` count real save operations, and folds the runtime
-   `saved` dedup into the graph itself.
-3. **Iterative traversal for very deep assemblies.** The sort recurses to a depth
-   equal to the assembly nesting depth. Real Fusion assemblies nest far below
-   Python's ~1000-frame default limit, so this is low priority; an explicit-stack
-   post-order removes the ceiling entirely if it ever matters.
+> The migration was validated by `py_compile` and pure-logic tests only; the
+> Fusion-entangled processing loop still needs an in-Fusion runtime pass. In
+> particular, confirm `resolve_document`'s ownership resolution for
+> referenced-but-not-open child documents on a real multi-level assembly.
+
+1. **Key the graph by a stable identity, not `name`.** *(Done, as `dataFile.id`.)*
+   Component names are not guaranteed unique across referenced external
+   documents; the id-keyed graph removes the latent silent-skip. The one boundary
+   to watch: any code path that still maps a name back to a component reintroduces
+   the collision, so keep the loop on ids.
+2. **Build a document-level DAG directly.** *(Done.)* Nodes keyed by
+   `dataFile.id`, internal components folded into their owner, the runtime
+   `saved` dedup now subsumed by the graph.
+
+**Still open.**
+
+3. **Iterative traversal for very deep assemblies.** Both sorts recurse to a
+   depth equal to the assembly nesting depth. Real Fusion assemblies nest far
+   below Python's ~1000-frame default limit, so this is low priority; an
+   explicit-stack post-order removes the ceiling entirely if it ever matters.
 4. **Explicit cycle *reporting*.** The guard prevents runaway recursion but only
    logs. If diagnosing a malformed reference graph ever becomes a need, switch
    this phase to Kahn's algorithm so the leftover (never-emitted) set *is* the
    cycle, and surface it to the user.
+5. **Cache the order between `command_created` and `command_execute`.** The order
+   is now computed twice per invocation (dialog preview, then execution), and the
+   id-based build resolves `dataFile` per component — heavier than the old
+   name-only walk. Memoizing the records for the active design across the two
+   phases would remove the duplicate build.
 
 ---
 
 ## 11. Testing
 
-Pure-logic coverage lives in `tests/test_bottomupupdate_dag.py` (runs outside
-Fusion via the `PowerTools.*` scaffolding in `tests/conftest.py`, with fake
-component/occurrence objects). It locks in:
+Pure-logic coverage runs outside Fusion (fake component/occurrence objects; the
+`PowerTools.*` scaffolding in `tests/conftest.py` where a module import is
+needed):
 
-- children-before-parents ordering on a simple tree,
-- a shared sub-assembly emitted **once** and **before every** parent (diamond),
-- dependency order preserved across **nested** diamonds,
-- a hand-built **cyclic** graph terminating with each node emitted once.
+- `tests/test_bottomupupdate_dag.py` — the component-name reference sort:
+  children-before-parents, diamond-once, nested diamonds, cyclic-graph
+  termination.
+- `tests/test_bottomupupdate_document_dag.py` — the document-level DAG:
+  multi-component collapse, doc-less internal fold, document diamond, same-named
+  distinct documents stay distinct, cyclic-graph termination.
+- `tests/test_bottomupupdate_resume.py` — the id-based resume/log parsing: order
+  extraction on the `doc_id` column, checkpoint extraction, and the
+  resume / full-run / version-mismatch / completed decisions.
+
+The Fusion-entangled processing loop is not unit-testable outside Fusion and
+requires a manual in-app verification pass (see §10).
 
 ---
 
