@@ -22,12 +22,12 @@ from ..ptAddInUtils import app, ui
 def _get_name_type(selection):
     try:
         selection_type = selection.objectType
-    except:
+    except Exception:
         selection_type = "could not determine type"
 
     try:
         name = selection.name
-    except:
+    except Exception:
         name = "Object has no name"
 
     return name, selection_type
@@ -44,7 +44,7 @@ def _make_attributes_message(attributes, filter_by_group, filter_group_name):
             attribute_list.append(
                 f"{attribute.groupName}, {attribute.name}, {attribute.value}"
             )
-        except:
+        except Exception:
             attribute_list.append("some failure")
 
     return attribute_list
@@ -66,7 +66,7 @@ def attributes_for_selection(selection, filter_by_group, filter_group_name) -> l
         )
         if len(attribute_list) > 0:
             msg_list.extend(attribute_list)
-    except:
+    except Exception:
         msg_list.append("    Selected Object Type Does not support attributes")
 
     return msg_list

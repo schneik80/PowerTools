@@ -192,12 +192,14 @@ def _theme() -> str:
 
 
 def _module_for(key):
-    # Resolved lazily — commands.MODULES is populated after the commands package
-    # finishes importing (this runs only when the palette is shown).
+    # Imported (and cached) on demand via the commands package's lazy loader.
+    # This runs only when the palette is shown, so it does not add to the
+    # start-up hot path; it lets the palette display friendly names/descriptions
+    # for every command, including ones the user has disabled.
     try:
-        from .. import MODULES
+        from .. import load_command
 
-        return MODULES.get(key)
+        return load_command(key)
     except Exception:
         return None
 

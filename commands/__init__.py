@@ -22,12 +22,21 @@ from .. import command_registry as registry
 from .. import settings_store
 from ..lib import ptAddInUtils as ptutil
 
-# Import every registered command module up front (mirrors the previous explicit
-# imports). Enablement is enforced at start(), not at import time.
-MODULES = {
-    cmd["module"]: importlib.import_module(f".{cmd['module']}.entry", __package__)
-    for _, cmd in registry.iter_commands()
-}
+# Command entry modules are imported lazily and cached here — only when a command
+# is actually started, or when the Preferences palette introspects it for display.
+# Disabled commands are therefore never imported on the start-up hot path (and a
+# module that fails to import no longer breaks loading of the whole add-in).
+MODULES = {}
+
+
+def load_command(module_key: str):
+    """Import (and cache) a command's entry module by its registry key."""
+    module = MODULES.get(module_key)
+    if module is None:
+        module = importlib.import_module(f".{module_key}.entry", __package__)
+        MODULES[module_key] = module
+    return module
+
 
 # Modules whose start() actually ran this session, so stop() only tears those down.
 _started = []
@@ -59,8 +68,9 @@ def start():
     for group, cmd in registry.iter_commands():
         if not _should_start(group, cmd, prefs):
             continue
-        module = MODULES[cmd["module"]]
         try:
+            # Import happens here, lazily, only for commands that will start.
+            module = load_command(cmd["module"])
             module.start()
             _started.append(module)
         except Exception:

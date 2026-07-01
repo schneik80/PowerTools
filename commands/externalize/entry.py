@@ -425,7 +425,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
         ok = app.fireCustomEvent(EVENT_ID)
         log_writer(f"fireCustomEvent returned {ok}; dialog will close now.")
 
-    except:  # pylint:disable=bare-except
+    except Exception:
         _pending_run = None
         app.log(f"{CMD_NAME} failed:\n{traceback.format_exc()}")
 
@@ -687,8 +687,9 @@ def _snapshot_local_component_names():
         return []
     names = []
     root = design.rootComponent
-    for i in range(root.occurrences.count):
-        occ = root.occurrences.item(i)
+    occurrences = root.occurrences
+    for i in range(occurrences.count):
+        occ = occurrences.item(i)
         if occ.component.parentDesign == design:
             names.append(occ.component.name)
     return names
@@ -763,8 +764,9 @@ def _group_local_occurrences(design, root, name_filter):
     follows first encounter in the occurrence list."""
     entries: dict = {}
     order: list = []
-    for i in range(root.occurrences.count):
-        occ = root.occurrences.item(i)
+    occurrences = root.occurrences
+    for i in range(occurrences.count):
+        occ = occurrences.item(i)
         comp = occ.component
         if comp.parentDesign != design:
             continue

@@ -89,7 +89,7 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
         autosave = cmdDefs.itemById("AutoSaveFilesCommand")
         autosave.execute()
 
-    except:
+    except Exception:
         ptutil.handle_error(CMD_NAME, show_message_box=True)
 
 

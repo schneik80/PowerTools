@@ -19,7 +19,7 @@ def run(context):
         # then starts every command module defined in commands/__init__.py.
         commands.start()
 
-    except:
+    except Exception:
         ptutil.handle_error('run')
 
 
@@ -32,5 +32,5 @@ def stop(context):
         # the shared UI access points.
         commands.stop()
 
-    except:
+    except Exception:
         ptutil.handle_error('stop')

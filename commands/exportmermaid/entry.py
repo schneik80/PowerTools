@@ -126,7 +126,7 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
         else:
             return
 
-    except:
+    except Exception:
         ptutil.handle_error(CMD_NAME, show_message_box=True)
 
 

@@ -134,7 +134,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
         # Open the share link in the default browser
         webbrowser.open(shareLink)
 
-    except:
+    except Exception:
         # Write the error message to the TEXT COMMANDS window.
         ptutil.handle_error(CMD_NAME)
 

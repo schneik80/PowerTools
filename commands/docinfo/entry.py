@@ -166,7 +166,7 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
 
         ui.messageBox(resultString, mTitle, 0, messageIcon)
 
-    except:
+    except Exception:
         ptutil.handle_error(CMD_NAME, show_message_box=True)
 
 

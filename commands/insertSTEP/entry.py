@@ -135,7 +135,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         command = f"Fusion.ImportComponent {filename}"
         app.executeTextCommand(command)
 
-    except:
+    except Exception:
         if ui:
             ptutil.handle_error(CMD_NAME, show_message_box=True)
 

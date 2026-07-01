@@ -494,7 +494,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
         if compare_doc:
             try:
                 compare_doc.close(False)
-            except:
+            except Exception:
                 pass
 
 

@@ -110,7 +110,7 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
         showHistory = cmdDefs.itemById("ShowHistoryCmd")
         showHistory.execute()
 
-    except:
+    except Exception:
         ptutil.handle_error(CMD_NAME, show_message_box=True)
 
 

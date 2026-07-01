@@ -90,7 +90,7 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
         cmdUpdate = cmdDefs.itemById("ContextUpdateAllFromParentCmd")
         cmdUpdate.execute()
 
-    except:
+    except Exception:
         if ui:
             ptutil.handle_error(CMD_NAME, show_message_box=True)
 

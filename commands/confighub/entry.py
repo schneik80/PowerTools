@@ -69,8 +69,9 @@ def _resolve_hub_for_folder(folder):
     project = folder.parentProject
     if project is None:
         return None
-    for i in range(app.data.dataHubs.count):
-        hub = app.data.dataHubs.item(i)
+    hubs = app.data.dataHubs
+    for i in range(hubs.count):
+        hub = hubs.item(i)
         if hub.dataProjects.itemById(project.id) is not None:
             return hub
     return None

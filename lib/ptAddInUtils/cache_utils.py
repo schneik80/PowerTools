@@ -162,12 +162,13 @@ def find_global_params_folder(project, cmd_name: str):
         return cached_folder
 
     root = project.rootFolder
+    data_folders = root.dataFolders
     with ptutil.perf_timer(
-        f"rootFolder.dataFolders scan (n={root.dataFolders.count})",
+        f"rootFolder.dataFolders scan (n={data_folders.count})",
         f"{cmd_name}._find_param_folder",
     ):
-        for i in range(root.dataFolders.count):
-            folder = root.dataFolders.item(i)
+        for i in range(data_folders.count):
+            folder = data_folders.item(i)
             if folder.name == GLOBAL_PARAMS_FOLDER_NAME:
                 write_global_params_folder_cache(project, folder, cmd_name)
                 return folder
@@ -274,11 +275,12 @@ def list_param_docs(project, cmd_name: str) -> dict:
     if folder is None:
         return {}
     result = {}
+    data_files = folder.dataFiles
     with ptutil.perf_timer(
-        f"dataFiles scan (n={folder.dataFiles.count})", f"{cmd_name}._list_param_docs"
+        f"dataFiles scan (n={data_files.count})", f"{cmd_name}._list_param_docs"
     ):
-        for i in range(folder.dataFiles.count):
-            df = folder.dataFiles.item(i)
+        for i in range(data_files.count):
+            df = data_files.item(i)
             result[df.name] = df
     write_param_docs_cache(project, result, cmd_name)
     return result

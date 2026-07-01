@@ -392,7 +392,7 @@ def hide_joint_origins_in_document(document):
                         ):
                             joint_origin.isLightBulbOn = False
                             hidden_count += 1
-                    except:
+                    except Exception:
                         # If individual control fails, continue to next
                         continue
 
@@ -442,7 +442,7 @@ def hide_sketches_in_document(document):
                         if hasattr(sketch, "isLightBulbOn") and sketch.isLightBulbOn:
                             sketch.isLightBulbOn = False
                             hidden_count += 1
-                    except:
+                    except Exception:
                         # If individual control fails, continue to next
                         continue
 
@@ -492,7 +492,7 @@ def hide_joints_in_document(document):
                         if hasattr(joint, "isLightBulbOn") and joint.isLightBulbOn:
                             joint.isLightBulbOn = False
                             hidden_count += 1
-                    except:
+                    except Exception:
                         # If individual control fails, continue to next
                         continue
 
@@ -542,7 +542,7 @@ def hide_canvases_in_document(document):
                         if hasattr(canvas, "isLightBulbOn") and canvas.isLightBulbOn:
                             canvas.isLightBulbOn = False
                             hidden_count += 1
-                    except:
+                    except Exception:
                         # If individual control fails, continue to next
                         continue
 
@@ -1225,7 +1225,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
         try:
             if progress_bar:
                 progress_bar.hide()
-        except:
+        except Exception:
             pass  # Ignore any errors hiding the progress bar
 
         # Clear global variables even on failure to ensure clean state for next run

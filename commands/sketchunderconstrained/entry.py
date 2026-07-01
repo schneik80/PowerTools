@@ -130,7 +130,7 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
         else:
             ui.messageBox("No sketch is currently active.", CMD_ID)
 
-    except:
+    except Exception:
         if ui:
             ptutil.handle_error(CMD_NAME, show_message_box=True)
 

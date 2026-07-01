@@ -99,7 +99,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
             datatoggleopen = cmdDefs.itemById("DashboardModeOpenCommand")
             datatoggleopen.execute()
 
-    except:
+    except Exception:
         ptutil.handle_error(CMD_NAME, show_message_box=True)
 
     ptutil.log(f"{CMD_NAME} Command Completed Event")

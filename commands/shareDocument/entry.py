@@ -209,7 +209,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
             2,
         )
 
-    except:
+    except Exception:
         # Write the error message to the TEXT COMMANDS window.
         ptutil.handle_error(CMD_NAME)
 

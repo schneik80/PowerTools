@@ -490,9 +490,10 @@ def _list_open_docs() -> list[dict]:
     # mirrors the `seen` guard in _list_recent_docs.
     seen: set[str] = set()
 
-    for i in range(app.documents.count):
+    documents = app.documents
+    for i in range(documents.count):
         try:
-            doc = app.documents.item(i)
+            doc = documents.item(i)
         except Exception:
             continue
         if doc is None:
@@ -524,7 +525,12 @@ def _list_open_docs() -> list[dict]:
                 "dataFileId": df_id,
                 "name": getattr(df, "name", "") or doc.name,
                 "intent": intent_name,
-                "thumbUrl": _thumbnail_for_open_doc(doc, df_id),
+                # Cache-only here so building the gallery never blocks on a
+                # synchronous Component.createThumbnail render. The cache is
+                # pre-warmed by _remember_recent_if_eligible on documentActivated
+                # (see its docstring), so activated docs already have a thumb;
+                # any not-yet-rendered doc simply shows blank until then.
+                "thumbUrl": _cached_thumbnail(df_id),
             }
         )
     return out
@@ -769,8 +775,9 @@ def _list_recent_docs() -> list[dict]:
     # raw open-id set here (re-read docs to get every truly-open id).
     raw_open_ids: set[str] = set()
     try:
-        for i in range(app.documents.count):
-            doc = app.documents.item(i)
+        documents = app.documents
+        for i in range(documents.count):
+            doc = documents.item(i)
             if doc is None or not doc.isSaved:
                 continue
             df = getattr(doc, "dataFile", None)

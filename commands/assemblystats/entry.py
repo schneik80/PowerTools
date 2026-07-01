@@ -160,7 +160,7 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
             docContexts = sum(
                 1 for line in docTimeline.strip().split("\n") if "Context" in line
             )
-        except:
+        except Exception:
             docContexts = f"<i>Error. Unable to retrieve timeline contexts.</i>"
             ptutil.log("Error retrieving timeline contexts.")
 
@@ -206,7 +206,7 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
         # Display results in a MESSAGE BOX.
         ui.messageBox(resultString, mTitle, 0, 2)
 
-    except:
+    except Exception:
         if ui:
             ptutil.handle_error(CMD_NAME, show_message_box=True)
 
