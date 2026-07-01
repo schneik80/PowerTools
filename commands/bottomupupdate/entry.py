@@ -13,6 +13,7 @@ import time
 from ...lib import ptAddInUtils as ptutil
 from ... import config
 from .. import _ui_bootstrap
+from .document_dag import document_bottom_up_order, resolve_document
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -132,9 +133,8 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     }
     try:
         root_component = design.rootComponent
-        assembly_dict = {}
-        traverse_assembly(root_component, assembly_dict)
-        bottom_up_order = sort_dag_bottom_up(assembly_dict)
+        bottom_up_records = document_bottom_up_order(root_component)
+        bottom_up_order = [record["doc_id"] for record in bottom_up_records]
         resume_plan = _analyze_resume_state(
             _default_temp_log_path(), app.version, bottom_up_order
         )
@@ -261,6 +261,12 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     open_view.isEnabled = log_enable.value
 
 
+# NOTE: traverse_assembly / sort_dag_bottom_up build the component-name DAG that
+# the command used before the move to the document-level graph in document_dag.py.
+# The live path (command_created / command_execute) now consumes
+# document_bottom_up_order instead; these two are retained as the reference
+# implementation exercised by tests/test_bottomupupdate_dag.py and can be removed
+# once the id-based path is verified in Fusion.
 def traverse_assembly(component, parent_dict, _memo=None):
     """
     Recursively traverses the assembly and creates a dictionary for each component.
@@ -732,13 +738,16 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 "Upload check interval input not found, using default 0.5 seconds"
             )
 
-        # Build the assembly structure and determine processing order
+        # Build the document dependency graph and determine processing order.
+        # Nodes are keyed by dataFile.id, so multi-component documents collapse to
+        # a single save unit and the order is deduplicated by construction. Each
+        # record is {"doc_id", "name"}; the id list drives resume and dedup, the
+        # name is carried for human-readable logs and progress.
         root_component = design.rootComponent
-        assembly_dict = {}
-        traverse_assembly(root_component, assembly_dict)  # Build component hierarchy
-        bottom_up_order = sort_dag_bottom_up(assembly_dict)  # Sort for dependency order
+        bottom_up_records = document_bottom_up_order(root_component)
+        bottom_up_order = [record["doc_id"] for record in bottom_up_records]
 
-        docCount = len(bottom_up_order)
+        docCount = len(bottom_up_records)
         default_temp_log_path = _default_temp_log_path()
         resume_info = _analyze_resume_state(
             default_temp_log_path, appVersionBuild, bottom_up_order
@@ -759,15 +768,15 @@ def command_execute(args: adsk.core.CommandEventArgs):
             else 0
         )
 
-        ptutil.log(f"Bottom-up order: {bottom_up_order}")
-        write_log_entry(f"Bottom-up order: {bottom_up_order}")
+        ptutil.log(f"Bottom-up order (doc_id, name): {bottom_up_records}")
+        write_log_entry(f"Bottom-up order (doc_id, name): {bottom_up_records}")
         ptutil.log(resume_info.get("status_message", "A full run will start."))
         write_log_entry(resume_info.get("status_message", "A full run will start."))
         if docCount == 0:
-            ui.messageBox("No components found in the assembly.")
+            ui.messageBox("No referenced documents found to update.")
             return
-        ptutil.log(f"----- Starting saving {docCount} components -----")
-        write_log_entry(f"----- Starting saving {docCount} components -----")
+        ptutil.log(f"----- Starting saving {docCount} documents -----")
+        write_log_entry(f"----- Starting saving {docCount} documents -----")
 
         # Set up logging if enabled
         if create_log:
@@ -812,7 +821,12 @@ def command_execute(args: adsk.core.CommandEventArgs):
                         f"  Resume start index: {resume_start_index}\n"
                     )
                     fh.write("\nBottom-up order:\n")
-                    fh.write("\n".join(bottom_up_order))
+                    fh.write(
+                        "\n".join(
+                            f"{record['doc_id']}|{record['name']}"
+                            for record in bottom_up_records
+                        )
+                    )
                     fh.write("\n\nDocument save log:\n")
             except Exception as log_e:
                 ptutil.log(f"Failed to write initial log: {log_e}")
@@ -843,26 +857,38 @@ def command_execute(args: adsk.core.CommandEventArgs):
         # Counter for progress tracking
         processed_count = resume_start_index
 
-        # Map component name -> component once. The per-component lookup below
-        # then costs O(1) instead of design.allComponents.itemByName's O(n)
-        # linear scan, which made the whole loop O(n^2). Keep the FIRST match
-        # per name to preserve itemByName's semantics.
-        components_by_name = {}
+        # Map document id -> a representative component once, so the per-document
+        # skip checks below (which read parentDesign.parentDocument metadata) cost
+        # O(1) instead of rescanning design.allComponents. Any component that
+        # resolves to a given document is equivalent for those checks, so keep the
+        # FIRST one seen per document id.
+        components_by_docid = {}
         for comp in design.allComponents:
-            if comp.name not in components_by_name:
-                components_by_name[comp.name] = comp
+            resolved = resolve_document(comp)
+            if resolved is None:
+                continue
+            comp_docid = resolved[0]
+            if comp_docid not in components_by_docid:
+                components_by_docid[comp_docid] = comp
 
-        # Process each component in bottom-up dependency order
-        for component_name in bottom_up_order[resume_start_index:]:
-            if component_name == "RootComponent":  # Skip the root assembly itself
+        # Process each document in bottom-up dependency order. Records are unique
+        # by doc_id, so the graph already excludes the root document and collapses
+        # multi-component documents; the saved-set guard below stays as defense in
+        # depth and for resume safety.
+        for record in bottom_up_records[resume_start_index:]:
+            docid = record["doc_id"]
+            component_name = record["name"]  # Display/log name for this document
+            if docid == top_document_id:  # Root assembly is saved separately at the end
                 processed_count += 1
                 progress_bar.progressValue = processed_count
                 progress_bar.message = (
-                    f"Skipping root component ({processed_count} of {docCount})"
+                    f"Skipping root document ({processed_count} of {docCount})"
                 )
                 continue
-            component = components_by_name.get(component_name)
-            if not component:  # Component not found, skip it
+            # Representative component for this document, used only to read the
+            # parentDesign.parentDocument metadata the skip checks below need.
+            component = components_by_docid.get(docid)
+            if not component:  # No component resolves to this document; skip it
                 processed_count += 1
                 progress_bar.progressValue = processed_count
                 progress_bar.message = f"Component not found: {component_name} ({processed_count} of {docCount})"
@@ -870,19 +896,6 @@ def command_execute(args: adsk.core.CommandEventArgs):
             # Walk the parentDesign.parentDocument chain once and reuse it below
             # instead of re-marshalling it 3-6x per iteration.
             parent_document = component.parentDesign.parentDocument
-            # Get the design data file for this component
-            design_data_file = getattr(
-                parent_document, "designDataFile", None
-            )
-            if design_data_file is None:
-                log_entry = f"Skipping Component (no designDataFile): {component_name}"
-                ptutil.log(log_entry)
-                write_log_entry(log_entry)
-                processed_count += 1
-                progress_bar.progressValue = processed_count
-                progress_bar.message = f"Skipping {component_name} (no design file) ({processed_count} of {docCount})"
-                continue
-            docid = design_data_file.id
             parent_project = None
             try:
                 # Get the project name to check if it's a standard component
@@ -1126,8 +1139,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
             saved_doc_count += 1  # Increment counter for completed saves
 
             checkpoint_entry = (
-                f"CHECKPOINT|SAVE_UPLOAD_COMPLETE|component={component_name}|"
-                f"saved_index={saved_doc_count}|total={docCount}|timestamp={timestamp}"
+                f"CHECKPOINT|SAVE_UPLOAD_COMPLETE|doc_id={docid}|"
+                f"component={component_name}|saved_index={saved_doc_count}|"
+                f"total={docCount}|timestamp={timestamp}"
             )
             ptutil.log(checkpoint_entry)
             write_log_entry(checkpoint_entry)
@@ -1326,13 +1340,19 @@ def _extract_latest_bottom_up_order(log_lines):
         value = line.strip()
         if not value or value == "Document save log:":
             break
-        order.append(value)
+        # Each order line is "doc_id|name"; compare on the stable doc_id so a
+        # component rename does not invalidate an otherwise-resumable run.
+        order.append(value.split("|", 1)[0])
     return order
 
 
-def _extract_last_component_checkpoint(log_lines):
-    """Return the last component checkpoint tuple (component_name, saved_index)."""
-    last_component = None
+def _extract_last_checkpoint(log_lines):
+    """Return the last document checkpoint tuple (doc_id, saved_index).
+
+    Only per-document checkpoints carry a ``doc_id`` field; the final
+    "main assembly" checkpoint has none and is therefore skipped.
+    """
+    last_doc_id = None
     last_saved_index = 0
 
     for line in log_lines:
@@ -1347,8 +1367,8 @@ def _extract_last_component_checkpoint(log_lines):
             k, v = part.split("=", 1)
             fields[k] = v
 
-        component = fields.get("component")
-        if not component or component == "main assembly":
+        doc_id = fields.get("doc_id")
+        if not doc_id:
             continue
 
         try:
@@ -1356,21 +1376,26 @@ def _extract_last_component_checkpoint(log_lines):
         except ValueError:
             saved_index = 0
 
-        last_component = component
+        last_doc_id = doc_id
         last_saved_index = saved_index
 
-    return last_component, last_saved_index
+    return last_doc_id, last_saved_index
 
 
-def _analyze_resume_state(log_path, fusion_client_version, current_bottom_up_order):
-    """Inspect an existing log and return whether this run should resume."""
+def _analyze_resume_state(log_path, fusion_client_version, current_doc_ids):
+    """Inspect an existing log and return whether this run should resume.
+
+    ``current_doc_ids`` is the freshly computed bottom-up order of document ids;
+    it is compared against the ids recorded in the previous log to decide whether
+    the previous run's checkpoints still apply.
+    """
     result = {
         "log_exists": False,
         "matches_version": False,
         "completed_successfully": False,
         "dag_matches": False,
         "should_resume": False,
-        "resume_component": None,
+        "resume_doc_id": None,
         "resume_start_index": 0,
         "last_saved_index": 0,
         "clear_log": False,
@@ -1407,7 +1432,7 @@ def _analyze_resume_state(log_path, fusion_client_version, current_bottom_up_ord
         return result
 
     logged_order = _extract_latest_bottom_up_order(log_lines)
-    result["dag_matches"] = logged_order == current_bottom_up_order
+    result["dag_matches"] = logged_order == current_doc_ids
     result["completed_successfully"] = any(
         "Bottom-up Update completed successfully" in line for line in log_lines
     )
@@ -1421,20 +1446,20 @@ def _analyze_resume_state(log_path, fusion_client_version, current_bottom_up_ord
 
     if not result["dag_matches"]:
         result["status_message"] = (
-            "Previous run did not complete, but the component save list has changed. "
+            "Previous run did not complete, but the document save list has changed. "
             "A full run will start."
         )
         return result
 
-    last_component, last_saved_index = _extract_last_component_checkpoint(log_lines)
-    if last_component and last_component in current_bottom_up_order:
-        next_index = current_bottom_up_order.index(last_component) + 1
-        result["resume_component"] = last_component
-        result["resume_start_index"] = min(next_index, len(current_bottom_up_order))
+    last_doc_id, last_saved_index = _extract_last_checkpoint(log_lines)
+    if last_doc_id and last_doc_id in current_doc_ids:
+        next_index = current_doc_ids.index(last_doc_id) + 1
+        result["resume_doc_id"] = last_doc_id
+        result["resume_start_index"] = min(next_index, len(current_doc_ids))
         result["last_saved_index"] = max(last_saved_index, 0)
         result["should_resume"] = True
         result["status_message"] = (
-            f"Resume available. Next component after '{last_component}' will be processed."
+            "Resume available. Processing will continue after the last saved document."
         )
         return result
 
