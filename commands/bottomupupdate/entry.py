@@ -40,6 +40,9 @@ local_handlers = []
 # Set to track document IDs that have already been saved to avoid duplicate processing
 saved = set()
 resume_plan = {}
+# Prior autosave preference values while a run has them suspended; None when no
+# suspension is active. Restored on success, on failure, and in command_destroy.
+_autosave_prior_state = None
 
 # Command input IDs
 REBUILD_INPUT_ID = "rebuild_all"  # Checkbox to enable full rebuild of all components
@@ -627,6 +630,68 @@ def execute_command_with_timeout(
 
 
 
+def _suspend_autosave(log_fn=None):
+    """Temporarily disable Fusion's background autosave for the current run.
+
+    The processing loop opens, saves, and closes documents in rapid succession
+    while pumping ``adsk.doEvents()``. Fusion's automatic-versioning background
+    thread and the save-on-close automation can dispatch a concurrent save of a
+    dirty document inside one of those pumps, invalidating data-model objects
+    the loop still holds -- the recurring native NsDataModel10.dll access
+    violation captured by CER (LastCommand PLM360SaveCommand_Spawned /
+    CloseDocumentCommand_Spawned; crashed document flagged Needs Autosave).
+    Suspending both switches removes that concurrent mutator for the run.
+
+    Callers must pair this with ``_restore_autosave()``; both are idempotent,
+    and the prior values are logged so a crash between the two calls leaves a
+    recoverable record in the log.
+    """
+    global _autosave_prior_state
+    log = log_fn or ptutil.log
+    if _autosave_prior_state is not None:
+        return  # Already suspended by this run.
+    try:
+        prefs = adsk.core.Application.get().preferences.generalPreferences
+        prior = {
+            "isAutomaticVersioningEnabled": prefs.isAutomaticVersioningEnabled,
+            "isAutomaticSaveOnCloseEnabled": prefs.isAutomaticSaveOnCloseEnabled,
+        }
+        prefs.isAutomaticVersioningEnabled = False
+        prefs.isAutomaticSaveOnCloseEnabled = False
+        _autosave_prior_state = prior
+        log(f"Autosave suspended for this run (prior settings: {prior})")
+    except Exception as suspend_error:
+        _autosave_prior_state = None
+        log(
+            f"Could not suspend autosave ({suspend_error}); "
+            "continuing with autosave active."
+        )
+
+
+def _restore_autosave(log_fn=None):
+    """Restore the autosave settings captured by ``_suspend_autosave``.
+
+    Idempotent: safe to call from every exit path (success, failure, and
+    command destroy); only the first call after a suspension does work.
+    """
+    global _autosave_prior_state
+    log = log_fn or ptutil.log
+    if _autosave_prior_state is None:
+        return
+    prior = _autosave_prior_state
+    _autosave_prior_state = None
+    try:
+        prefs = adsk.core.Application.get().preferences.generalPreferences
+        prefs.isAutomaticVersioningEnabled = prior["isAutomaticVersioningEnabled"]
+        prefs.isAutomaticSaveOnCloseEnabled = prior["isAutomaticSaveOnCloseEnabled"]
+        log(f"Autosave settings restored: {prior}")
+    except Exception as restore_error:
+        log(
+            f"Failed to restore autosave settings ({restore_error}); "
+            f"prior values were: {prior}"
+        )
+
+
 def command_execute(args: adsk.core.CommandEventArgs):
     # ...existing code...
     global product, design, title, saved, resume_plan
@@ -675,6 +740,47 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 return bool(top_document_id and doc.dataFile and doc.dataFile.id == top_document_id)
             except Exception:
                 return False
+
+        def close_processed_document(expected_doc_id, label):
+            """Close the just-processed document via a freshly acquired handle.
+
+            Document handles held across pumped waits are the native-crash
+            vector: a background operation dispatched during adsk.doEvents()
+            can invalidate them, and the next dereference faults inside the
+            data model (NsDataModel10.dll access violation). Re-acquire
+            activeDocument, close it only when it provably is the document just
+            processed, then pump briefly so the close finishes before the next
+            open (queued Close/Open/Save commands overflowing the message queue
+            also appears in the CER data).
+            """
+            try:
+                doc = app.activeDocument
+            except Exception as close_error:
+                write_log_entry(
+                    f"   Could not re-acquire document to close {label}: {close_error}"
+                )
+                return
+            if doc is None or is_top_document(doc):
+                return
+            actual_id = None
+            try:
+                if doc.dataFile:
+                    actual_id = doc.dataFile.id
+            except Exception:
+                actual_id = None
+            if actual_id != expected_doc_id:
+                write_log_entry(
+                    f"   Active document changed during the save wait for {label} "
+                    f"(expected {expected_doc_id}, found {actual_id}); leaving it open."
+                )
+                return
+            try:
+                doc.close(False)
+            except Exception as close_error:
+                write_log_entry(f"   Failed to close {label}: {close_error}")
+                return
+            # Let the data model finish processing the close before the next open.
+            ptutil.pump_events_for(0.25)
 
         # Read dialog values from user inputs
         inputs: adsk.core.CommandInputs = args.command.commandInputs
@@ -857,6 +963,11 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
         # Counter for progress tracking
         processed_count = resume_start_index
+
+        # Suspend Fusion's background autosave for the run so it cannot save a
+        # dirty document concurrently with the loop's own save/close cycle.
+        # Restored on every exit path (success, failure, command destroy).
+        _suspend_autosave(write_log_entry)
 
         # Map document id -> a representative component once, so the per-document
         # skip checks below (which read parentDesign.parentDocument metadata) cost
@@ -1095,10 +1206,20 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 ptutil.log(f"   Rebuild complete: {component_name}")
                 write_log_entry(f"   Rebuilt {component_name}")
 
-            # Add and remove a temporary attribute to trigger change detection
-            des.attributes.add("FusionRA", "FusionRA", component_name)
-            attr = des.attributes.itemByName("FusionRA", "FusionRA")
-            attr.deleteMe()
+            # Add and remove a temporary attribute to trigger change detection.
+            # Re-acquire the design handle first: `des` may have been held across
+            # pumped waits (design intent / rebuild), and stale handles across
+            # doEvents pumps are the native-crash vector.
+            des = adsk.fusion.Design.cast(app.activeProduct)
+            if des:
+                des.attributes.add("FusionRA", "FusionRA", component_name)
+                attr = des.attributes.itemByName("FusionRA", "FusionRA")
+                attr.deleteMe()
+            else:
+                write_log_entry(
+                    f"   Skipped change-detection tickle for {component_name} "
+                    "(no active design after compute)"
+                )
 
             # Save the document with timestamp
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1125,15 +1246,11 @@ def command_execute(args: adsk.core.CommandEventArgs):
             ptutil.log(f"   {save_msg}")
             write_log_entry(f"   {save_msg}")
             if not save_ok:
-                try:
-                    if not is_top_document(active_doc):
-                        active_doc.close(False)
-                except Exception:
-                    pass
+                close_processed_document(docid, component_name)
                 continue
 
-            if not is_top_document(active_doc):
-                active_doc.close(False)  # Already saved, avoid triggering another save cycle
+            # Already saved; close via a fresh handle to avoid another save cycle.
+            close_processed_document(docid, component_name)
             log_entry = f"   {component_name} saved - [{timestamp}]"
             ptutil.log(log_entry)
             write_log_entry(log_entry)
@@ -1253,6 +1370,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 completion_msg += f"\nFailed to write log to: {file_path}\n{log_e}"
 
         # Clear global variables for next run
+        _restore_autosave(write_log_entry)
         saved.clear()  # Clear the set of processed document IDs
         resume_plan = {}
         product = None
@@ -1273,6 +1391,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
             pass  # Ignore any errors hiding the progress bar
 
         # Clear global variables even on failure to ensure clean state for next run
+        _restore_autosave(write_log_entry)
         saved.clear()
         resume_plan = {}
         product = None
@@ -1288,6 +1407,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
 def command_destroy(args: adsk.core.CommandEventArgs):
     global local_handlers, saved, product, design, title, resume_plan
     local_handlers = []
+    _restore_autosave()  # Belt and braces: idempotent, no-op if already restored
     saved.clear()  # Clear the set of processed document IDs
     resume_plan = {}
     product = None
