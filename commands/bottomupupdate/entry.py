@@ -48,6 +48,7 @@ _autosave_prior_state = None
 REBUILD_INPUT_ID = "rebuild_all"  # Checkbox to enable full rebuild of all components
 SKIP_STANDARD_ID = "skip_standard"  # Checkbox to skip standard library components
 SKIP_SAVED_ID = "skip_saved"  # Checkbox to skip components that are already saved
+SKIP_CONFIGS_ID = "skip_configurations"  # Checkbox to skip configuration documents
 HIDE_ORIGINS_ID = "hide_origins"  # Checkbox to hide coordinate system origins
 HIDE_JOINTS_ID = "hide_joints"  # Checkbox to hide joint elements in the model
 HIDE_SKETCHES_ID = "hide_sketches"  # Checkbox to hide component sketches
@@ -174,6 +175,15 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     )
     skip_saved_input.tooltip = (
         "Skip Documents that have already been saved in this Fusion client build."
+    )
+
+    skip_configs_input = main_inputs.addBoolValueInput(
+        SKIP_CONFIGS_ID, "Skip configured designs", True, "", True
+    )
+    skip_configs_input.tooltip = (
+        "Skip configuration members and configured designs. Fusion can crash "
+        "natively in its configuration data-model when this command opens "
+        "them in bulk; skipped documents are listed in the log."
     )
 
     apply_intent_input = main_inputs.addBoolValueInput(
@@ -346,6 +356,26 @@ def sort_dag_bottom_up(assembly_dict):
         traverse_dag(value)
 
     return sorted_components
+
+
+def _configuration_label(data_file):
+    """Describe a data file's configuration role, or return '' if none.
+
+    The 2026-07-02 CER crash faulted inside Fusion's configuration event
+    consumer (Ns::MFGDMEventConsumer ... hubModelIdsForConfiguration) while
+    this command opened a configuration member -- a documented Fusion
+    native-crash class for Configurations / Manage-extension data. This helper
+    lets the loop identify such documents before opening them. Both properties
+    are documented on DataFile; access is guarded for older clients.
+    """
+    try:
+        if getattr(data_file, "isConfiguration", False):
+            return "configuration member"
+        if getattr(data_file, "isConfiguredDesign", False):
+            return "configured design"
+    except Exception:
+        return ""
+    return ""
 
 
 def is_external_component(comp: adsk.fusion.Component):
@@ -787,6 +817,12 @@ def command_execute(args: adsk.core.CommandEventArgs):
         skip_standard = adsk.core.BoolValueCommandInput.cast(
             inputs.itemById(SKIP_STANDARD_ID)
         ).value
+        skip_configs_input = inputs.itemById(SKIP_CONFIGS_ID)
+        skip_configs = (
+            adsk.core.BoolValueCommandInput.cast(skip_configs_input).value
+            if skip_configs_input
+            else True
+        )
         rebuild_all = adsk.core.BoolValueCommandInput.cast(
             inputs.itemById(REBUILD_INPUT_ID)
         ).value
@@ -1069,6 +1105,28 @@ def command_execute(args: adsk.core.CommandEventArgs):
                     write_log_entry(error_msg)
                     progress_bar.message = f"Failed to find document: {component_name} ({processed_count} of {docCount})"
                     continue
+
+                # Configuration documents crash Fusion's configuration/PIM
+                # data-model when opened in bulk (see _configuration_label);
+                # skip them unless the user opted in to processing them.
+                config_label = _configuration_label(document)
+                if config_label and skip_configs:
+                    log_entry = (
+                        f"Skipping {config_label}: {component_name}"
+                    )
+                    ptutil.log(log_entry)
+                    write_log_entry(log_entry)
+                    progress_bar.message = f"Skipping {config_label}: {component_name} ({processed_count} of {docCount})"
+                    continue
+                if config_label:
+                    write_log_entry(
+                        f"   Note: {component_name} is a {config_label}"
+                    )
+
+                # Drain pending events (e.g. configuration/PIM cache updates
+                # from prior saves) before opening the next document; the
+                # 2026-07-02 crash faulted in that event consumer mid-open.
+                ptutil.pump_events_for(0.25)
 
                 app.documents.open(document, True)
                 # Log the document open event
