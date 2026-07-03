@@ -84,6 +84,7 @@ Most commands appear in **Design › Tools › Power Tools**. Some appear in oth
 | Command | Location | Description |
 | --- | --- | --- |
 | [Sketch Repair](./docs/SketchFix.md) | Sketch › Modify | Repair common sketch profile issues automatically. |
+| [Round Sketch Dimensions](./docs/Round%20Sketch%20Dimensions.md) | Sketch › Modify | Round the active sketch's dimensions to an adjustable increment, with a live preview. |
 | [Under-Constrained Sketch](./docs/SketchUnder.md) | Sketch | Highlight under-constrained sketch geometry. |
 | [Radial Hole Circle](./docs/RadialHoleCircle.md) | Sketch | Add center points for a radial pattern of holes. |
 | [Mirror Derive](./docs/MirrorDerive.md) | Design › Solid | Create a mirrored derived component. |

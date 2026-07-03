@@ -60,6 +60,7 @@ matching end-user guide lives in [`../`](..).
 **Part Modeling**
 
 - [SketchFix](SketchFix.md)
+- [Round Sketch Dimensions](Round%20Sketch%20Dimensions.md)
 - [SketchUnder](SketchUnder.md)
 - [RadialHoleCircle](RadialHoleCircle.md)
 - [MirrorDerive](MirrorDerive.md)

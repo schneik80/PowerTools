@@ -76,6 +76,7 @@ GROUPS = [
         "label": "Part Modeling",
         "commands": [
             _cmd("sketchfix", "SketchFix.md"),
+            _cmd("roundsketchdimensions", "Round Sketch Dimensions.md"),
             _cmd("sketchunderconstrained", "SketchUnder.md"),
             _cmd("sketchcirclecenterpoint", "RadialHoleCircle.md", beta=True),
             _cmd("timelinecompute", "Timeline Compute Times.md"),
