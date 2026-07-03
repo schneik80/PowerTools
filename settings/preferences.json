@@ -19,6 +19,9 @@
     "related": {
       "enabled": true
     },
+    "tools": {
+      "enabled": true
+    },
     "share": {
       "enabled": true
     }
@@ -43,6 +46,9 @@
       "enabled": true
     },
     "componentwarn": {
+      "enabled": true
+    },
+    "changecyclecolor": {
       "enabled": true
     },
     "externalize": {
@@ -129,6 +135,9 @@
     "relateddata": {
       "enabled": true
     },
+    "scriptsmanager": {
+      "enabled": true
+    },
     "shareDocument": {
       "enabled": true
     },
@@ -152,9 +161,12 @@
     "componentwarn": {
       "warn_non_leaf": false
     },
+    "changecyclecolor": {
+      "show_in_context_menu": true
+    },
     "docopen": {
-      "run_on_open": true,
-      "run_on_activate": true
+      "run_on_open": false,
+      "run_on_activate": false
     },
     "defaultfolders": {
       "basic": [
