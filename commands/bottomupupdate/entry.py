@@ -378,6 +378,67 @@ def _configuration_label(data_file):
     return ""
 
 
+def _open_document_index(documents):
+    """Map dataFile.id -> name for every currently open document (best effort).
+
+    Includes invisible documents (Documents.count covers both). Documents with
+    no dataFile (never saved) cannot be identified reliably and are omitted.
+    """
+    index = {}
+    try:
+        count = documents.count
+    except Exception:
+        return index
+    for i in range(count):
+        try:
+            doc = documents.item(i)
+            data_file = doc.dataFile if doc else None
+            if data_file and data_file.id:
+                index[data_file.id] = doc.name
+        except Exception:
+            continue
+    return index
+
+
+def _collect_stray_documents(documents, initial_ids, is_top_fn):
+    """Return open documents that were not open when the run started.
+
+    Fusion implicitly opens related documents while a parent is opened or has
+    its references updated -- notably configuration members and configured
+    designs -- and never closes them, so they accumulate across the run. The
+    processing loop only closes the document it explicitly opened; this
+    identifies the rest. The top document and anything already open at run
+    start (including invisible reference documents) are never returned;
+    documents without a dataFile id cannot be identified and are left alone.
+
+    :param documents: The app.documents collection (count / item(i)).
+    :param initial_ids: Container of dataFile ids open at run start.
+    :param is_top_fn: Predicate marking the top document (never a stray).
+    """
+    strays = []
+    try:
+        count = documents.count
+    except Exception:
+        return strays
+    for i in range(count):
+        try:
+            doc = documents.item(i)
+        except Exception:
+            continue
+        if not doc or is_top_fn(doc):
+            continue
+        doc_id = None
+        try:
+            data_file = doc.dataFile
+            doc_id = data_file.id if data_file else None
+        except Exception:
+            doc_id = None
+        if not doc_id or doc_id in initial_ids:
+            continue
+        strays.append(doc)
+    return strays
+
+
 def is_external_component(comp: adsk.fusion.Component):
     """
     Check if the component is external by checking its occurrences
@@ -812,6 +873,35 @@ def command_execute(args: adsk.core.CommandEventArgs):
             # Let the data model finish processing the close before the next open.
             ptutil.pump_events_for(0.25)
 
+        def sweep_stray_documents(context_label):
+            """Close documents Fusion opened implicitly since the run started.
+
+            Opening a parent (or updating its references) pulls configuration
+            members / configured designs open as a side effect; nothing closes
+            them, so they pile up across the run. Sweeps anything not open at
+            run start, except the top document.
+            """
+            strays = _collect_stray_documents(
+                app.documents, initial_open_doc_ids, is_top_document
+            )
+            for stray in strays:
+                try:
+                    stray_name = stray.name
+                except Exception:
+                    stray_name = "<unknown>"
+                try:
+                    stray.close(False)
+                    write_log_entry(
+                        f"   Closed stray document ({context_label}): {stray_name}"
+                    )
+                except Exception as stray_error:
+                    write_log_entry(
+                        f"   Failed to close stray document {stray_name}: {stray_error}"
+                    )
+            if strays:
+                # Let the closes drain before continuing.
+                ptutil.pump_events_for(0.25)
+
         # Read dialog values from user inputs
         inputs: adsk.core.CommandInputs = args.command.commandInputs
         skip_standard = adsk.core.BoolValueCommandInput.cast(
@@ -1005,6 +1095,15 @@ def command_execute(args: adsk.core.CommandEventArgs):
         # Restored on every exit path (success, failure, command destroy).
         _suspend_autosave(write_log_entry)
 
+        # Snapshot the documents open right now (visible and invisible): the
+        # stray-document sweep must never close anything the user or Fusion
+        # already had open before the run -- only what processing opens later.
+        initial_open_doc_ids = _open_document_index(app.documents)
+        write_log_entry(
+            f"Open documents at run start ({len(initial_open_doc_ids)}): "
+            + ", ".join(sorted(initial_open_doc_ids.values()))
+        )
+
         # Map document id -> a representative component once, so the per-document
         # skip checks below (which read parentDesign.parentDocument metadata) cost
         # O(1) instead of rescanning design.allComponents. Any component that
@@ -1026,6 +1125,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
         for record in bottom_up_records[resume_start_index:]:
             docid = record["doc_id"]
             component_name = record["name"]  # Display/log name for this document
+            # Clean up anything the previous document's open/update left behind
+            # (implicitly opened configuration documents in particular).
+            sweep_stray_documents(f"before {component_name}")
             if docid == top_document_id:  # Root assembly is saved separately at the end
                 processed_count += 1
                 progress_bar.progressValue = processed_count
@@ -1402,6 +1504,11 @@ def command_execute(args: adsk.core.CommandEventArgs):
         )
         ptutil.log(final_checkpoint_entry)
         write_log_entry(final_checkpoint_entry)
+
+        # The final Get All Latest / Update All From Parent on the root can
+        # also open configuration documents implicitly; sweep them so the run
+        # ends with only the documents that were open when it started.
+        sweep_stray_documents("final cleanup")
 
         # Hide the progress bar
         progress_bar.hide()
