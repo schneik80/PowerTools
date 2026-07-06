@@ -9,8 +9,9 @@
 
 """Round Sketch Dimensions — snap the active sketch's dimensions to a grid.
 
-Lives in Sketch > Modify. Rounds the length dimensions of the sketch currently
-being edited to an adjustable increment, with a smart default sized to the
+Lives in Sketch > Modify. Rounds the length and angular dimensions of the sketch
+currently being edited to adjustable increments (a length grid plus a degree
+grid that applies to every unit system), with smart defaults sized to the
 sketch, a Fractions/Decimal choice for imperial documents, selection-based
 include/exclude overrides, and a live preview that reverts on Cancel and
 commits on OK.
@@ -20,6 +21,7 @@ in the sibling ``rounding.py`` so it can be unit-tested outside Fusion. This
 module holds only the Fusion-touching command wiring and the apply step.
 """
 
+import math
 import os
 import traceback
 
@@ -36,8 +38,9 @@ ui = app.userInterface
 CMD_NAME = "Round Sketch Dimensions"
 CMD_ID = "PTPM-roundsketchdimensions"
 CMD_Description = (
-    "Round the length dimensions of the active sketch to a clean, adjustable "
-    "increment. Formula-driven and reference dimensions are left untouched."
+    "Round the length and angular dimensions of the active sketch to clean, "
+    "adjustable increments. Formula-driven and reference dimensions are left "
+    "untouched."
 )
 IS_PROMOTED = False
 
@@ -56,6 +59,8 @@ INPUT_SELECTION = "rsd_selection"
 INPUT_FORMAT = "rsd_format"
 INPUT_SLIDER = "rsd_slider"
 INPUT_INCR_LABEL = "rsd_incr_label"
+INPUT_ANGLE_SLIDER = "rsd_angle_slider"
+INPUT_ANGLE_LABEL = "rsd_angle_label"
 INPUT_PREVIEW = "rsd_preview"
 
 MODE_ALL = "Round all dimensions"
@@ -146,13 +151,22 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         _is_imperial = token in ("in", "ft")
         grid_unit = "in" if _is_imperial else "mm"
 
-        # Choose the default increment grid and a smart starting index.
+        # Choose the default length grid and a smart starting index.
         if _is_imperial:
             increments = rounding.fraction_increments()  # Fractions default
         else:
             increments = rounding.MM_INCREMENTS
         magnitudes = _eligible_magnitudes(_cached_sketch, grid_unit)
         default_index = rounding.smart_default_index(magnitudes, increments)
+
+        # Angular grid is degrees for every document.
+        angle_magnitudes = _eligible_angle_magnitudes(_cached_sketch)
+        angle_default_index = rounding.smart_default_index(
+            angle_magnitudes, rounding.DEG_INCREMENTS
+        )
+
+        has_length = _count_length_eligible(_cached_sketch) > 0
+        has_angle = _count_angle_eligible(_cached_sketch) > 0
 
         cmd = args.command
         cmd.okButtonText = "Round"
@@ -181,27 +195,46 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         sel.setSelectionLimits(0, 0)
         sel.isVisible = False
 
-        # 4. Value format (imperial only): Fractions vs Decimal.
+        # 4. Value format (imperial only): Fractions vs Decimal. Only relevant
+        # when there are length dimensions to round.
         fmt_dd = inputs.addDropDownCommandInput(
             INPUT_FORMAT, "Value format", adsk.core.DropDownStyles.TextListDropDownStyle
         )
         fmt_dd.listItems.add(FMT_FRACTIONS, True)
         fmt_dd.listItems.add(FMT_DECIMAL, False)
-        fmt_dd.isVisible = _is_imperial
+        fmt_dd.isVisible = _is_imperial and has_length
 
-        # 5. Increment slider (index into the active grid; length fixed).
+        # 5. Length increment slider (index into the active grid; length fixed).
         slider = inputs.addIntegerSliderCommandInput(
-            INPUT_SLIDER, "Increment", 0, len(increments) - 1
+            INPUT_SLIDER, "Length increment", 0, len(increments) - 1
         )
         slider.valueOne = default_index
+        slider.isVisible = has_length
 
-        # 6. Resolved increment label (read-only); populated by the helper below.
-        inputs.addTextBoxCommandInput(INPUT_INCR_LABEL, "Rounds to", "", 1, True)
+        # 6. Resolved length increment label (read-only); populated below.
+        length_label = inputs.addTextBoxCommandInput(
+            INPUT_INCR_LABEL, "Length rounds to", "", 1, True
+        )
+        length_label.isVisible = has_length
 
-        # 7. Preview toggle (default on).
+        # 7. Angle increment slider (degrees; applies to every unit system).
+        angle_slider = inputs.addIntegerSliderCommandInput(
+            INPUT_ANGLE_SLIDER, "Angle increment", 0, len(rounding.DEG_INCREMENTS) - 1
+        )
+        angle_slider.valueOne = angle_default_index
+        angle_slider.isVisible = has_angle
+
+        # 8. Resolved angle increment label (read-only); populated below.
+        angle_label = inputs.addTextBoxCommandInput(
+            INPUT_ANGLE_LABEL, "Angle rounds to", "", 1, True
+        )
+        angle_label.isVisible = has_angle
+
+        # 9. Preview toggle (default on).
         inputs.addBoolValueInput(INPUT_PREVIEW, "Preview", True, "", True)
 
         _update_increment_label(inputs)
+        _update_angle_label(inputs)
 
         ptutil.add_handler(cmd.execute, command_execute, local_handlers=local_handlers)
         ptutil.add_handler(
@@ -244,6 +277,9 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
         if changed_id in (INPUT_SLIDER, INPUT_FORMAT):
             _update_increment_label(inputs)
 
+        if changed_id == INPUT_ANGLE_SLIDER:
+            _update_angle_label(inputs)
+
     except Exception:
         ptutil.log(f"{CMD_NAME} inputChanged failed:\n{traceback.format_exc()}")
 
@@ -262,7 +298,10 @@ def command_validate(args: adsk.core.ValidateInputsEventArgs):
                 args.areInputsValid = False
                 return
 
-        args.areInputsValid = _count_eligible(_cached_sketch) > 0
+        eligible = _count_length_eligible(_cached_sketch) + _count_angle_eligible(
+            _cached_sketch
+        )
+        args.areInputsValid = eligible > 0
     except Exception:
         args.areInputsValid = False
 
@@ -338,6 +377,14 @@ def _current_increment(inputs):
     return (rounding.MM_INCREMENTS[idx], "mm")
 
 
+def _current_angle_increment(inputs) -> float:
+    """Return the current angular increment in degrees."""
+    slider = inputs.itemById(INPUT_ANGLE_SLIDER)
+    idx = slider.valueOne if slider else 0
+    idx = max(0, min(idx, len(rounding.DEG_INCREMENTS) - 1))
+    return rounding.DEG_INCREMENTS[idx]
+
+
 def _update_increment_label(inputs):
     label = inputs.itemById(INPUT_INCR_LABEL)
     if not label:
@@ -363,6 +410,13 @@ def _update_increment_label(inputs):
         label.text = rounding.decimal_increment_label(rounding.MM_INCREMENTS[idx], "mm")
 
 
+def _update_angle_label(inputs):
+    label = inputs.itemById(INPUT_ANGLE_LABEL)
+    if not label:
+        return
+    label.text = rounding.decimal_increment_label(_current_angle_increment(inputs), "deg")
+
+
 def _is_length_eligible(dim) -> bool:
     """True if *dim* is an editable, plain-constant length dimension."""
     # Driven (reference) dimensions are read-only — skip them.
@@ -378,13 +432,37 @@ def _is_length_eligible(dim) -> bool:
         unit = (param.unit or "").lower()
     except Exception:
         return False
-    if "deg" in unit or "rad" in unit:  # angular dimension — skip
+    if "deg" in unit or "rad" in unit:  # angular dimension — handled separately
         return False
     try:
         expr = param.expression
     except Exception:
         return False
     return rounding.is_plain_numeric_expression(expr)
+
+
+def _is_angle_eligible(dim) -> bool:
+    """True if *dim* is an editable, plain-constant angular dimension."""
+    # Driven (reference) dimensions are read-only — skip them.
+    try:
+        if not dim.isDriving:
+            return False
+    except Exception:
+        pass
+    param = dim.parameter
+    if not param:
+        return False
+    try:
+        unit = (param.unit or "").lower()
+    except Exception:
+        return False
+    if "deg" not in unit and "rad" not in unit:  # not angular — skip
+        return False
+    try:
+        expr = param.expression
+    except Exception:
+        return False
+    return rounding.is_plain_numeric_expression(expr, rounding.ANGLE_UNIT_TOKENS)
 
 
 def _iter_dimensions(sketch):
@@ -405,8 +483,25 @@ def _eligible_magnitudes(sketch, grid_unit):
     return out
 
 
-def _count_eligible(sketch) -> int:
+def _eligible_angle_magnitudes(sketch):
+    """Magnitudes (in degrees) of every eligible angular dimension.
+
+    Angular parameter values are stored in radians internally, so convert to
+    degrees to match :data:`rounding.DEG_INCREMENTS`.
+    """
+    out = []
+    for dim in _iter_dimensions(sketch):
+        if _is_angle_eligible(dim):
+            out.append(abs(math.degrees(dim.parameter.value)))
+    return out
+
+
+def _count_length_eligible(sketch) -> int:
     return sum(1 for dim in _iter_dimensions(sketch) if _is_length_eligible(dim))
+
+
+def _count_angle_eligible(sketch) -> int:
+    return sum(1 for dim in _iter_dimensions(sketch) if _is_angle_eligible(dim))
 
 
 def _selected_param_names(inputs):
@@ -437,16 +532,17 @@ def _apply_rounding(inputs) -> int:
         return 0
 
     increment, grid_unit = _current_increment(inputs)
-    if increment <= 0:
-        return 0
     cm_per = CM_PER_UNIT.get(grid_unit, 0.1)
+    angle_increment = _current_angle_increment(inputs)
 
     mode = _current_mode(inputs)
     selected = _selected_param_names(inputs) if mode != MODE_ALL else set()
 
     count = 0
     for dim in _iter_dimensions(_cached_sketch):
-        if not _is_length_eligible(dim):
+        is_length = _is_length_eligible(dim)
+        is_angle = _is_angle_eligible(dim) if not is_length else False
+        if not is_length and not is_angle:
             continue
         param = dim.parameter
 
@@ -456,13 +552,23 @@ def _apply_rounding(inputs) -> int:
         if mode == MODE_IGNORE and name in selected:
             continue
 
-        grid_val = param.value / cm_per
-        rounded = rounding.round_to_increment(grid_val, increment)
-        if abs(rounded - grid_val) < increment * 1e-9:
+        if is_length:
+            if increment <= 0:
+                continue
+            grid_val = param.value / cm_per
+            step, unit_token = increment, grid_unit
+        else:
+            if angle_increment <= 0:
+                continue
+            grid_val = math.degrees(param.value)  # radians -> degrees
+            step, unit_token = angle_increment, "deg"
+
+        rounded = rounding.round_to_increment(grid_val, step)
+        if abs(rounded - grid_val) < step * 1e-9:
             continue  # already on the grid — skip needless recompute
 
         try:
-            param.expression = rounding.format_value_expression(rounded, grid_unit)
+            param.expression = rounding.format_value_expression(rounded, unit_token)
             count += 1
         except Exception:
             # Driven / reference dimension — read-only parameter. Skip.

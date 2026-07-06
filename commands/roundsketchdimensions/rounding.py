@@ -13,7 +13,7 @@ This module is deliberately free of any ``adsk`` import and of relative imports
 so it can be unit-tested outside Fusion (loaded directly by file path). All
 Fusion-touching logic (reading/writing sketch dimensions) lives in ``entry.py``.
 
-Two families of increments are supported:
+Length increments come in two families:
 
 * Metric documents round on a millimetre grid (:data:`MM_INCREMENTS`).
 * Imperial (inch/foot) documents offer two grids of the SAME length so the
@@ -22,6 +22,10 @@ Two families of increments are supported:
     - Fractions: a ``1/den`` inch grid (:data:`INCH_FRACTION_DENOMS`).
     - Decimal:   a curated set of nice decimal-inch increments
       (:data:`INCH_DECIMAL_INCH`).
+
+Angular increments use a single degree grid (:data:`DEG_INCREMENTS`) for every
+document, since Fusion displays angles in degrees regardless of the document's
+length unit.
 
 Values are always snapped to the grid; the written expression is a decimal in
 the grid unit, which is exact for every fraction denominator here
@@ -40,6 +44,10 @@ MM_INCREMENTS: List[float] = [0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 25.0, 5
 INCH_FRACTION_DENOMS: List[int] = [64, 32, 16, 8, 4, 2, 1]  # -> 1/64 .. 1 in
 INCH_DECIMAL_INCH: List[float] = [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0]
 
+# Angular grid, in degrees. Used for every document (angles display in degrees
+# regardless of the length-unit system).
+DEG_INCREMENTS: List[float] = [0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 15.0, 30.0, 45.0]
+
 # Length unit tokens that may trail a dimension expression. Longer tokens must
 # be tried first (see ``is_plain_numeric_expression``) so "mm" is stripped
 # before "m".
@@ -55,6 +63,18 @@ LENGTH_UNIT_TOKENS = (
     "in",
     "ft",
     "m",
+)
+
+# Angle unit tokens that may trail an angular dimension expression (e.g.
+# "45 deg", "0.5 rad"). Used to strip the unit before the plain-number check for
+# angular dimensions.
+ANGLE_UNIT_TOKENS = (
+    "degrees",
+    "degree",
+    "radians",
+    "radian",
+    "deg",
+    "rad",
 )
 
 # Matches a bare number or a simple ``a/b`` fraction (no parameter references,

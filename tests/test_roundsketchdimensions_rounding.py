@@ -45,6 +45,21 @@ def test_plain_numeric_strips_longest_unit_first() -> None:
     assert rounding.is_plain_numeric_expression("0.5 m")
 
 
+def test_plain_numeric_accepts_angle_expressions_with_angle_tokens() -> None:
+    # Angular dimensions pass the angle token set so "deg"/"rad" are stripped.
+    tokens = rounding.ANGLE_UNIT_TOKENS
+    assert rounding.is_plain_numeric_expression("45 deg", tokens)
+    assert rounding.is_plain_numeric_expression("30.5 degrees", tokens)
+    assert rounding.is_plain_numeric_expression("0.5 rad", tokens)
+    assert rounding.is_plain_numeric_expression("90", tokens)
+
+
+def test_plain_numeric_rejects_angle_formulas_with_angle_tokens() -> None:
+    tokens = rounding.ANGLE_UNIT_TOKENS
+    assert not rounding.is_plain_numeric_expression("a1/2", tokens)
+    assert not rounding.is_plain_numeric_expression("sin(30 deg)", tokens)
+
+
 # ── round_to_increment ─────────────────────────────────────────────────────────
 def test_round_to_increment_snaps_to_grid() -> None:
     assert rounding.round_to_increment(12.4837, 0.5) == 12.5
@@ -97,6 +112,13 @@ def test_smart_default_works_on_fraction_grid() -> None:
     assert incs[idx] == 1.0 / 32
 
 
+def test_smart_default_works_on_degree_grid() -> None:
+    # ~45 deg characteristic size -> target 2.25 deg; largest degree inc <= 2.25
+    # is 1.0.
+    idx = rounding.smart_default_index([45.0, 45.0, 45.0], rounding.DEG_INCREMENTS)
+    assert rounding.DEG_INCREMENTS[idx] == 1.0
+
+
 # ── formatting ─────────────────────────────────────────────────────────────────
 def test_format_value_expression_trims_noise() -> None:
     assert rounding.format_value_expression(12.5, "mm") == "12.5 mm"
@@ -107,6 +129,12 @@ def test_format_value_expression_trims_noise() -> None:
 def test_decimal_increment_label() -> None:
     assert rounding.decimal_increment_label(0.5, "mm") == "0.5 mm"
     assert rounding.decimal_increment_label(0.05, "in") == "0.05 in"
+    assert rounding.decimal_increment_label(2.5, "deg") == "2.5 deg"
+
+
+def test_format_value_expression_angle() -> None:
+    assert rounding.format_value_expression(45.0, "deg") == "45 deg"
+    assert rounding.format_value_expression(30.5, "deg") == "30.5 deg"
 
 
 def test_fraction_increment_label() -> None:
@@ -122,5 +150,10 @@ def test_imperial_lists_are_equal_length() -> None:
 
 
 def test_increment_lists_are_ascending() -> None:
-    for lst in (rounding.MM_INCREMENTS, rounding.INCH_DECIMAL_INCH, rounding.fraction_increments()):
+    for lst in (
+        rounding.MM_INCREMENTS,
+        rounding.INCH_DECIMAL_INCH,
+        rounding.fraction_increments(),
+        rounding.DEG_INCREMENTS,
+    ):
         assert lst == sorted(lst)
