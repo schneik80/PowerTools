@@ -130,10 +130,10 @@ commands/relateddata/docs.json
 commands/relateddata/data.json
 commands/assemblybuilder/resources/html/init.js
 commands/assemblyintent/resources/html/init.js
-commands/preferences/resources/html/init.js
 cache/
-# Per-user preferences store (created on first run; never committed).
-settings/
+# NOTE: settings/ (the preferences store) and the preferences command's
+# generated init.js ARE tracked and committed deliberately -- do not re-add
+# them here.
 .claude/
 .cursor/rules/
 
