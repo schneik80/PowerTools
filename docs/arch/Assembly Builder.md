@@ -26,16 +26,16 @@ C4Container
   Person(user, "Design Engineer")
 
   Container_Boundary(cmd, "Assembly Builder command") {
-    Container(python, "Python Backend", "commands/assemblybuilder/entry.py", "Command lifecycle, launch guards, graph processing, component creation")
-    Container(palette, "HTML Palette", "resources/html/index.html + drawflow", "Visual node editor, graph export, theme support")
+    Container(python, "Python Backend", "commands/assemblybuilder/entry.py", "Command lifecycle, launch guards, target-project resolution, graph processing, component creation")
+    Container(palette, "HTML Palette", "resources/html/index.html + drawflow", "Visual node editor, save + no-project gates, graph export, theme support")
     ContainerDb(graph, "Drawflow Graph", "JSON in memory", "Node positions, connections, metadata")
   }
 
   System_Ext(fusion, "Fusion API", "adsk.core, adsk.fusion")
 
   Rel(user, palette, "Adds nodes, connects, renames")
-  Rel(palette, python, "fusionSendData('createAssembly', graph)")
-  Rel(python, palette, "sendInfoToHTML('setTheme', 'setDocumentName')")
+  Rel(palette, python, "fusionSendData('createAssembly', graph / 'recheckProject')")
+  Rel(python, palette, "sendInfoToHTML('setTheme', 'setDocumentName', 'setSaveState', 'setParamDocs', 'setTargetProject')")
   Rel(python, fusion, "addNewExternalComponent, addByInsert, designIntent")
 ```
 
@@ -46,7 +46,8 @@ C4Component
   Container_Boundary(python, "Python Backend") {
     Component(entry, "entry.py", "Command entry point", "start/stop lifecycle, command execution, palette management")
     Component(guards, "Launch Guards", "Validation", "Checks: active Design, new-or-empty, intent != Part, no root children")
-    Component(incoming, "palette_incoming", "Message handler", "Routes 'createAssembly'; shows native message boxes")
+    Component(incoming, "palette_incoming", "Message handler", "Routes 'createAssembly' / 'recheckProject'; shows native message boxes")
+    Component(project, "Target-project resolver", "cache.resolve_target_folder", "Resolves target folder; None gates Create Assembly + drives the no-project banner")
     Component(graph, "Graph Processor", "Assembly builder", "Parses Drawflow JSON, creates hierarchy top-down")
     Component(shared, "Shared Node Handler", "Reference manager", "Detects multi-parent nodes, defers insertions, saves for DataFile")
     Component(params, "Parameter Deriver", "Pass 3", "Opens linked docs, derives favorite params, waits uploads, get-latest")
@@ -55,7 +56,9 @@ C4Component
   System_Ext(fusion, "Fusion API")
 
   Rel(entry, guards, "Validates before showing palette")
+  Rel(incoming, project, "recheckProject re-resolves (no Fusion event)")
   Rel(incoming, graph, "Passes parsed graph data")
+  Rel(graph, project, "Resolves target folder (else aborts with message)")
   Rel(graph, shared, "Delegates shared components")
   Rel(graph, params, "Delegates parameter links")
   Rel(graph, fusion, "addNewExternalComponent, designIntent")
@@ -71,18 +74,21 @@ C4Component
     Component(drawflow, "Drawflow Editor", "drawflow.min.js", "Node canvas with zoom, pan, connections")
     Component(sidebar, "Sidebar", "Click-to-add", "Assembly/Part/Hybrid + Global Parameters buttons")
     Component(toolbar, "Toolbar", "Action buttons", "Fit, Arrange, Clear All, Create Assembly, zoom")
+    Component(gate, "Create gates", "refreshShareGate", "Save-required + no-project banners; disables Create Assembly; recheckProject on Re-check / palette focus")
     Component(theme, "Theme Engine", "CSS custom properties", "Dark/light via body class, set before first paint")
-    Component(init, "init.js", "Generated sidecar", "window.__ptInit: theme, doc name, save state, param docs")
-    Component(bridge, "Fusion Bridge", "fusionJavaScriptHandler", "Reopen refresh: theme/doc/saveState/paramDocs")
+    Component(init, "init.js", "Generated sidecar", "window.__ptInit: theme, doc name, save state, param docs, target project")
+    Component(bridge, "Fusion Bridge", "fusionJavaScriptHandler", "Reopen refresh: theme/doc/saveState/paramDocs/targetProject")
     Component(export, "Graph Export", "createAssembly()", "Exports Drawflow JSON, sends via fusionSendData")
   }
 
   Rel(sidebar, drawflow, "addNode() / addParamDocNode()")
   Rel(toolbar, drawflow, "zoom_in/out, clear, fitToView, arrangeLayout")
   Rel(toolbar, export, "Create Assembly click")
+  Rel(gate, toolbar, "Enables/disables Create Assembly")
   Rel(export, drawflow, "editor.export()")
   Rel(init, theme, "applies theme synchronously")
   Rel(bridge, theme, "setTheme (reopen)")
+  Rel(bridge, gate, "setSaveState / setTargetProject")
   Rel(bridge, drawflow, "setDocumentName / setParamDocs")
 ```
 
@@ -95,11 +101,19 @@ sequenceDiagram
     participant Python as Python Backend
     participant Fusion as Fusion API
 
+    opt No target project (activeProject raises id.size())
+        Palette->>Palette: Show no-project banner, disable Create Assembly
+        User->>Palette: Select project in Data Panel; Re-check / palette focus
+        Palette->>Python: fusionSendData('recheckProject')
+        Python->>Palette: sendInfoToHTML('setTargetProject') (clears banner, enables Create)
+    end
+
     User->>Palette: Click "Create Assembly"
     Palette->>Palette: editor.export() -> JSON graph
     Palette->>Python: fusionSendData('createAssembly', graph)
 
     Python->>Python: Parse JSON, find root, detect shared + param links
+    Python->>Python: cache.resolve_target_folder() [else abort with message]
 
     rect rgb(238,244,250)
     note right of Python: Pass 1 — build
@@ -170,6 +184,9 @@ Fusion's QT WebEngine palette intercepts native HTML5 drag events at the widget 
 
 ### Why top-down creation with `addNewExternalComponent`?
 Top-down creation builds the structural tree first. A single flush save then establishes the cloud `DataFile` references that `addByInsert` (shared parts) and document-open (parameter derive) both require — without ever surfacing Fusion's save-as dialog mid-run.
+
+### Why gate Create Assembly on a target project?
+Every node is built with `addNewExternalComponent(name, folder, transform)`, so the run needs a target `DataFolder`. That folder came from `app.data.activeProject.rootFolder`, which raises `InternalValidationError('id.size()')` when the Data Panel has no project in context — previously aborting the whole build. Resolution now goes through the shared `cache.resolve_target_folder()` (the same helper the New Assembly palette uses), and the palette gates *Create Assembly* behind a **no target project** banner alongside the existing save-required banner (the project gate takes precedence). Fusion emits no active-project-changed event, so the banner re-checks on demand — a **Re-check** button and automatically when the palette regains focus (`recheckProject`). The Create path also re-resolves defensively and returns an actionable message if the gate was somehow bypassed.
 
 ### Why a separate parameter-derive pass?
 Deriving favorite parameters requires opening each target component as its own document (the same mechanism used by **Link Global Parameters**). Doing this after the tree is built and flushed means every target already has a `DataFile`. Each per-document save is awaited (cloud uploads are asynchronous) before the root runs `updateAllReferences()`, so the assembly references the freshly-derived versions rather than stale ones.

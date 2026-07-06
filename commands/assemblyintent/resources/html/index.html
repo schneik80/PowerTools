@@ -12,6 +12,23 @@
     </header>
 
     <main class="sections">
+        <!-- Shown when no target project can be resolved: new components have
+             nowhere to be saved. Backend toggles this via setTargetProject. -->
+        <div id="noProjectBanner" class="banner" hidden role="alert">
+            <span class="banner-icon" aria-hidden="true">⚠</span>
+            <div class="banner-body">
+                <div class="banner-title">No target project</div>
+                <div class="banner-text">
+                    New components need a project to be saved into. Open the
+                    Data Panel and click into the project you want to work in,
+                    then Re-check.
+                </div>
+                <button id="btnRecheckProject" class="btn banner-btn">
+                    Re-check
+                </button>
+            </div>
+        </div>
+
         <!-- Section 1: Create -->
         <section class="card">
             <h2 class="card-title">Create</h2>

@@ -309,7 +309,7 @@ on. Commands import it as `ptutil`.
 | `general_utils.py` | `log()`, `clipText()`, `isSaved()`, `handle_error()`, `perf_timer()`. Logging is gated on `config.DEBUG`; `perf_timer` is gated on `config.PERF_TRACE`. |
 | `event_utils.py` | `add_handler()` (registers a handler and retains it against GC), `clear_handlers()` (releases globally-scoped handlers at stop). |
 | `attributes_utils.py` | Attribute enumeration/formatting helpers (`attributes_for_selection`, `get_all_attributes`, `get_comptypes`, `update_feedback_from_list`). |
-| `cache_utils.py` | Project/folder/param-doc JSON cache helpers (Global Parameters and Related Data domains). |
+| `cache_utils.py` | Project/folder/param-doc JSON cache helpers (Global Parameters and Related Data domains); active-project / target-folder resolution shared by the assembly commands (`get_active_project`, `resolve_target_folder`, `target_project_label`). |
 | `date_utils.py` | `next_business_day(dt)`, `compute_quick_dates()`. |
 | `log_utils.py` | `default_log_directory()`, `open_live_log_viewer(path)`. |
 | `upload_utils.py` | `wait_for_upload(save_result, context_label, …)` — polls a Fusion save/upload to completion. |
@@ -324,6 +324,17 @@ Key behavior worth noting for developers:
 - **Event handlers must be retained.** `add_handler()` appends the handler to a
   module-level list so it is not garbage-collected; `clear_handlers()` (called
   from `PowerTools.stop()`) releases them on unload.
+- **Active-project access is centralized and defensive.** `app.data.activeProject`
+  raises `InternalValidationError('id.size()')` when the Data Panel has no project
+  in context (showing the hub root, or the data layer left in a bad state — the
+  same error family as `safe_activate`'s already-active `activate()`). Commands
+  resolve it through `cache_utils.get_active_project()` / `resolve_target_folder()`
+  instead of touching it directly. Because a raise inside a palette
+  `incomingFromHTML` handler is swallowed by the `DEBUG`-gated `handle_error()`,
+  an unguarded call there surfaced as "nothing happens"; the assembly palettes now
+  present an unresolved project as a **no target project** banner and disable
+  component creation until the user selects one (re-checked on demand — Fusion
+  exposes no active-project-changed event).
 
 ---
 

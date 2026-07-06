@@ -47,7 +47,7 @@ This command enforces a consistent folder structure across projects without requ
 
 ## Prerequisites
 
-- A Fusion project must be active (a document does not need to be open).
+- A Fusion project must be active in the Data Panel (a document does not need to be open). If no project is in context, the command reports *No active project* and asks you to select one in the Data Panel, rather than failing silently.
 - The add-in must have write access to the active project.
 
 ## Notes

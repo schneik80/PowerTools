@@ -337,6 +337,20 @@
             font-size: 14px;
             line-height: 1;
         }
+        .save-banner .recheck-btn {
+            margin-left: 4px;
+            background: #3d2c00;
+            color: #f5c451;
+            border: none;
+            border-radius: 3px;
+            padding: 3px 9px;
+            font-size: 11px;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+        }
+        .save-banner .recheck-btn:hover { background: #241a00; }
+        .save-banner .recheck-btn:disabled { opacity: 0.6; cursor: default; }
     </style>
 </head>
 <body>
@@ -395,6 +409,12 @@
     <span>This design has shared parts or global parameters. Save the document (Ctrl+S) to enable Create Assembly.</span>
 </div>
 
+<div class="save-banner" id="projectBanner">
+    <span class="save-banner-icon">⚠</span>
+    <span>No target project for new components. Open the Data Panel, click into the project you want, then</span>
+    <button id="recheckProjectBtn" class="recheck-btn" onclick="recheckProject()">Re-check</button>
+</div>
+
 <script src="drawflow.min.js"></script>
 <script>
 (function() {
@@ -404,6 +424,9 @@
     var rootDocName = ptInit.docName || 'Untitled';
     var rootNodeId = null;
     var docIsSaved = !!ptInit.saved;
+    // Whether a target project could be resolved for new external components.
+    // Undefined (older init) is treated as present so we never false-block.
+    var hasProject = ptInit.hasTargetProject !== false;
 
     // --- Drawflow init ---
     var container = document.getElementById('drawflow');
@@ -657,12 +680,38 @@
     // no shared parts and no parameter sets is fine.
     function refreshShareGate() {
         var needsSave = graphHasSharedNodes() || graphHasParamDocNodes();
-        var blocked = needsSave && !docIsSaved;
-        var banner = document.getElementById('saveBanner');
+        var saveBlocked = needsSave && !docIsSaved;
+        var projectBlocked = !hasProject;
+        var saveBanner = document.getElementById('saveBanner');
+        var projectBanner = document.getElementById('projectBanner');
         var btn = document.getElementById('createBtn');
-        if (banner) banner.classList.toggle('visible', blocked);
-        if (btn) btn.disabled = blocked;
+        // No-project is the more fundamental blocker (Create can't resolve a
+        // folder at all), so it takes precedence and suppresses the save banner
+        // to avoid stacking two warnings.
+        if (projectBanner) projectBanner.classList.toggle('visible', projectBlocked);
+        if (saveBanner) saveBanner.classList.toggle('visible', saveBlocked && !projectBlocked);
+        if (btn) btn.disabled = saveBlocked || projectBlocked;
     }
+
+    // Fusion emits no active-project event, so we re-check on demand: the
+    // banner's Re-check button and when the palette regains focus.
+    window.recheckProject = function() {
+        var btn = document.getElementById('recheckProjectBtn');
+        if (btn) { btn.textContent = 'Checking…'; btn.disabled = true; }
+        try { adsk.fusionSendData('recheckProject', '{}'); }
+        catch (e) { console.log('recheckProject send failed:', e); }
+    };
+
+    function autoRecheckProject() {
+        var pb = document.getElementById('projectBanner');
+        if (pb && pb.classList.contains('visible')) {
+            try { adsk.fusionSendData('recheckProject', '{}'); } catch (e) {}
+        }
+    }
+    window.addEventListener('focus', autoRecheckProject);
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) autoRecheckProject();
+    });
 
     // --- Events ---
     editor.on('nodeCreated', function() { updateStatus(); refreshShareGate(); refreshParamDocButtons(); });
@@ -901,6 +950,14 @@
                     var list = [];
                     try { list = JSON.parse(data) || []; } catch (e) { list = []; }
                     buildParamDocButtons(list);
+                    refreshShareGate();
+                } else if (action === 'setTargetProject') {
+                    // data is {hasProject, name}
+                    var st = {};
+                    try { st = JSON.parse(data) || {}; } catch (e) { st = {}; }
+                    hasProject = !!st.hasProject;
+                    var rb = document.getElementById('recheckProjectBtn');
+                    if (rb) { rb.textContent = 'Re-check'; rb.disabled = false; }
                     refreshShareGate();
                 }
             } catch (e) { console.log(e); }

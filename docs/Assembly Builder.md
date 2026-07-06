@@ -24,10 +24,13 @@ The Assembly Builder command opens a visual node editor that lets you design an 
 - The active document must be **new (unsaved)**, **or** a **saved document that is still empty** — no timeline features, bodies, sketches, or child components.
 - The active design's design intent must be **Assembly** or **Hybrid** (not **Part**).
 - The active design must have **no existing child components** at the root.
+- An **active project** in the Data Panel is required to store the generated external components.
 
 If any of these conditions is not met, Assembly Builder displays a message explaining what to change and does not open the palette.
 
 > **Note:** When the design contains shared parts or linked global parameters, the document must be saved before generation (these need a cloud `DataFile`). A banner appears across the bottom of the palette and **Create Assembly** is disabled until you save (Ctrl+S); it re-enables automatically. A saved-but-empty starting document satisfies this immediately.
+
+> **Note:** If no project is active (the Data Panel is showing the hub root), a *No target project* banner appears and **Create Assembly** is disabled — the new components have nowhere to be stored. Open the Data Panel, click into the project you want, then press **Re-check** on the banner (or simply click back into the palette; it re-checks automatically when it regains focus). This gate takes precedence over the save banner.
 
 ## How to use Assembly Builder
 
@@ -40,6 +43,7 @@ If any of these conditions is not met, Assembly Builder displays a message expla
 7. To share a child across multiple parents, connect the same child to more than one parent.
 8. To apply a project parameter set, click its button under **Global Parameters** in the sidebar and connect the resulting node to each component that should derive it.
 9. If the **save** banner is shown (shared parts or global parameters present), save the document (Ctrl+S). **Create Assembly** enables automatically.
+   - If a **No target project** banner is shown instead, select a project in the Data Panel and press **Re-check**; **Create Assembly** enables once a project is available.
 10. When the hierarchy is complete, select **Create Assembly**.
 
 Generation runs in three passes:
@@ -50,7 +54,7 @@ Generation runs in three passes:
 
 External component saves and the final root save use the comment **"Updated with Assembly Builder"**.
 
-> **Note:** Because `addNewExternalComponent` requires an Autodesk Hub folder, the active project's root folder is used as the destination. You can move the generated documents afterward in the Data Panel.
+> **Note:** Because `addNewExternalComponent` requires an Autodesk Hub folder, the active project's root folder is used as the destination. You can move the generated documents afterward in the Data Panel. If there is no active project, **Create Assembly** is blocked by the *No target project* banner described above.
 
 > **Note:** All validation and result messages are shown as native Fusion message boxes — there are no browser alert dialogs.
 

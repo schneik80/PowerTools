@@ -361,6 +361,64 @@ def get_active_project(cmd_name: str):
         return None
 
 
+def resolve_target_folder(cmd_name: str):
+    """Best-effort DataFolder for a new external component's eventual save.
+
+    ``app.data.activeProject`` raises ``InternalValidationError('id.size()')``
+    when the Data Panel has no project in context (it's showing the hub root, or
+    the data layer was left in a bad state — see ``safe_activate`` for the same
+    family of error). That call used to run unguarded in the assembly commands,
+    so the exception propagated to the palette handler wrapper and was swallowed
+    silently — the component was never created and nothing was reported.
+
+    Tries, in order:
+      (a) the active document's own folder, only when it is already saved —
+          keeps the new component beside its parent;
+      (b) the active project's root folder — the normal case;
+    touching ``activeHub`` first as a cheap prime that can initialize a data
+    layer which would otherwise throw. Returns the DataFolder, or ``None`` when
+    nothing resolves (callers surface an actionable "select a project" message).
+    Diagnostics are DEBUG-gated and labelled with *cmd_name*.
+    """
+    try:
+        df = getattr(app.activeDocument, "dataFile", None)
+        if df is not None and df.parentFolder is not None:
+            return df.parentFolder
+    except Exception:
+        ptutil.log(f"{cmd_name}: active-doc folder lookup failed — ignoring")
+
+    try:
+        _ = app.data.activeHub
+    except Exception:
+        ptutil.log(f"{cmd_name}: activeHub prime failed — ignoring")
+
+    project = get_active_project(cmd_name)
+    if project is not None:
+        try:
+            return project.rootFolder
+        except Exception:
+            ptutil.log(f"{cmd_name}: activeProject.rootFolder failed — ignoring")
+    return None
+
+
+def target_project_label(folder) -> str:
+    """Human-readable project name for a resolved *folder* (for palette display),
+    or an empty string when unknown — which the palettes treat as "no target
+    project" and surface via their banner."""
+    if folder is None:
+        return ""
+    try:
+        project = folder.parentProject
+        if project is not None and project.name:
+            return project.name
+    except Exception:
+        pass
+    try:
+        return folder.name or ""
+    except Exception:
+        return ""
+
+
 def safe_activate(doc: adsk.core.Document, cmd_name: str) -> None:
     """Re-activate *doc* only when it is not already the active document.
 

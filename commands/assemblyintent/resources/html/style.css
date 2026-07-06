@@ -135,6 +135,56 @@ input[type="text"]:focus, select:focus {
     color: #ffffff;
 }
 .btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn:disabled,
+.btn.primary:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    background: var(--bg-panel);
+    border-color: var(--border-color);
+    color: var(--text-muted);
+}
+.btn:disabled:hover { border-color: var(--border-color); }
+
+/* Warning banner: shown when there's no target project for new components. */
+.banner {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    background: var(--bg-card);
+    border: 1px solid var(--badge-hybrid);
+    border-left: 3px solid var(--badge-hybrid);
+    border-radius: 6px;
+    padding: 8px 10px;
+    box-shadow: var(--shadow-card);
+    flex-shrink: 0;
+}
+.banner[hidden] { display: none; }
+.banner .banner-icon {
+    color: var(--badge-hybrid);
+    font-size: 14px;
+    line-height: 1.4;
+    flex-shrink: 0;
+}
+.banner .banner-title {
+    font-weight: 600;
+    font-size: 12px;
+    margin-bottom: 2px;
+    color: var(--text-primary);
+}
+.banner .banner-text {
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.4;
+}
+.banner .banner-btn {
+    margin-top: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+}
+.banner .banner-btn.checking {
+    opacity: 0.6;
+    cursor: default;
+}
 
 .refresh {
     background: transparent;

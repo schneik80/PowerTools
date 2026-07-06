@@ -350,12 +350,16 @@ def _show_palette():
 
 def _gather_palette_state() -> dict:
     doc = app.activeDocument
+    folder = cache.resolve_target_folder(CMD_NAME)
     return {
         "docName": getattr(doc, "name", ""),
         "theme": _theme_str(),
         "showChildren": _show_children,
         "openDocs": _list_open_docs(),
         "recentDocs": _list_recent_docs(),
+        # Drives the "no target project" banner + New Component enablement.
+        "hasTargetProject": folder is not None,
+        "targetProject": cache.target_project_label(folder),
     }
 
 
@@ -418,6 +422,28 @@ def _send_palette_init(palette: adsk.core.Palette):
     palette.sendInfoToHTML("setTheme", state["theme"])
     palette.sendInfoToHTML("setOpenDocs", json.dumps(state["openDocs"]))
     palette.sendInfoToHTML("setRecentDocs", json.dumps(state["recentDocs"]))
+    palette.sendInfoToHTML(
+        "setTargetProject",
+        json.dumps(
+            {"hasProject": state["hasTargetProject"], "name": state["targetProject"]}
+        ),
+    )
+
+
+def _send_target_project(palette: adsk.core.Palette) -> None:
+    """Re-resolve the target project and push just that state to the page.
+
+    Fusion exposes no active-project-changed event, so we can't observe the
+    user picking a project in the Data Panel. This lightweight recheck (used by
+    the banner's Re-check button and the page's focus handler) re-runs only the
+    folder resolution — not the full gallery rebuild of _send_palette_init."""
+    folder = cache.resolve_target_folder(CMD_NAME)
+    palette.sendInfoToHTML(
+        "setTargetProject",
+        json.dumps(
+            {"hasProject": folder is not None, "name": cache.target_project_label(folder)}
+        ),
+    )
 
 
 def _palette_closed(args: adsk.core.UserInterfaceGeneralEventArgs):
@@ -693,7 +719,15 @@ def _find_data_file_by_id(df_id: str):
     """Best-effort DataFile resolution from an id. Returns None on failure."""
     if not df_id:
         return None
-    for owner in (app.data.activeProject, app.data):
+    # get_active_project guards app.data.activeProject, which raises
+    # InternalValidationError('id.size()') when no project is in context — the
+    # old eager tuple (app.data.activeProject, app.data) let that abort inserts.
+    owners = []
+    project = cache.get_active_project(CMD_NAME)
+    if project is not None:
+        owners.append(project)
+    owners.append(app.data)
+    for owner in owners:
         finder = getattr(owner, "findFileById", None)
         if callable(finder):
             try:
@@ -891,6 +925,14 @@ def _palette_incoming(html_args: adsk.core.HTMLEventArgs):
         html_args.returnData = "OK"
         return
 
+    if action == "recheckProject":
+        # Lightweight re-resolve of the target project only — fired by the
+        # banner's Re-check button and when the palette page regains focus.
+        if palette:
+            _send_target_project(palette)
+        html_args.returnData = "OK"
+        return
+
     if action == "refresh":
         if palette:
             _send_palette_init(palette)
@@ -918,6 +960,11 @@ def _active_design_or_none() -> adsk.fusion.Design | None:
     return adsk.fusion.Design.cast(product) if product else None
 
 
+# Target-folder + project-label resolution now live in ptAddInUtils
+# (cache.resolve_target_folder / cache.target_project_label) so the Assembly
+# Builder shares the exact same InternalValidationError-safe logic.
+
+
 def _action_create_component(data: dict) -> str:
     name = (data.get("name") or "").strip()
     intent = data.get("intent", "part")
@@ -931,10 +978,19 @@ def _action_create_component(data: dict) -> str:
     if design is None:
         return "No active Fusion design."
 
-    project = app.data.activeProject
-    if project is None:
-        return "No active Fusion project — save the active document first."
-    folder = project.rootFolder
+    # A new external component needs a target DataFolder for its eventual save.
+    # The old code read app.data.activeProject.rootFolder directly and outside a
+    # try, so an InternalValidationError('id.size()') there propagated to the
+    # handler wrapper and was swallowed silently (handle_error defaults to
+    # show_message_box=False) — the classic "nothing happens".
+    folder = cache.resolve_target_folder(CMD_NAME)
+    if folder is None:
+        return (
+            "Couldn't determine a project to hold the new component. Open the "
+            "Data Panel and click into the project you want to work in (or save "
+            "this document once), then try New Component again."
+        )
+
     transform = adsk.core.Matrix3D.create()
     try:
         occ = design.rootComponent.occurrences.addNewExternalComponent(

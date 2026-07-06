@@ -6,7 +6,9 @@
         theme: 'dark',
         openDocs: [],
         recentDocs: [],
-        showChildren: false
+        showChildren: false,
+        hasTargetProject: true,
+        targetProject: ''
     };
 
     function applyTheme(theme) {
@@ -96,12 +98,63 @@
         if (sel && lbl) lbl.textContent = sel.value;
     }
 
+    // Toggle the "no target project" banner and enable/disable New Component
+    // accordingly. Accepts either the backend's {hasProject, name} object or a
+    // JSON string form of it. When no project is available, creating a
+    // component would fail (nowhere to save it), so the button is disabled.
+    function applyTargetProject(state) {
+        if (typeof state === 'string') {
+            try { state = JSON.parse(state); } catch (e) { state = {}; }
+        }
+        var hasProject = !!(state && state.hasProject);
+        var banner = document.getElementById('noProjectBanner');
+        if (banner) banner.hidden = hasProject;
+        var btn = document.getElementById('btnCreateComp');
+        if (btn) {
+            btn.disabled = !hasProject;
+            btn.title = hasProject
+                ? ''
+                : 'No target project — select one in the Data Panel, then Re-check.';
+        }
+        // Restore the Re-check button from any transient "Checking…" state now
+        // that a fresh answer has arrived.
+        var recheck = document.getElementById('btnRecheckProject');
+        if (recheck) {
+            recheck.textContent = 'Re-check';
+            recheck.classList.remove('checking');
+        }
+    }
+
+    // Ask the backend to re-resolve the target project. Fusion has no
+    // active-project-changed event, so this is how we learn the user picked a
+    // project in the Data Panel — via an explicit re-check.
+    function recheckProject() {
+        var btn = document.getElementById('btnRecheckProject');
+        if (btn) {
+            btn.textContent = 'Checking…';
+            btn.classList.add('checking');
+        }
+        send('recheckProject', {});
+    }
+
+    // Auto re-check when the palette regains focus, but only while the banner
+    // is showing — no point polling when a project is already set. This makes
+    // returning from the Data Panel clear the banner without a manual click.
+    function autoRecheckIfNeeded() {
+        var banner = document.getElementById('noProjectBanner');
+        if (banner && !banner.hidden) send('recheckProject', {});
+    }
+
     // --- Initial paint from ptInit ---
     applyTheme(ptInit.theme);
     setDocName(ptInit.docName);
     renderGallery('openGallery', 'openEmpty', ptInit.openDocs);
     renderGallery('recentGallery', 'recentEmpty', ptInit.recentDocs);
     updateIntentLabel();
+    applyTargetProject({
+        hasProject: ptInit.hasTargetProject,
+        name: ptInit.targetProject
+    });
 
     // "Show referenced children" toggles whether reference-loaded sub-assemblies
     // / parts of open assemblies appear in the Open tab. Off by default → only
@@ -147,6 +200,16 @@
         send('refresh', {});
     });
 
+    var recheckBtn = document.getElementById('btnRecheckProject');
+    if (recheckBtn) recheckBtn.addEventListener('click', recheckProject);
+
+    // Fusion emits no active-project event, so approximate one: when the user
+    // returns to the palette after using the Data Panel, re-check.
+    window.addEventListener('focus', autoRecheckIfNeeded);
+    document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) autoRecheckIfNeeded();
+    });
+
     // --- Tab switching (Open / Recent) ---
     function activateTab(which) {
         var tabs = document.querySelectorAll('.tab');
@@ -186,6 +249,8 @@
                     var recent = [];
                     try { recent = JSON.parse(data) || []; } catch (e) { recent = []; }
                     renderGallery('recentGallery', 'recentEmpty', recent);
+                } else if (action === 'setTargetProject') {
+                    applyTargetProject(data);
                 }
             } catch (e) {
                 console.log('[New Assembly] handler error:', e);

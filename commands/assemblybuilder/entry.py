@@ -287,11 +287,18 @@ def _gather_palette_state() -> dict:
         except Exception as e:
             ptutil.log(f"{CMD_NAME}: could not list parameter docs — {e}")
 
+    # Target folder for new external components. None → the Data Panel has no
+    # project in context; the palette shows a banner and blocks Create Assembly
+    # (create_assembly_from_graph would otherwise fail resolving a folder).
+    folder = cache.resolve_target_folder(CMD_NAME)
+
     return {
         "docName": doc.name,
         "theme": "dark" if is_dark else "light",
         "saved": bool(doc.isSaved),
         "paramDocs": param_entries,
+        "hasTargetProject": folder is not None,
+        "targetProject": cache.target_project_label(folder),
     }
 
 
@@ -319,6 +326,28 @@ def _send_palette_init(palette: adsk.core.Palette):
         "setSaveState", "saved" if state["saved"] else "unsaved"
     )
     palette.sendInfoToHTML("setParamDocs", json.dumps(state["paramDocs"]))
+    palette.sendInfoToHTML(
+        "setTargetProject",
+        json.dumps(
+            {"hasProject": state["hasTargetProject"], "name": state["targetProject"]}
+        ),
+    )
+
+
+def _send_target_project(palette: adsk.core.Palette) -> None:
+    """Re-resolve the target project and push just that state to the page.
+
+    Fusion emits no active-project-changed event, so the palette can't observe
+    the user picking a project in the Data Panel. This lightweight recheck (the
+    banner's Re-check button and the page's focus handler) re-runs only the
+    folder resolution — not the full param-doc rebuild of _send_palette_init."""
+    folder = cache.resolve_target_folder(CMD_NAME)
+    palette.sendInfoToHTML(
+        "setTargetProject",
+        json.dumps(
+            {"hasProject": folder is not None, "name": cache.target_project_label(folder)}
+        ),
+    )
 
 
 def document_saved(args: adsk.core.DocumentEventArgs):
@@ -347,6 +376,15 @@ def palette_incoming(html_args: adsk.core.HTMLEventArgs):
     ptutil.log(f"{CMD_NAME}: Palette incoming event.")
 
     message_action = html_args.action
+
+    if message_action == "recheckProject":
+        # Lightweight re-resolve of the target project — fired by the banner's
+        # Re-check button and when the palette page regains focus.
+        palette = ui.palettes.itemById(PALETTE_ID)
+        if palette:
+            _send_target_project(palette)
+        html_args.returnData = "OK"
+        return
 
     if message_action == "createAssembly":
         try:
@@ -792,7 +830,18 @@ def create_assembly_from_graph(graph_data: dict) -> str:
             "must be saved first. Save the document (Ctrl+S) and try again."
         )
 
-    folder = app.data.activeProject.rootFolder
+    # Target folder for the external components. Resolved defensively:
+    # app.data.activeProject.rootFolder raises InternalValidationError('id.size()')
+    # when the Data Panel has no project in context, which previously propagated
+    # up and aborted the build. The palette also gates Create on this, so this is
+    # the belt-and-braces fallback.
+    folder = cache.resolve_target_folder(CMD_NAME)
+    if folder is None:
+        return (
+            "Error: No target project for new components. Open the Data Panel "
+            "and click into the project you want to work in (or save this "
+            "document once), then try Create Assembly again."
+        )
     root_comp = design.rootComponent
     transform = adsk.core.Matrix3D.create()
 

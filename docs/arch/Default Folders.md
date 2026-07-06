@@ -18,7 +18,7 @@ The Add Default Project Folders command registers a button in the QAT File dropd
 4. The preview lists every folder in the selected set; folders already present in the project root are shown as `(exists)`.
 5. Switching the dropdown immediately refreshes the preview via the `inputChanged` event.
 6. The user confirms with **OK**.
-7. The `command_execute` handler reads the dropdown selection, retrieves `app.data.activeProject.rootFolder.dataFolders`, and calls `dataFolders.add(name)` only for folder names that are not already present (case-insensitive).
+7. The `command_execute` handler reads the dropdown selection and resolves the active project through `ptutil.get_active_project()` — which guards `app.data.activeProject` (that raises `InternalValidationError('id.size()')` when the Data Panel has no project in context). If no project resolves, the command shows an actionable message and stops; otherwise it retrieves `rootFolder.dataFolders` and calls `dataFolders.add(name)` only for folder names that are not already present (case-insensitive).
 
 ### Component diagram
 
@@ -34,5 +34,5 @@ C4Component
     Rel(user, addin, "Loads add-in on Fusion start")
     Rel(addin, cmd, "Calls start() – registers button in QAT File dropdown")
     Rel(user, cmd, "Clicks PowerTools Add Project Folders in QAT File menu")
-    Rel(cmd, projectData, "Reads rootFolder.dataFolders and calls dataFolders.add() for missing folders")
+    Rel(cmd, projectData, "get_active_project() guards activeProject; reads rootFolder.dataFolders and adds missing folders")
 ```

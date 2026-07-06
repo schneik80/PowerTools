@@ -19,12 +19,14 @@ The New Assembly command opens a docked quick-start palette that helps you popul
 - An Autodesk Fusion 3D Design must be active.
 - **Automatic launch** requires the active document to be **new (unsaved)**, **empty** (no timeline features, bodies, sketches, or child components), and to have **Assembly** design intent.
 - **Insert from Open / Recent** requires the source document to be **saved** to an Autodesk Hub — `addByInsert` needs a cloud `DataFile`. Unsaved documents are not listed.
+- **Creating a component** requires an **active project** in the Data Panel — that project's folder is where the new external component is stored. If no project is in context, the palette shows a *No target project* banner and disables **New Component** until you select one.
 
 ## How to use New Assembly
 
 1. In Autodesk Fusion, create a new design with **File > New Design** and confirm the design intent is **Assembly**. The palette opens automatically docked to the right.
    - To open it manually at any time, select **New Assembly** in the **Assembly** tab's **Insert** panel (directly below **Insert STEP File**).
 2. **To create a component:** enter a component name, choose **Part**, **Hybrid**, or **Assembly** from the dropdown, and select **New Component**. The external component is created in the active project's root folder and added to the active design.
+   - If **New Component** is greyed out and a *No target project* banner is shown, there is no active project to store the component in. Open the **Data Panel**, click into the project you want to work in, then press **Re-check** on the banner (or simply click back into the palette — it re-checks automatically when it regains focus).
 3. **To insert an open document:** switch to the **Open** tab and click a thumbnail card. The document is inserted as a referenced component at the origin.
    - Tick **Show referenced children** if you also want to see (and insert) the sub-assemblies and parts loaded as references of an open assembly.
 4. **To insert a recent document:** switch to the **Recent** tab and click a card. Recently-used documents that are not currently open are listed newest-first.

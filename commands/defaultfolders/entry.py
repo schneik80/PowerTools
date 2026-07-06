@@ -39,9 +39,13 @@ local_handlers = []
 
 def _get_existing_lower() -> list[str]:
     """Return a lowercase list of folder names already in the active project root."""
+    # get_active_project guards app.data.activeProject, which raises
+    # InternalValidationError('id.size()') when no project is in context.
+    project = ptutil.get_active_project(CMD_NAME)
+    if project is None:
+        return []
     try:
-        root = adsk.core.Application.get().data.activeProject.rootFolder
-        return [f.name.casefold() for f in root.dataFolders]
+        return [f.name.casefold() for f in project.rootFolder.dataFolders]
     except Exception:
         return []
 
@@ -194,8 +198,19 @@ def command_execute(args: adsk.core.CommandEventArgs):
         # Target folder list (user-configurable in Preferences)
         folders_to_create = _folder_set("advanced" if use_advanced else "basic")
 
-        # Project root
-        project = app.data.activeProject
+        # Project root. get_active_project guards app.data.activeProject, which
+        # raises InternalValidationError('id.size()') when the Data Panel has no
+        # project in context — surface an actionable message instead of a raw
+        # traceback in that case.
+        project = ptutil.get_active_project(CMD_NAME)
+        if project is None:
+            ui.messageBox(
+                "No active project. Open the Data Panel and click into the "
+                "project where the default folders should be created, then run "
+                "this command again.",
+                CMD_NAME,
+            )
+            return
         root = project.rootFolder
         root_folders = root.dataFolders
 
