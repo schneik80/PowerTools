@@ -1,0 +1,22 @@
+Copyright (C) Industrial Machine Arts LLC WA, USA - All Rights Reserved
+
+This source code is protected under international copyright law.  All rights
+reserved and protected by the copyright holders.
+
+This file is confidential and only available to authorized individuals with the
+permission of the copyright holders.  If you encounter this file and do not have
+permission, please contact the copyright holders and delete this file.
+
+-------------------------------------------------------------------------------
+Third-party components
+
+Portions of this software are based on Autodesk, Inc. sample code and remain
+subject to Autodesk's original, permissive license terms:
+
+  - lib/ptAddInUtils/general_utils.py
+  - lib/ptAddInUtils/event_utils.py
+  - lib/ptAddInUtils/attributes_utils.py
+
+Each of those files retains its original Autodesk copyright notice, which
+Autodesk's license requires be kept intact in all copies. The proprietary terms
+above do not apply to those Autodesk-derived portions.

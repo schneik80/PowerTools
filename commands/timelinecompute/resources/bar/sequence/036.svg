@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200" height="20" xmlns="http://www.w3.org/2000/svg">
+  <!-- Left part - Green -->
+  <rect x="0" y="0" width="72" height="20" fill="green" stroke="none"/>
+  <!-- Right part - White/Transparent -->
+  <rect x="72" y="0" width="128" height="20" fill="none" stroke="none"/>
+</svg>

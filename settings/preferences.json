@@ -1,0 +1,193 @@
+{
+  "version": 1,
+  "general": {
+    "beta_mode": true
+  },
+  "groups": {
+    "assembly": {
+      "enabled": true
+    },
+    "document": {
+      "enabled": true
+    },
+    "exports": {
+      "enabled": true
+    },
+    "partmodeling": {
+      "enabled": true
+    },
+    "related": {
+      "enabled": true
+    },
+    "tools": {
+      "enabled": true
+    },
+    "share": {
+      "enabled": true
+    }
+  },
+  "commands": {
+    "assemblybuilder": {
+      "enabled": true
+    },
+    "insertSTEP": {
+      "enabled": true
+    },
+    "assemblyintent": {
+      "enabled": true
+    },
+    "assemblystats": {
+      "enabled": true
+    },
+    "getandupdate": {
+      "enabled": true
+    },
+    "bottomupupdate": {
+      "enabled": true
+    },
+    "componentwarn": {
+      "enabled": true
+    },
+    "changecyclecolor": {
+      "enabled": true
+    },
+    "externalize": {
+      "enabled": true
+    },
+    "globalParameters": {
+      "enabled": true
+    },
+    "inferconstraints": {
+      "enabled": true
+    },
+    "linkGlobalParameters": {
+      "enabled": true
+    },
+    "refmanager": {
+      "enabled": false
+    },
+    "refreshGlobalParametersCache": {
+      "enabled": true
+    },
+    "refrences": {
+      "enabled": true
+    },
+    "refresh": {
+      "enabled": true
+    },
+    "assigndrawingnumber": {
+      "enabled": true
+    },
+    "assignpartnumbers": {
+      "enabled": true
+    },
+    "autosave": {
+      "enabled": true
+    },
+    "datatoggle": {
+      "enabled": false
+    },
+    "defaultfolders": {
+      "enabled": true
+    },
+    "dochistory": {
+      "enabled": false
+    },
+    "docinfo": {
+      "enabled": true
+    },
+    "docopen": {
+      "enabled": true
+    },
+    "favorites": {
+      "enabled": true
+    },
+    "versiondiff": {
+      "enabled": false
+    },
+    "exportbomcsv": {
+      "enabled": true
+    },
+    "exportmermaid": {
+      "enabled": true
+    },
+    "sketchfix": {
+      "enabled": true
+    },
+    "sketchunderconstrained": {
+      "enabled": true
+    },
+    "sketchcirclecenterpoint": {
+      "enabled": false
+    },
+    "timelinecompute": {
+      "enabled": true
+    },
+    "mirrorderive": {
+      "enabled": true
+    },
+    "hideobjects": {
+      "enabled": true
+    },
+    "confighub": {
+      "enabled": true
+    },
+    "relateddata": {
+      "enabled": true
+    },
+    "scriptsmanager": {
+      "enabled": true
+    },
+    "shareDocument": {
+      "enabled": true
+    },
+    "shareSettings": {
+      "enabled": true
+    },
+    "OpenDesktop": {
+      "enabled": true
+    },
+    "OpenInTeam": {
+      "enabled": true
+    },
+    "projectInvite": {
+      "enabled": true
+    },
+    "projectMembers": {
+      "enabled": true
+    }
+  },
+  "command_settings": {
+    "componentwarn": {
+      "warn_non_leaf": false
+    },
+    "changecyclecolor": {
+      "show_in_context_menu": true
+    },
+    "docopen": {
+      "run_on_open": false,
+      "run_on_activate": false
+    },
+    "defaultfolders": {
+      "basic": [
+        "Drawings",
+        "Archive",
+        "Obit"
+      ],
+      "advanced": [
+        "00 - Products",
+        "01 - Sub Assemblies",
+        "02 - ECAD",
+        "03 - Parts",
+        "04 - Purchased Parts",
+        "05 - 3DPCB Parts",
+        "06 - Drawings",
+        "07 - Documents",
+        "08 - Render",
+        "09 - Manufacture",
+        "10 - Archive",
+        "XX - Obit"
+      ]
+    }
+  }
+}
