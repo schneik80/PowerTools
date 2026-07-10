@@ -17,6 +17,7 @@ from .general_utils import *
 from .event_utils import *
 from .attributes_utils import *
 from .cache_utils import *
+from .recents_utils import *
 from .date_utils import *
 from .log_utils import *
 from .upload_utils import *

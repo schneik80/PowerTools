@@ -258,6 +258,12 @@ A few ordering constraints are encoded in the `commands` list in
   before the `PT-preferences` control. The Preferences command is infrastructure
   and always starts before the registry commands, so the anchor is present; the
   command falls back to appending if it is ever missing.
+- `openrecent` (Document Tools group) inserts its "Open Recent" flyout into the
+  QAT File dropdown directly after the native **Open** command. Fusion has
+  renamed that control across releases, so the command probes a list of
+  candidate IDs and falls back (after New → before `PT-preferences` → append);
+  a DEBUG build logs the File dropdown's actual control IDs to confirm the
+  anchor. See the [Open Recent architecture note](Open%20Recent.md).
 
 ---
 
@@ -300,9 +306,11 @@ sequenceDiagram
 
 `lib/ptAddInUtils/` is the single shared helper package for the whole add-in
 (formerly `fusionAddInUtils` in the separate add-ins). Its `__init__.py`
-re-exports the public names from eight modules — `general_utils` is imported
+re-exports the public names from its helper modules — `general_utils` is imported
 first because it defines the `app` / `ui` objects that the other modules rely
-on. Commands import it as `ptutil`.
+on. Commands import it as `ptutil`; a few submodules with cohesive APIs
+(`cache_utils`, `recents_utils`) are also imported directly by the commands that
+use them.
 
 | Module | Provides |
 |---|---|
@@ -310,6 +318,7 @@ on. Commands import it as `ptutil`.
 | `event_utils.py` | `add_handler()` (registers a handler and retains it against GC), `clear_handlers()` (releases globally-scoped handlers at stop). |
 | `attributes_utils.py` | Attribute enumeration/formatting helpers (`attributes_for_selection`, `get_all_attributes`, `get_comptypes`, `update_feedback_from_list`). |
 | `cache_utils.py` | Project/folder/param-doc JSON cache helpers (Global Parameters and Related Data domains); active-project / target-folder resolution shared by the assembly commands (`get_active_project`, `resolve_target_folder`, `target_project_label`). |
+| `recents_utils.py` | Single source of truth for the "recent documents" cache (`cache/recent_docs.json`) and per-document thumbnail store, shared by New Assembly and Open Recent: `read/write/touch` cache helpers, `render_thumbnail_for_doc`, `remember_recent_if_eligible`, `list_recent`. The pure cache helpers avoid any `adsk` dependency so they stay unit-testable. |
 | `date_utils.py` | `next_business_day(dt)`, `compute_quick_dates()`. |
 | `log_utils.py` | `default_log_directory()`, `open_live_log_viewer(path)`. |
 | `upload_utils.py` | `wait_for_upload(save_result, context_label, …)` — polls a Fusion save/upload to completion. |
@@ -370,6 +379,9 @@ commands.
 |---|---|---|
 | `cache/settings.json` | Document Tools | User settings (`load_settings()` / `save_settings()`). |
 | `cache/[hub-id].json` | Related Data | Per-hub template cache. |
+| `cache/favorites_<hub-id>.json` | Document Tools (Favorites) | Per-hub saved document locations. |
+| `cache/recent_docs.json` | `recents_utils` (New Assembly + Open Recent) | Recently-touched part/hybrid/assembly `DataFile` ids with name, intent, and folder location; owned by `lib/ptAddInUtils/recents_utils`. |
+| `<temp>/powertools_assembly_thumbs/` | `recents_utils` (New Assembly + Open Recent) | Per-document thumbnail PNGs keyed by `md5(dataFileId)`, rendered while a document is open. |
 | `hub.json` | Related Data | Registered hub IDs, project IDs, and folder IDs (loaded by `loadHub()`). |
 
 Per-domain caches live under the add-in's single `cache/` directory
@@ -420,6 +432,7 @@ PowerTools/
 │       ├── event_utils.py        # add_handler(), clear_handlers()
 │       ├── attributes_utils.py   # attribute enumeration/formatting helpers
 │       ├── cache_utils.py        # project/folder/param-doc JSON cache helpers
+│       ├── recents_utils.py      # shared recents cache + thumbnail store (New Assembly, Open Recent)
 │       ├── date_utils.py         # next_business_day(), compute_quick_dates()
 │       ├── log_utils.py          # default_log_directory(), open_live_log_viewer()
 │       ├── upload_utils.py       # wait_for_upload()
