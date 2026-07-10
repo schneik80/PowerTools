@@ -29,8 +29,8 @@ C4Container
     Container(python, "Python Backend", "commands/assemblyintent/entry.py", "Trigger gate, open/recent enumeration, thumbnails, target-project resolution, create + insert")
     Container(palette, "HTML Palette", "resources/html/index.html", "Create form, no-project banner, Open/Recent tabbed galleries, theme")
     ContainerDb(init, "init.js", "Generated sidecar", "window.__ptInit: theme, doc name, open + recent docs, target project")
-    ContainerDb(recent, "recent_docs.json", "Local cache", "Recently-touched part/hybrid/assembly DataFile ids")
-    ContainerDb(thumbs, "Thumbnail cache", "OS temp PNGs", "Per-DataFile thumbnails keyed by md5(id)")
+    ContainerDb(recent, "recent_docs.json", "Local cache (recents_utils)", "Recently-touched part/hybrid/assembly DataFile ids; shared with Open Recent")
+    ContainerDb(thumbs, "Thumbnail cache", "OS temp PNGs (recents_utils)", "Per-DataFile thumbnails keyed by md5(id); shared with Open Recent")
   }
 
   System_Ext(fusion, "Fusion API", "adsk.core, adsk.fusion")
@@ -134,6 +134,9 @@ As with Assembly Builder, the palette loads asynchronously and `palettes.add()` 
 
 ### Why render thumbnails with `Component.createThumbnail`?
 The DataFile-backed cloud thumbnail did not resolve reliably in the target build. Rendering the live root component is dependable while a document is open, so thumbnails are generated for open documents and cached on disk (keyed by `md5(dataFileId)` in the OS temp folder). The Recent gallery — whose documents are closed and cannot be rendered — reuses whatever PNG was cached while the document was last open, falling back to a placeholder.
+
+### Why is the recents cache shared with Open Recent?
+The recents cache (`cache/recent_docs.json`) and the per-document thumbnail store were originally private to this command. The [Open Recent](./Open%20Recent.md) File-menu flyout surfaces the same list, so the data layer — cache format/location, thumbnail key scheme and rendering, and the `read`/`write`/`touch`/`list`/`remember` helpers — was extracted into `lib/ptAddInUtils/recents_utils` (mirroring how `cache_utils` owns the Global Parameters cache formats). New Assembly now delegates its recents helpers to that module, keeping one source of truth so the palette gallery and the File-menu flyout can never drift.
 
 ### Why a "no target project" banner (and manual re-check)?
 A new external component needs a target `DataFolder` for its eventual save. The backend resolves one via `cache.resolve_target_folder()` — the active document's own folder when it is already saved, otherwise `app.data.activeProject.rootFolder`. That `activeProject` access raises `InternalValidationError('id.size()')` when the Data Panel has no project in context. Because a raise inside the palette's `incomingFromHTML` handler is swallowed by the `DEBUG`-gated `handle_error()`, this previously read to the user as **nothing happening** on *New Component*. The palette now surfaces an unresolved project as a banner and disables *New Component* until one is available. Fusion exposes **no active-project-changed event** (`Data.activeProject` is a plain property with no event), so the palette can't observe the user picking a project: it re-checks on demand instead — via a **Re-check** button on the banner and automatically when the palette page regains focus (a lightweight `recheckProject` message that re-resolves only the target folder). The same resolver and banner back the Assembly Builder's *Create Assembly* gate.

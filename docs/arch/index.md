@@ -48,6 +48,7 @@ matching end-user guide lives in [`../`](..).
 - [Assign Drawing Number](Assign%20Drawing%20Number.md)
 - [Default Folders](Default%20Folders.md)
 - [Favorites](Favorites.md)
+- [Open Recent](Open%20Recent.md)
 - [Show In Location](Show%20In%20Location.md)
 - [Toggle Data Pane](Toggle%20Data%20Pane.md)
 - [Recovery Save](Recovery%20Save.md)

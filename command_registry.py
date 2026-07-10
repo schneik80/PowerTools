@@ -60,6 +60,7 @@ GROUPS = [
             _cmd("docinfo", "Document Information.md"),
             _cmd("docopen", "Show In Location.md", settings=True),
             _cmd("favorites", "Favorites.md"),
+            _cmd("openrecent", "Open Recent.md"),
             _cmd("versiondiff", "Version Diff.md"),
         ],
     },
