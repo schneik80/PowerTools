@@ -66,7 +66,7 @@ def start():
         dropDown = qat.controls.itemById("shareDropMenu")
 
     # Add a button to toggle the visibility to the end of the panel.
-    control = dropDown.controls.addCommand(cmd_def, "", False)
+    dropDown.controls.addCommand(cmd_def, "", False)
     # control.isPromoted = True
 
 
@@ -89,7 +89,6 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     ptutil.log(f"{CMD_NAME} Command Created Event")
 
     # https://help.autodesk.com/view/fusion360/ENU/?contextId=CommandInputs
-    inputs = args.command.commandInputs
 
     # Connect to the events that are needed by this command.
     ptutil.add_handler(
@@ -129,7 +128,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
         shareState = app.activeDocument.dataFile.sharedLink
 
         # check share settings
-        if shareState.isShared == True:
+        if shareState.isShared:
             wasShared = True
         else:
             wasShared = False
@@ -138,7 +137,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
         progressBar = ui.progressBar
 
         # Check if the document is shared
-        if shareState.isShared == False:
+        if not shareState.isShared:
             # creating a link can take a few seconds so show a busy bar
             (progressBar.showBusy("Generating Share Link"),)
 
@@ -160,31 +159,31 @@ def command_execute(args: adsk.core.CommandEventArgs):
         # Copy the shared link to the clipboard
         ptutil.clipText(shareLink)
 
-        if wasShared == True:
+        if wasShared:
             resultString = "Document is already shared <br>"
         else:
             resultString = "<b>Document is now shared.</b> <br>"
 
         resultString += f"A <b>Share link</b> for {app.activeDocument.name}: <a href=''{shareLink}''>{shareLink}</a> was added to the clipboard.<br><br>Note:"
 
-        if shareState.isDownloadAllowed == False:
+        if not shareState.isDownloadAllowed:
             noDownload = True
         else:
             noDownload = False
 
-        if shareState.isPasswordRequired == True:
+        if shareState.isPasswordRequired:
             passwordProtected = True
         else:
             passwordProtected = False
 
-        if noDownload == True:
+        if noDownload:
             resultString += "<br>Downloading from the link is not turned on. To enable downloading, go to <b>Share Settings</b><br>"
         else:
             resultString += (
                 "<br>Downloading the document from the share link is allowed.<br>"
             )
 
-        if passwordProtected == True:
+        if passwordProtected:
             resultString += "<br>The share is password protected.<br>"
         else:
             resultString += "<br>The share does not have a password. To set a password, go to <b>Share Settings</b><br>"
@@ -194,7 +193,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
             if has_external_child_reference(rootComp):
                 ptutil.log(f"{CMD_NAME} Document has external references")
-                if noDownload == True:
+                if noDownload:
                     resultString += "<br>This design has external references. Sharing this design will allow the referenced designs to be viewed but not downloaded. <br>"
                 else:
                     resultString += "<br>This design has external references. Sharing this design will also share the referenced designs. To avoid sharing referenced designs, either save this design as a new document and break link or disable download.<br>"

@@ -159,7 +159,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs) -> None:
 
         # Diameter value input (Fusion internal unit = cm; default 25 mm)
         units_mgr = design.unitsManager
-        diameter_input = inputs.addValueInput(
+        inputs.addValueInput(
             "diameter",
             "Diameter",
             units_mgr.defaultLengthUnits,

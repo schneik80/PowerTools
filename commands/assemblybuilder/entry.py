@@ -483,7 +483,7 @@ def collect_param_links(nodes: dict) -> dict:
     should have that parameter set derived into them.
     """
     links: dict[int, list] = {}
-    for node_id, node in nodes.items():
+    for _node_id, node in nodes.items():
         if node.get("name") != "paramdoc":
             continue
         for output_val in node.get("outputs", {}).values():

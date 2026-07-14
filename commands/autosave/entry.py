@@ -43,9 +43,7 @@ def start():
     fileDropDown = qat.controls.itemById("FileSubMenuCommand")
 
     # Add a new button after the save as latest control.
-    control = fileDropDown.controls.addCommand(
-        cmd_def, "PLM360SaveAsLatestOnQATCommand", False
-    )
+    fileDropDown.controls.addCommand(cmd_def, "PLM360SaveAsLatestOnQATCommand", False)
 
 
 # Executed when add-in is stopped.

@@ -64,7 +64,7 @@ def start():
     else:
         dropDown = qat.controls.itemById("shareDropMenu")
 
-    control = dropDown.controls.addCommand(cmd_def, "PTSHD_projectInvite", False)
+    dropDown.controls.addCommand(cmd_def, "PTSHD_projectInvite", False)
 
 
 # Executed when add-in is stopped.
@@ -86,7 +86,6 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     ptutil.log(f"{CMD_NAME} Command Created Event")
 
     # https://help.autodesk.com/view/fusion360/ENU/?contextId=CommandInputs
-    inputs = args.command.commandInputs
 
     # Connect to the events that are needed by this command.
     ptutil.add_handler(

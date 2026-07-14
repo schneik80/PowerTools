@@ -106,7 +106,7 @@ def start():
     fileDropDown = qat.controls.itemById("FileSubMenuCommand")
 
     # Add a new button to the end of the file menu.
-    control = fileDropDown.controls.addCommand(cmd_def)
+    fileDropDown.controls.addCommand(cmd_def)
 
 
 # Executed when add-in is stopped.

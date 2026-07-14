@@ -118,7 +118,6 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     # Get the active Fusion product and cast to Design for manipulation
     product = app.activeProduct
     design = adsk.fusion.Design.cast(product)
-    doc = app.activeDocument
     # Title for dialogs and messages
     title = CMD_NAME
 
@@ -133,7 +132,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         return
 
     # Check that the active document has been saved.
-    if ptutil.isSaved() == False:
+    if not ptutil.isSaved():
         return
 
     resume_plan = {
@@ -1552,7 +1551,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
         ptutil.log("Bottom-up Update completed successfully")
         write_log_entry("Bottom-up Update completed successfully")
         ui.messageBox(completion_msg)  # Show completion message to user
-    except Exception as e:
+    except Exception:
         # Hide progress bar if it exists
         try:
             if progress_bar:

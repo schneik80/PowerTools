@@ -45,7 +45,7 @@ def start():
 
     qat = ui.toolbars.itemById("QAT")
 
-    control = qat.controls.addCommand(cmd_def, "save", True)
+    qat.controls.addCommand(cmd_def, "save", True)
 
 
 # Executed when add-in is stopped.

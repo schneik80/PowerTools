@@ -70,7 +70,7 @@ def start():
         dropDown = qat.controls.itemById("shareDropMenu")
 
     # Add a button to toggle the visibility to the end of the panel.
-    control = dropDown.controls.addCommand(cmd_def, "PTSHD_sharesettings", True)
+    dropDown.controls.addCommand(cmd_def, "PTSHD_sharesettings", True)
     # control.isPromoted = True
 
 
@@ -93,7 +93,6 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     ptutil.log(f"{CMD_NAME} Command Created Event")
 
     # https://help.autodesk.com/view/fusion360/ENU/?contextId=CommandInputs
-    inputs = args.command.commandInputs
 
     # Connect to the events that are needed by this command.
     ptutil.add_handler(

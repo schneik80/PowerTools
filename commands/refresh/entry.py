@@ -35,7 +35,7 @@ def start():
 
     file_dd = ptutil.get_qat_file_dropdown()
     if file_dd:
-        control = file_dd.controls.addCommand(cmd_def, "ExportCommand", False)
+        file_dd.controls.addCommand(cmd_def, "ExportCommand", False)
 
 
 # Executed when add-in is stopped.

@@ -50,7 +50,7 @@ def start():
     fileDropDown = qat.controls.itemById("FileSubMenuCommand")
 
     # Add a new button after the Export control.
-    control = fileDropDown.controls.addCommand(cmd_def, "ExportCommand", True)
+    fileDropDown.controls.addCommand(cmd_def, "ExportCommand", True)
 
 
 # Executed when add-in is stopped.
@@ -108,7 +108,6 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
             parentOcc, rootComp.occurrences.asList, 1, resultString
         )
 
-        msg = ""
         # Set styles of file dialog.
         folderDlg = ui.createFolderDialog()
         folderDlg.title = "Choose Folder to save Mermaid Graph"

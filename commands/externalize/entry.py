@@ -516,7 +516,9 @@ class _RunnerHandler(adsk.core.CustomEventHandler):
 
         replaced = 0
         replaced_instances = 0
-        no_cancel = lambda: False
+
+        def no_cancel():
+            return False
 
         # Snapshot the target folder's files once. The per-component existence
         # check below is then an O(1) dict lookup instead of a fresh linear scan

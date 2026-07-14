@@ -85,7 +85,6 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
     product = app.activeProduct
     design = adsk.fusion.Design.cast(product)
-    doc = app.activeDocument
     title = CMD_NAME
 
     # Check a Design document is active.
@@ -94,7 +93,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         return
 
     # Check that the active document has been saved.
-    if ptutil.isSaved() == False:
+    if not ptutil.isSaved():
         return
 
 
@@ -128,7 +127,6 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
         total_unique = (
             design.allComponents.count - 1
         )  # Get unique components, subtract 1 to remove for root component.
-        total_count = rootComp.allOccurrences.count  # Get total components.
         mTitle = f"{root_name} Component Statistics"
 
         # Get the assembly statistics

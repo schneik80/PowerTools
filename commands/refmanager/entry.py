@@ -44,7 +44,7 @@ def start():
 
     qat = ui.toolbars.itemById("QAT")
 
-    control = qat.controls.addCommand(cmd_def, "PTAT-GetandUpdate", True)
+    qat.controls.addCommand(cmd_def, "PTAT-GetandUpdate", True)
 
 
 # Executed when add-in is stopped.

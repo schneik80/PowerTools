@@ -87,7 +87,7 @@ def get_all_attributes(attribute_group: str, attribute_name: str) -> list:
             else:
                 orphans.append(attribute)
 
-        for key, object_attributes in unique_objects.items():
+        for _key, object_attributes in unique_objects.items():
             name, the_selection_type = _get_name_type(object_attributes[0].parent)
             attribute_list = _make_attributes_message(object_attributes, False, "")
 
@@ -125,7 +125,7 @@ def get_comptypes(attribute_group: str, attribute_name: str) -> list:
             else:
                 orphans.append(attribute)
 
-        for key, object_attributes in unique_objects.items():
+        for _key, object_attributes in unique_objects.items():
             attribute_list = _make_attributes_message(
                 object_attributes, True, "litetype"
             )

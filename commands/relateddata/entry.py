@@ -252,7 +252,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     )
 
     dropDownItems_ = dropDownCommandInput.listItems
-    for key, val in my_DocsDictSorted.items():
+    for _key, val in my_DocsDictSorted.items():
         if isinstance(val, dict):
             (dropDownItems_.add(val.get("name"), True),)
             docActive = app.activeDocument
@@ -320,7 +320,6 @@ def command_execute(args: adsk.core.CommandEventArgs):
 # allowing you to modify values of other inputs based on that change.
 def command_input_changed(args: adsk.core.InputChangedEventArgs):
     changed_input = args.input
-    inputs = args.inputs
 
     global docURN, docTitle, docSeed
     stringDocname = args.inputs.itemById("stringValueInput_")
@@ -344,7 +343,7 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
 
     # Auto name or user name input
     if changed_input.id == "boolvalueInput_":
-        if changed_input.value == True:
+        if changed_input.value:
             stringDocname.isEnabled = False
         else:
             stringDocname.isEnabled = True

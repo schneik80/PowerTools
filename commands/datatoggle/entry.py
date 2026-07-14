@@ -60,7 +60,7 @@ def start():
 
     navToolbar = ui.toolbars.itemById(_toolbar)
     navToolbarControls = navToolbar.controls
-    control = navToolbarControls.addCommand(cmd_def, "", False)
+    navToolbarControls.addCommand(cmd_def, "", False)
 
     # ****************
     # Get target workspace for the command.
@@ -95,7 +95,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         ui = app.userInterface
         cmdDefs = ui.commandDefinitions
 
-        if app.data.isDataPanelVisible == True:
+        if app.data.isDataPanelVisible:
             datatoggleclose = cmdDefs.itemById("DashboardModeCloseCommand")
             datatoggleclose.execute()
         else:
