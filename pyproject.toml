@@ -45,7 +45,10 @@ ignore = ["E501"]
 # The shared utils package intentionally re-exports its submodules' public names
 # via wildcard so callers can do `ptutil.<name>`. Adding explicit __all__ is a
 # planned follow-up (task T18); until then, silence the wildcard warnings here.
-"lib/ptAddInUtils/__init__.py" = ["F403", "F401"]
+# I001 is also disabled: the import order is load-bearing (general_utils must be
+# imported first — it defines app/ui that attributes_utils depends on), so isort
+# must not alphabetize it.
+"lib/ptAddInUtils/__init__.py" = ["F403", "F401", "I001"]
 
 # ── mypy (advisory; not a gate) ───────────────────────────────────────────────
 [tool.mypy]
