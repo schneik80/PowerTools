@@ -41,6 +41,17 @@ DEBUG = os.path.isfile(os.path.join(os.path.dirname(__file__), ".debug"))
 # Hub operations in the Global Parameters commands.
 PERF_TRACE = False
 
+# Attach-debugger gate. When the ``.debug`` marker enables DEBUG (above), the
+# add-in also starts an in-process ``debugpy`` server on startup so an external
+# DAP client (Zed, or a VS Code "attach" config) can connect. The server is
+# non-blocking and localhost-only, and it never runs in a shipped build because
+# the ``.debug`` marker is git-ignored and absent there. See docs/dev/debugging.md.
+WAIT_FOR_DEBUGGER = DEBUG
+DEBUGGER_PORT = 5678
+# When True, run() blocks until a debugger attaches. Left False so a developer
+# who keeps ``.debug`` present for logging is never forced to attach on launch.
+DEBUGGER_BLOCK_UNTIL_ATTACHED = False
+
 ADDIN_NAME = os.path.basename(os.path.dirname(__file__))
 COMPANY_NAME = "IMA LLC"
 

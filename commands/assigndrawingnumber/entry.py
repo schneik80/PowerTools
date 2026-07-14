@@ -163,7 +163,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     if not isinstance(doc, adsk.drawing.DrawingDocument):
         ui.messageBox(
             "Assign Drawing Number requires an active Fusion 2D drawing document.",
-            CMD_NAME, 0, 2,
+            CMD_NAME,
+            0,
+            2,
         )
         args.command.doExecute(True)
         return
@@ -186,7 +188,8 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         INPUT_INFO,
         "Scheme",
         f"<b>{DRAWING_PREFIX}</b> — Drawing (controlled document)",
-        1, True,
+        1,
+        True,
     )
 
     # Show the current number and an inline warning only when one exists —
@@ -207,12 +210,15 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                 f"replace <b>{_escape_html(current)}</b> with the new number "
                 f"shown below."
             ),
-            4, True,
+            4,
+            True,
         )
         note.isFullWidth = True
 
     preview_input = inputs.addStringValueInput(
-        INPUT_PREVIEW, "Will assign", preview_text,
+        INPUT_PREVIEW,
+        "Will assign",
+        preview_text,
     )
     preview_input.isReadOnly = True
 
@@ -221,11 +227,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
 
 def _escape_html(s: str) -> str:
-    return (
-        s.replace("&", "&amp;")
-         .replace("<", "&lt;")
-         .replace(">", "&gt;")
-    )
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _peek_next_drawing_number() -> tuple:
@@ -302,8 +304,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
         if stamp_errors:
             deferred_error = (
                 f"Drawing number {number_str} reserved in Pn-Cache, "
-                f"but some stamps failed:\n\n"
-                + "\n".join(stamp_errors)
+                f"but some stamps failed:\n\n" + "\n".join(stamp_errors)
             )
             ptutil.log(f"{CMD_NAME} execute: stamp errors: {stamp_errors}")
         else:
@@ -354,7 +355,9 @@ def _read_existing_drawing_number(doc: adsk.drawing.DrawingDocument) -> str:
         return ""
 
 
-def _write_drawing_attribute(doc: adsk.drawing.DrawingDocument, number_str: str) -> None:
+def _write_drawing_attribute(
+    doc: adsk.drawing.DrawingDocument, number_str: str
+) -> None:
     attrs = doc.attributes
     if attrs is None:
         raise RuntimeError("DrawingDocument does not expose attributes.")
@@ -483,13 +486,10 @@ def _sync_drawing_number_to_source_design(
         if opened_by_us and source_doc is not None:
             try:
                 source_doc.close(False)
-                ptutil.log(
-                    f"{CMD_NAME}: closed silently-opened source design."
-                )
+                ptutil.log(f"{CMD_NAME}: closed silently-opened source design.")
             except Exception as exc:
                 ptutil.log(
-                    f"{CMD_NAME}: failed to close silently-opened source "
-                    f"design: {exc}"
+                    f"{CMD_NAME}: failed to close silently-opened source design: {exc}"
                 )
 
 
@@ -508,7 +508,7 @@ def _missing_custom_property_html() -> str:
         f"To enable titleblock auto-population, add a <b>{prop}</b> "
         f"custom property to your hub's Custom Properties collection, "
         f"then re-run this command.<br/><br/>"
-        f"Setup guide: <a href=\"{url}\">{url}</a>"
+        f'Setup guide: <a href="{url}">{url}</a>'
     )
 
 

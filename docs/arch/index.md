@@ -103,6 +103,8 @@ matching end-user guide lives in [`../`](..).
 
 ## Related documentation
 
+- For the **developer / contributor guide** — local setup, tooling, and how to
+  debug in VS Code and Zed — see [`docs/dev/`](../dev/index.md).
 - For **end-user and command documentation**, see the [`docs/`](..) folder.
 - For **installation and getting started**, see the project [README](../../README.md).
 

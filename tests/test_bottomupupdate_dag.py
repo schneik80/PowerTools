@@ -99,8 +99,12 @@ def test_deep_shared_chain_keeps_dependency_order():
     # Assert: each name unique and every edge respected (dep before dependent).
     assert len(order) == len(set(order))
     edges = [
-        ("Leaf", "Mid1"), ("Leaf", "Mid2"), ("Mid1", "Top1"),
-        ("Mid2", "Top1"), ("Top1", "Top2"), ("Leaf", "Top2"),
+        ("Leaf", "Mid1"),
+        ("Leaf", "Mid2"),
+        ("Mid1", "Top1"),
+        ("Mid2", "Top1"),
+        ("Top1", "Top2"),
+        ("Leaf", "Top2"),
     ]
     for dependency, dependent in edges:
         assert order.index(dependency) < order.index(dependent)

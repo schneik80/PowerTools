@@ -119,8 +119,10 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
 
             # Encode to base64 and open in Mermaid Live Editor
             # The live editor expects a JSON state object, not raw mermaid text
-            state = json.dumps({"code": resultString, "mermaid": json.dumps({"theme": "base"})})
-            encoded_code = base64.b64encode(state.encode('utf-8')).decode('utf-8')
+            state = json.dumps(
+                {"code": resultString, "mermaid": json.dumps({"theme": "base"})}
+            )
+            encoded_code = base64.b64encode(state.encode("utf-8")).decode("utf-8")
             url = f"https://mermaid.live/view#base64:{encoded_code}"
             webbrowser.open(url)
         else:

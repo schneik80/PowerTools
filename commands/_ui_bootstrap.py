@@ -37,6 +37,7 @@ def _ui():
 
 # ── Power Tools panel (ToolsTab) ──────────────────────────────────────────────
 
+
 def get_power_tools_panel():
     """Return the shared "Power Tools" toolbar panel, or None if it is absent.
 
@@ -50,6 +51,7 @@ def get_power_tools_panel():
 
 
 # ── PowerTools Settings flyout (QAT File dropdown) ────────────────────────────
+
 
 def get_pt_settings_flyout():
     """Return the shared PTSettings flyout in the QAT File dropdown, or None.
@@ -71,6 +73,7 @@ def get_pt_settings_flyout():
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
+
 
 def create_shared_access_points():
     """Create the shared "Power Tools" panel once, before any command starts.

@@ -79,8 +79,7 @@ def intent_of_design(design: adsk.fusion.Design) -> int:
         return schemes.INTENT_HYBRID
 
 
-def intent_of_component(component: adsk.fusion.Component,
-                        parent_intent: int) -> int:
+def intent_of_component(component: adsk.fusion.Component, parent_intent: int) -> int:
     """Best-effort intent classification for an arbitrary component.
 
     The Fusion API exposes designIntent on Design, not on individual

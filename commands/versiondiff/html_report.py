@@ -499,7 +499,9 @@ def _escape_html(text: str) -> str:
 
 def _build_version_card(info, label: str, css_class: str) -> str:
     """Build HTML for a version info card."""
-    desc = _escape_html(info.description) if info.description else "<i>No description</i>"
+    desc = (
+        _escape_html(info.description) if info.description else "<i>No description</i>"
+    )
 
     # Thumbnail (embedded as base64 data URI)
     thumb_html = ""
@@ -526,7 +528,7 @@ def _build_version_card(info, label: str, css_class: str) -> str:
 
 def _build_filter_badges(summary: dict) -> str:
     """Build the clickable filter badge row."""
-    version_changed = summary.get('version_changed', 0)
+    version_changed = summary.get("version_changed", 0)
     vc_badge = ""
     if version_changed > 0:
         vc_badge = (
@@ -535,7 +537,7 @@ def _build_filter_badges(summary: dict) -> str:
             f'<span class="count">{version_changed}</span> XREF Updated</span>'
         )
 
-    sketch_modified = summary.get('sketch_modified', 0)
+    sketch_modified = summary.get("sketch_modified", 0)
     sk_badge = ""
     if sketch_modified > 0:
         sk_badge = (
@@ -544,7 +546,7 @@ def _build_filter_badges(summary: dict) -> str:
             f'<span class="count">{sketch_modified}</span> Sketch Modified</span>'
         )
 
-    params_changed = summary.get('params_changed', 0)
+    params_changed = summary.get("params_changed", 0)
     prm_badge = ""
     if params_changed > 0:
         prm_badge = (
@@ -553,7 +555,7 @@ def _build_filter_badges(summary: dict) -> str:
             f'<span class="count">{params_changed}</span> Params Changed</span>'
         )
 
-    health_changed = summary.get('health_changed', 0)
+    health_changed = summary.get("health_changed", 0)
     health_badge = ""
     if health_changed > 0:
         health_badge = (
@@ -563,13 +565,13 @@ def _build_filter_badges(summary: dict) -> str:
         )
 
     return f"""<div class="filter-row">
-    <span class="filter-badge filter-badge-newer" data-filter="newer" onclick="toggleFilter(this)"><span class="count">{summary.get('newer', 0)}</span> Newer</span>
-    <span class="filter-badge filter-badge-deleted" data-filter="deleted" onclick="toggleFilter(this)"><span class="count">{summary.get('deleted', 0)}</span> Deleted</span>
+    <span class="filter-badge filter-badge-newer" data-filter="newer" onclick="toggleFilter(this)"><span class="count">{summary.get("newer", 0)}</span> Newer</span>
+    <span class="filter-badge filter-badge-deleted" data-filter="deleted" onclick="toggleFilter(this)"><span class="count">{summary.get("deleted", 0)}</span> Deleted</span>
     {vc_badge}
     {sk_badge}
     {prm_badge}
     {health_badge}
-    <span class="filter-badge filter-badge-unchanged" data-filter="unchanged" onclick="toggleFilter(this)"><span class="count">{summary.get('unchanged', 0)}</span> Unchanged</span>
+    <span class="filter-badge filter-badge-unchanged" data-filter="unchanged" onclick="toggleFilter(this)"><span class="count">{summary.get("unchanged", 0)}</span> Unchanged</span>
 </div>"""
 
 
@@ -594,10 +596,14 @@ def _build_properties_table(diff_result: DiffResult) -> str:
         return ""
 
     older_info = (
-        diff_result.comparison if diff_result.older_is_comparison else diff_result.baseline
+        diff_result.comparison
+        if diff_result.older_is_comparison
+        else diff_result.baseline
     )
     newer_info = (
-        diff_result.baseline if diff_result.older_is_comparison else diff_result.comparison
+        diff_result.baseline
+        if diff_result.older_is_comparison
+        else diff_result.comparison
     )
 
     def _fmt(val, decimals=3):
@@ -610,7 +616,9 @@ def _build_properties_table(diff_result: DiffResult) -> str:
         """Format a 3-tuple of floats."""
         if not t:
             return "—"
-        return f"({_fmt(t[0], decimals)}, {_fmt(t[1], decimals)}, {_fmt(t[2], decimals)})"
+        return (
+            f"({_fmt(t[0], decimals)}, {_fmt(t[1], decimals)}, {_fmt(t[2], decimals)})"
+        )
 
     def _extents(bbox_min, bbox_max, decimals=3):
         """Compute extents string from bbox min/max."""
@@ -623,15 +631,19 @@ def _build_properties_table(diff_result: DiffResult) -> str:
 
     def _row(label, older_val, newer_val, unit=""):
         """Build a table row, highlighting only the newer column if values differ."""
-        o_str = _escape_html(str(older_val)) + (f" {unit}" if unit and older_val != "—" else "")
-        n_str = _escape_html(str(newer_val)) + (f" {unit}" if unit and newer_val != "—" else "")
+        o_str = _escape_html(str(older_val)) + (
+            f" {unit}" if unit and older_val != "—" else ""
+        )
+        n_str = _escape_html(str(newer_val)) + (
+            f" {unit}" if unit and newer_val != "—" else ""
+        )
         changed = str(older_val) != str(newer_val)
         n_cls = ' class="prop-changed"' if changed else ""
         return (
             f"<tr>"
             f"<td>{o_str}</td>"
             f'<td class="prop-label">{_escape_html(label)}</td>'
-            f'<td{n_cls}>{n_str}</td>'
+            f"<td{n_cls}>{n_str}</td>"
             f"</tr>"
         )
 
@@ -641,18 +653,34 @@ def _build_properties_table(diff_result: DiffResult) -> str:
 
     rows = []
     rows.append(_row("Material", op.material or "—", np_.material or "—"))
-    rows.append(_row("Appearances",
-                     ", ".join(op.body_appearances) if op.body_appearances else "—",
-                     ", ".join(np_.body_appearances) if np_.body_appearances else "—"))
+    rows.append(
+        _row(
+            "Appearances",
+            ", ".join(op.body_appearances) if op.body_appearances else "—",
+            ", ".join(np_.body_appearances) if np_.body_appearances else "—",
+        )
+    )
     rows.append(_row("Bodies", op.body_count, np_.body_count))
     rows.append(_row("Mass", _fmt(op.mass, 6), _fmt(np_.mass, 6), "kg"))
     rows.append(_row("Volume", _fmt(op.volume, 3), _fmt(np_.volume, 3), "cm³"))
     rows.append(_row("Area", _fmt(op.area, 3), _fmt(np_.area, 3), "cm²"))
     rows.append(_row("Density", _fmt(op.density, 6), _fmt(np_.density, 6), "kg/cm³"))
-    rows.append(_row("Center of Mass", _fmt_tuple(op.center_of_mass, 4), _fmt_tuple(np_.center_of_mass, 4), "cm"))
-    rows.append(_row("Extents (W × H × D)",
-                     _extents(op.bbox_min, op.bbox_max),
-                     _extents(np_.bbox_min, np_.bbox_max), "cm"))
+    rows.append(
+        _row(
+            "Center of Mass",
+            _fmt_tuple(op.center_of_mass, 4),
+            _fmt_tuple(np_.center_of_mass, 4),
+            "cm",
+        )
+    )
+    rows.append(
+        _row(
+            "Extents (W × H × D)",
+            _extents(op.bbox_min, op.bbox_max),
+            _extents(np_.bbox_min, np_.bbox_max),
+            "cm",
+        )
+    )
 
     table_rows = "\n        ".join(rows)
 
@@ -702,13 +730,13 @@ def _build_properties_table(diff_result: DiffResult) -> str:
 # ── Visual timeline colors ──────────────────────────────────────────
 # (fill, stroke, icon_color, band_color)
 _VIS_COLORS = {
-    "unchanged":       ("#e2e3e5", "#c8cacc", "",        "rgba(200,202,204,0.30)"),
-    "newer":           ("#d4edda", "#8bc49a", "#155724",  "rgba(139,196,154,0.45)"),
-    "deleted":         ("#f8d7da", "#e4939a", "#721c24",  "rgba(228,147,154,0.45)"),
-    "version_changed": ("#fff3cd", "#ddc66b", "#856404",  "rgba(221,198,107,0.45)"),
-    "sketch_modified": ("#fde8d0", "#e8b87a", "#8a4b08",  "rgba(232,184,122,0.45)"),
-    "params_changed":  ("#d6eaf8", "#85b8d9", "#1a5276",  "rgba(133,184,217,0.45)"),
-    "health_changed":  ("#ffe0b2", "#ffb74d", "#e65100",  "rgba(255,183,77,0.45)"),
+    "unchanged": ("#e2e3e5", "#c8cacc", "", "rgba(200,202,204,0.30)"),
+    "newer": ("#d4edda", "#8bc49a", "#155724", "rgba(139,196,154,0.45)"),
+    "deleted": ("#f8d7da", "#e4939a", "#721c24", "rgba(228,147,154,0.45)"),
+    "version_changed": ("#fff3cd", "#ddc66b", "#856404", "rgba(221,198,107,0.45)"),
+    "sketch_modified": ("#fde8d0", "#e8b87a", "#8a4b08", "rgba(232,184,122,0.45)"),
+    "params_changed": ("#d6eaf8", "#85b8d9", "#1a5276", "rgba(133,184,217,0.45)"),
+    "health_changed": ("#ffe0b2", "#ffb74d", "#e65100", "rgba(255,183,77,0.45)"),
 }
 
 
@@ -721,12 +749,12 @@ _GUTTER = 4
 _PAD_X = 20
 _PAD_Y = 8
 _LABEL_H = 14
-_ROW_Y_NEWER = _PAD_Y + _LABEL_H + 3          # top of newer boxes
-_GUTTER_Y_NEWER = _ROW_Y_NEWER + _BOX          # newer gutter strip
-_RIBBON_TOP = _GUTTER_Y_NEWER + _GUTTER        # top of ribbon area
+_ROW_Y_NEWER = _PAD_Y + _LABEL_H + 3  # top of newer boxes
+_GUTTER_Y_NEWER = _ROW_Y_NEWER + _BOX  # newer gutter strip
+_RIBBON_TOP = _GUTTER_Y_NEWER + _GUTTER  # top of ribbon area
 _RIBBON_H = 54
-_GUTTER_Y_OLDER = _RIBBON_TOP + _RIBBON_H      # older gutter strip
-_ROW_Y_OLDER = _GUTTER_Y_OLDER + _GUTTER       # top of older boxes
+_GUTTER_Y_OLDER = _RIBBON_TOP + _RIBBON_H  # older gutter strip
+_ROW_Y_OLDER = _GUTTER_Y_OLDER + _GUTTER  # top of older boxes
 _SVG_H = _ROW_Y_OLDER + _BOX + _LABEL_H + _PAD_Y + 3
 
 
@@ -775,12 +803,12 @@ def _build_visual_timeline(diff_result: DiffResult) -> str:
     parts.append(
         f'<text x="{_PAD_X}" y="{_ROW_Y_NEWER - 6}" '
         f'font-size="11" font-weight="700" fill="#636e72">'
-        f'{_escape_html(newer_label)}</text>'
+        f"{_escape_html(newer_label)}</text>"
     )
     parts.append(
         f'<text x="{_PAD_X}" y="{_ROW_Y_OLDER + _BOX + _LABEL_H}" '
         f'font-size="11" font-weight="700" fill="#636e72">'
-        f'{_escape_html(older_label)}</text>'
+        f"{_escape_html(older_label)}</text>"
     )
 
     # ── Connection ribbons (drawn first, behind boxes) ──
@@ -800,8 +828,8 @@ def _build_visual_timeline(diff_result: DiffResult) -> str:
             xl_b, xr_b = bx(oi), bx(oi) + _BOX
             parts.append(
                 f'<path d="M {xl_t},{y_top} '
-                f'C {xl_t},{cy1} {xl_b},{cy2} {xl_b},{y_bot} '
-                f'L {xr_b},{y_bot} '
+                f"C {xl_t},{cy1} {xl_b},{cy2} {xl_b},{y_bot} "
+                f"L {xr_b},{y_bot} "
                 f'C {xr_b},{cy2} {xr_t},{cy1} {xr_t},{y_top} Z" '
                 f'fill="{band}" stroke="none"/>'
             )
@@ -811,7 +839,7 @@ def _build_visual_timeline(diff_result: DiffResult) -> str:
             xl_t, xr_t = bx(ni), bx(ni) + _BOX
             parts.append(
                 f'<path d="M {xl_t},{y_top} '
-                f'C {xl_t},{cy1} {ix},{cy2} {ix},{y_bot} '
+                f"C {xl_t},{cy1} {ix},{cy2} {ix},{y_bot} "
                 f'C {ix},{cy2} {xr_t},{cy1} {xr_t},{y_top} Z" '
                 f'fill="{band}" stroke="none"/>'
             )
@@ -821,8 +849,8 @@ def _build_visual_timeline(diff_result: DiffResult) -> str:
             xl_b, xr_b = bx(oi), bx(oi) + _BOX
             parts.append(
                 f'<path d="M {ix},{y_top} '
-                f'C {ix},{cy1} {xl_b},{cy2} {xl_b},{y_bot} '
-                f'L {xr_b},{y_bot} '
+                f"C {ix},{cy1} {xl_b},{cy2} {xl_b},{y_bot} "
+                f"L {xr_b},{y_bot} "
                 f'C {xr_b},{cy2} {ix},{cy1} {ix},{y_top} Z" '
                 f'fill="{band}" stroke="none"/>'
             )
@@ -850,7 +878,7 @@ def _build_visual_timeline(diff_result: DiffResult) -> str:
         x = bx(pos)
         tooltip = f"{_escape_html(feat.name)} ({_escape_html(feat.feature_type)})"
         box = (
-            f'<g>'
+            f"<g>"
             f'<rect x="{x}" y="{row_y}" width="{_BOX}" height="{_BOX}" '
             f'rx="{_RADIUS}" fill="{fill}" stroke="{stroke}" stroke-width="1.5"/>'
         )
@@ -864,7 +892,7 @@ def _build_visual_timeline(diff_result: DiffResult) -> str:
                 f'x="{ix}" y="{iy}" width="{_icon_size}" height="{_icon_size}" '
                 f'opacity="0.7"/>'
             )
-        box += f'<title>{tooltip}</title></g>'
+        box += f"<title>{tooltip}</title></g>"
         return box
 
     for pos, (ar_idx, feat, status) in enumerate(newer_items):
@@ -952,7 +980,9 @@ def _build_two_column_table(diff_result: DiffResult) -> str:
         # For version_changed rows, append version detail to the divider
         divider_extra = ""
         if ar.status == "version_changed" and ar.detail:
-            divider_extra = f'<br><span class="version-detail">{_escape_html(ar.detail)}</span>'
+            divider_extra = (
+                f'<br><span class="version-detail">{_escape_html(ar.detail)}</span>'
+            )
 
         # Older side cells
         if ar.older:
@@ -1010,14 +1040,25 @@ def _build_two_column_table(diff_result: DiffResult) -> str:
     table_rows = "\n        ".join(rows)
 
     # Build a plain-English summary of changes by feature type
-    changed_statuses = {"newer", "deleted", "version_changed", "sketch_modified", "params_changed", "health_changed"}
+    changed_statuses = {
+        "newer",
+        "deleted",
+        "version_changed",
+        "sketch_modified",
+        "params_changed",
+        "health_changed",
+    }
     type_counts: dict[str, int] = {}
     total_changed = 0
     for ar in diff_result.aligned_rows:
         if ar.status in changed_statuses:
             total_changed += 1
             # Use the feature type from whichever side exists
-            ft = (ar.newer or ar.older).feature_type if (ar.newer or ar.older) else "Unknown"
+            ft = (
+                (ar.newer or ar.older).feature_type
+                if (ar.newer or ar.older)
+                else "Unknown"
+            )
             # Normalize to readable names
             if ft == "Sketch":
                 label = "sketch"
@@ -1079,11 +1120,19 @@ def generate_html_report(diff_result: DiffResult) -> str:
 
     # Cards ordered left=older, right=newer to match the table columns
     if diff_result.older_is_comparison:
-        left_card = _build_version_card(diff_result.comparison, "Older (Comparison)", "older")
-        right_card = _build_version_card(diff_result.baseline, "Newer (Current)", "newer")
+        left_card = _build_version_card(
+            diff_result.comparison, "Older (Comparison)", "older"
+        )
+        right_card = _build_version_card(
+            diff_result.baseline, "Newer (Current)", "newer"
+        )
     else:
-        left_card = _build_version_card(diff_result.baseline, "Older (Current)", "older")
-        right_card = _build_version_card(diff_result.comparison, "Newer (Comparison)", "newer")
+        left_card = _build_version_card(
+            diff_result.baseline, "Older (Current)", "older"
+        )
+        right_card = _build_version_card(
+            diff_result.comparison, "Newer (Comparison)", "newer"
+        )
 
     filter_badges = _build_filter_badges(diff_result.summary)
     properties_table = _build_properties_table(diff_result)

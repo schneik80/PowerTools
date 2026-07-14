@@ -56,7 +56,9 @@ def _defaults() -> dict:
         "version": 1,
         "general": {"beta_mode": False},
         "groups": {g["key"]: {"enabled": True} for g in registry.GROUPS},
-        "commands": {c["module"]: {"enabled": True} for _, c in registry.iter_commands()},
+        "commands": {
+            c["module"]: {"enabled": True} for _, c in registry.iter_commands()
+        },
         "command_settings": {k: dict(v) for k, v in COMMAND_SETTING_DEFAULTS.items()},
     }
     return data
@@ -121,6 +123,7 @@ def save(data: dict) -> None:
 
 # ── Convenience accessors ─────────────────────────────────────────────────────
 
+
 def beta_mode() -> bool:
     return bool(load().get("general", {}).get("beta_mode", False))
 
@@ -138,6 +141,7 @@ def command_setting(module: str, sub: str, default=None):
 
 
 # ── Import (browse + replace) ─────────────────────────────────────────────────
+
 
 def validate(data) -> bool:
     return (

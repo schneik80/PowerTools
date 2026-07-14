@@ -218,9 +218,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     open_view = log_inputs.addBoolValueInput(
         LOG_OPEN_VIEW_ID, "Open live log viewer", True, "", True
     )
-    open_view.tooltip = (
-        "Automatically opens a system console window to live-monitor log output during the run."
-    )
+    open_view.tooltip = "Automatically opens a system console window to live-monitor log output during the run."
 
     log_path.isEnabled = log_enable.value
     browse_btn.isEnabled = log_enable.value
@@ -342,13 +340,16 @@ def command_execute(args: adsk.core.CommandEventArgs):
         open_log_view = adsk.core.BoolValueCommandInput.cast(
             inputs.itemById(LOG_OPEN_VIEW_ID)
         ).value
-        log_path_val = adsk.core.StringValueCommandInput.cast(
-            inputs.itemById(LOG_PATH_ID)
-        ).value or _default_log_path()
+        log_path_val = (
+            adsk.core.StringValueCommandInput.cast(inputs.itemById(LOG_PATH_ID)).value
+            or _default_log_path()
+        )
 
         cloud_folder: adsk.core.DataFolder = active_data_file.parentFolder
         if save_location == CREATE_SUBFOLDER:
-            target_folder = _get_or_create_subfolder(cloud_folder, active_data_file.name)
+            target_folder = _get_or_create_subfolder(
+                cloud_folder, active_data_file.name
+            )
         else:
             existing_sub = _find_existing_subfolder(cloud_folder, active_data_file.name)
             target_folder = existing_sub if existing_sub is not None else cloud_folder
@@ -493,13 +494,9 @@ class _RunnerHandler(adsk.core.CustomEventHandler):
                 log_writer,
             )
         except Exception:
-            log_writer(
-                f"Externalize handler crashed:\n{traceback.format_exc()}"
-            )
+            log_writer(f"Externalize handler crashed:\n{traceback.format_exc()}")
             try:
-                ui.messageBox(
-                    f"{CMD_NAME} failed:\n{traceback.format_exc()}", CMD_NAME
-                )
+                ui.messageBox(f"{CMD_NAME} failed:\n{traceback.format_exc()}", CMD_NAME)
             except Exception:
                 pass
         finally:
@@ -970,9 +967,7 @@ def _write_log_header(
     with open(path, mode, encoding="utf-8") as fh:
         if mode == "a":
             fh.write("\n----- Resume attempt -----\n")
-        fh.write(
-            f"===== Externalize run started {datetime.now().isoformat()} =====\n"
-        )
+        fh.write(f"===== Externalize run started {datetime.now().isoformat()} =====\n")
         fh.write(f"Fusion client version: {fusion_version}\n")
         fh.write(
             f"Active Document: {active_data_file.name} (id={active_data_file.id})\n"

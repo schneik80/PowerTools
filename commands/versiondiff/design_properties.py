@@ -31,10 +31,10 @@ class DesignProperties:
     body_appearances: list = field(default_factory=list)
 
     # Mass properties
-    mass: float = 0.0       # kg
-    volume: float = 0.0     # cm³
-    area: float = 0.0       # cm²
-    density: float = 0.0    # kg/cm³
+    mass: float = 0.0  # kg
+    volume: float = 0.0  # cm³
+    area: float = 0.0  # cm²
+    density: float = 0.0  # kg/cm³
     center_of_mass: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 
     # Bounding box

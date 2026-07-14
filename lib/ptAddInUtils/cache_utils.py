@@ -101,7 +101,9 @@ def write_global_params_folder_cache(project, folder, cmd_name: str) -> None:
     }
     try:
         os.makedirs(CACHE_FOLDER, exist_ok=True)
-        with open(global_params_folder_cache_path(project), "w", encoding="utf-8") as fh:
+        with open(
+            global_params_folder_cache_path(project), "w", encoding="utf-8"
+        ) as fh:
             json.dump(payload, fh, indent=2)
     except Exception:
         ptutil.log(f"{cmd_name}: failed to write folder cache — ignoring")

@@ -42,7 +42,12 @@ from ... import config
 from ... import settings_store
 from ...lib import ptAddInUtils as ptutil
 from .colors import (
-    Color, Swatch, hex_to_rgb, load_color_cycle, rgb_to_hex, sort_rainbow,
+    Color,
+    Swatch,
+    hex_to_rgb,
+    load_color_cycle,
+    rgb_to_hex,
+    sort_rainbow,
 )
 from . import swatches as swatch_png
 
@@ -68,8 +73,8 @@ COLOR_PICKER_SCRIPT = os.path.join(
 CUSTOM_BTN_ICON_DIR = os.path.join(config.CACHE_DIR, "changecyclecolor", "custom_btn")
 # 4-quadrant rainbow used for the Custom-color button icon.
 _CUSTOM_BTN_COLORS = (
-    (220, 50, 50),   # top-left  red
-    (50, 200, 50),   # top-right green
+    (220, 50, 50),  # top-left  red
+    (50, 200, 50),  # top-right green
     (240, 200, 60),  # bot-left  yellow
     (60, 110, 220),  # bot-right blue
 )
@@ -247,7 +252,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     if design is None:
         ui.messageBox(
             "Open a Fusion design before running Change Cycle Color.",
-            CMD_NAME, 0, 2,
+            CMD_NAME,
+            0,
+            2,
         )
         args.command.doExecute(True)
         return
@@ -258,7 +265,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
             "Select one or more components in the browser (or right-click a "
             "component node and pick Change Cycle Color) before running "
             "this command.",
-            CMD_NAME, 0, 2,
+            CMD_NAME,
+            0,
+            2,
         )
         args.command.doExecute(True)
         return
@@ -281,7 +290,8 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     inputs = cmd.commandInputs
 
     inputs.addTextBoxCommandInput(
-        INPUT_INFO, "Targets",
+        INPUT_INFO,
+        "Targets",
         _describe_targets_html(targets),
         max(1, min(3, len(targets))),
         True,
@@ -289,11 +299,13 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
     if not _swatches:
         warn = inputs.addTextBoxCommandInput(
-            "ccc_warn", "",
+            "ccc_warn",
+            "",
             "<span style='color:#b06000'><b>⚠ Built-in palette unavailable.</b></span> "
             "RiverRubicon.xml could not be located in the running Fusion install. "
             "Use <b>Custom color…</b> to pick a hex color.",
-            3, True,
+            3,
+            True,
         )
         warn.isFullWidth = True
     else:
@@ -313,11 +325,17 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     custom_btn.tooltip = "Open the OS-native color picker."
 
     preview = inputs.addTextBoxCommandInput(
-        INPUT_PREVIEW, "Selected", _preview_html(_selected_hex), 2, True,
+        INPUT_PREVIEW,
+        "Selected",
+        _preview_html(_selected_hex),
+        2,
+        True,
     )
     preview.isFullWidth = True
 
-    ptutil.add_handler(cmd.inputChanged, command_input_changed, local_handlers=local_handlers)
+    ptutil.add_handler(
+        cmd.inputChanged, command_input_changed, local_handlers=local_handlers
+    )
     ptutil.add_handler(cmd.execute, command_execute, local_handlers=local_handlers)
     ptutil.add_handler(cmd.destroy, command_destroy, local_handlers=local_handlers)
 
@@ -331,7 +349,9 @@ def _build_swatch_row(
     row = inputs.addButtonRowCommandInput(input_id, label, False)
     for name, rgb in swatches:
         folder = os.path.join(SWATCH_CACHE_DIR, rgb_to_hex(rgb).lstrip("#"))
-        is_sel = (_selected_hex is not None and rgb_to_hex(rgb).lstrip("#") == _selected_hex)
+        is_sel = (
+            _selected_hex is not None and rgb_to_hex(rgb).lstrip("#") == _selected_hex
+        )
         row.listItems.add(name, is_sel, folder)
 
 
@@ -342,7 +362,7 @@ def _split_evenly(items: List[Swatch], n_rows: int) -> List[List[Swatch]]:
     pos = 0
     for i in range(n_rows):
         size = base + (1 if i < extra else 0)
-        out.append(items[pos:pos + size])
+        out.append(items[pos : pos + size])
         pos += size
     return [chunk for chunk in out if chunk]
 
@@ -378,11 +398,7 @@ def _name_for_hex(hex_no_hash: str) -> Optional[str]:
 
 
 def _escape_html(s: str) -> str:
-    return (
-        s.replace("&", "&amp;")
-         .replace("<", "&lt;")
-         .replace(">", "&gt;")
-    )
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 # ---------------------------------------------------------------------------
@@ -411,18 +427,14 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
         picked_name = _selected_listitem_name(row)
         if not picked_name:
             return
-        picked = next(
-            ((n, rgb) for n, rgb in _swatches if n == picked_name), None
-        )
+        picked = next(((n, rgb) for n, rgb in _swatches if n == picked_name), None)
         if not picked:
             return
         _selected_hex = rgb_to_hex(picked[1]).lstrip("#")
         for other_id in ROW_IDS:
             if other_id == changed.id:
                 continue
-            other = adsk.core.ButtonRowCommandInput.cast(
-                cmd_inputs.itemById(other_id)
-            )
+            other = adsk.core.ButtonRowCommandInput.cast(cmd_inputs.itemById(other_id))
             if not other:
                 continue
             for i in range(other.listItems.count):
@@ -459,8 +471,10 @@ def _enter_custom_color_flow() -> None:
     """
     global _skip_normal_execute, _selected_hex
 
-    ptutil.log(f"{CMD_NAME}: custom-color flow entered, "
-              f"targets={[t.name for t in _pending_targets]}")
+    ptutil.log(
+        f"{CMD_NAME}: custom-color flow entered, "
+        f"targets={[t.name for t in _pending_targets]}"
+    )
 
     if not _pending_targets:
         ptutil.log(f"{CMD_NAME}: no targets — aborting custom-color flow")
@@ -489,7 +503,9 @@ def _enter_custom_color_flow() -> None:
         ui.messageBox(
             "componentColor could not be set on any target. The components "
             "may be from a referenced/locked design.",
-            CMD_NAME, 0, 2,
+            CMD_NAME,
+            0,
+            2,
         )
         return
 
@@ -536,13 +552,15 @@ def _pick_color_macos(initial_hex_no_hash: str) -> Optional[Color]:
         f"{{{r16}, {g16}, {b16}}}\n"
         f'return ((item 1 of chosenColor) as text) & "," & '
         f'((item 2 of chosenColor) as text) & "," & '
-        f'((item 3 of chosenColor) as text)'
+        f"((item 3 of chosenColor) as text)"
     )
 
     try:
         proc = subprocess.run(
             ["/usr/bin/osascript", "-e", script],
-            capture_output=True, text=True, timeout=600,
+            capture_output=True,
+            text=True,
+            timeout=600,
         )
     except subprocess.TimeoutExpired:
         ptutil.log(f"{CMD_NAME}: osascript timed out")
@@ -588,20 +606,26 @@ def _pick_color_subprocess_python(initial_hex_no_hash: str) -> Optional[Color]:
         ptutil.log(f"{CMD_NAME}: could not locate Python interpreter")
         ui.messageBox(
             "Could not locate the Python interpreter for the color picker.",
-            CMD_NAME, 0, 2,
+            CMD_NAME,
+            0,
+            2,
         )
         return None
     if not os.path.isfile(COLOR_PICKER_SCRIPT):
         ui.messageBox(
             "Color picker helper script is missing — reinstall the add-in.",
-            CMD_NAME, 0, 2,
+            CMD_NAME,
+            0,
+            2,
         )
         return None
 
     try:
         proc = subprocess.run(
             [py, COLOR_PICKER_SCRIPT, "#" + initial_hex_no_hash],
-            capture_output=True, text=True, timeout=600,
+            capture_output=True,
+            text=True,
+            timeout=600,
         )
     except Exception as exc:
         ptutil.log(f"{CMD_NAME}: picker subprocess failed: {exc!r}")
@@ -725,9 +749,7 @@ def _set_component_color(target: adsk.fusion.Component, rgb: Color) -> bool:
         target.componentColor = adsk.core.Color.create(r, g, b, 255)
         return True
     except Exception as exc:
-        ptutil.log(
-            f"{CMD_NAME}: componentColor set failed on {target.name!r}: {exc}"
-        )
+        ptutil.log(f"{CMD_NAME}: componentColor set failed on {target.name!r}: {exc}")
         return False
 
 

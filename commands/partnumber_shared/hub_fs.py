@@ -37,9 +37,7 @@ def find_assets_project(app: adsk.core.Application) -> adsk.core.DataProject:
     data = app.data
     hub = data.activeHub
     if hub is None:
-        raise HubFsError(
-            "No active hub. Sign in to a Fusion Team hub and try again."
-        )
+        raise HubFsError("No active hub. Sign in to a Fusion Team hub and try again.")
 
     projects = hub.dataProjects
     if projects is None:
@@ -59,7 +57,9 @@ def find_assets_project(app: adsk.core.Application) -> adsk.core.DataProject:
     )
 
 
-def find_or_create_pn_cache_folder(project: adsk.core.DataProject) -> adsk.core.DataFolder:
+def find_or_create_pn_cache_folder(
+    project: adsk.core.DataProject,
+) -> adsk.core.DataFolder:
     """Return the ``Pn-Cache`` folder under the Assets project root, creating it if needed."""
     root = project.rootFolder
     if root is None:

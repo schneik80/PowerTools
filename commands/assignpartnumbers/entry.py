@@ -142,7 +142,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     if not design:
         ui.messageBox(
             "Assign Part Numbers requires an active Fusion 3D design.",
-            CMD_NAME, 0, 2,
+            CMD_NAME,
+            0,
+            2,
         )
         args.command.doExecute(True)
         return
@@ -178,7 +180,8 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         INPUT_INFO,
         "Design intent",
         f"<b>{intent_label}</b>",
-        1, True,
+        1,
+        True,
     )
 
     if not _mode_is_table:
@@ -189,8 +192,12 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     # Compute initial previews.
     _recompute_previews(inputs)
 
-    ptutil.add_handler(cmd.inputChanged, command_input_changed, local_handlers=local_handlers)
-    ptutil.add_handler(cmd.validateInputs, command_validate_inputs, local_handlers=local_handlers)
+    ptutil.add_handler(
+        cmd.inputChanged, command_input_changed, local_handlers=local_handlers
+    )
+    ptutil.add_handler(
+        cmd.validateInputs, command_validate_inputs, local_handlers=local_handlers
+    )
     ptutil.add_handler(cmd.execute, command_execute, local_handlers=local_handlers)
     ptutil.add_handler(cmd.destroy, command_destroy, local_handlers=local_handlers)
 
@@ -240,8 +247,9 @@ def _intent_label(intent_value: int) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _build_simple_inputs(inputs: adsk.core.CommandInputs,
-                         target: intent_mod.Target) -> None:
+def _build_simple_inputs(
+    inputs: adsk.core.CommandInputs, target: intent_mod.Target
+) -> None:
     """One scheme dropdown + one preview field (root only, no local comps).
 
     When the target already has a user-assigned part number, an inline
@@ -252,14 +260,16 @@ def _build_simple_inputs(inputs: adsk.core.CommandInputs,
         "ap_root_label",
         "Component",
         f"<b>{_escape_html(target.label)}</b>",
-        1, True,
+        1,
+        True,
     )
     if target.current_pn:
         inputs.addTextBoxCommandInput(
             "ap_root_current",
             "Current P/N",
             _escape_html(target.current_pn),
-            1, True,
+            1,
+            True,
         )
         note = inputs.addTextBoxCommandInput(
             "ap_overwrite_note",
@@ -269,7 +279,8 @@ def _build_simple_inputs(inputs: adsk.core.CommandInputs,
                 "part number.</b></span> Selecting a scheme below and clicking "
                 f"<b>Assign</b> will replace <b>{_escape_html(target.current_pn)}</b>."
             ),
-            4, True,
+            4,
+            True,
         )
         note.isFullWidth = True
 
@@ -283,14 +294,13 @@ def _build_simple_inputs(inputs: adsk.core.CommandInputs,
     for prefix in allowed:
         dropdown.listItems.add(schemes.SCHEME_LABEL[prefix], False)
 
-    preview = inputs.addStringValueInput(
-        INPUT_PREVIEW_SIMPLE, "Preview", ""
-    )
+    preview = inputs.addStringValueInput(INPUT_PREVIEW_SIMPLE, "Preview", "")
     preview.isReadOnly = True
 
 
-def _build_table_inputs(inputs: adsk.core.CommandInputs,
-                        targets: List[intent_mod.Target]) -> None:
+def _build_table_inputs(
+    inputs: adsk.core.CommandInputs, targets: List[intent_mod.Target]
+) -> None:
     """Per-component table: Component | Scheme | Preview.
 
     Mirrors the pattern used in PowerTools-Assembly's `refrences` command:
@@ -328,7 +338,8 @@ def _build_table_inputs(inputs: adsk.core.CommandInputs,
                 "<b>(skip)</b> to preserve its current number. "
                 f"Affected: {affected}."
             ),
-            5, True,
+            5,
+            True,
         )
         note.isFullWidth = True
 
@@ -337,9 +348,7 @@ def _build_table_inputs(inputs: adsk.core.CommandInputs,
     group.isEnabledCheckBoxDisplayed = False
     grp = group.children
 
-    table = grp.addTableCommandInput(
-        INPUT_TABLE, "Components", 3, "4:3:3"
-    )
+    table = grp.addTableCommandInput(INPUT_TABLE, "Components", 3, "4:3:3")
     table.minimumVisibleRows = min(max(len(targets), 2), 10)
     table.maximumVisibleRows = 12
     table.hasGrid = True
@@ -379,17 +388,12 @@ def _build_table_inputs(inputs: adsk.core.CommandInputs,
             raise
 
     ptutil.log(
-        f"{CMD_NAME}: table built (rowCount={table.rowCount}, "
-        f"targets={len(targets)})"
+        f"{CMD_NAME}: table built (rowCount={table.rowCount}, targets={len(targets)})"
     )
 
 
 def _escape_html(s: str) -> str:
-    return (
-        s.replace("&", "&amp;")
-         .replace("<", "&lt;")
-         .replace(">", "&gt;")
-    )
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 # ---------------------------------------------------------------------------
@@ -449,7 +453,11 @@ def _recompute_simple_preview(inputs: adsk.core.CommandInputs) -> None:
         preview_input.value = "(will skip)"
     else:
         n = _baseline_counters.get(prefix, 0) + 1
-        suffix = "" if _baseline_loaded else "  (baseline unavailable — actual number may differ)"
+        suffix = (
+            ""
+            if _baseline_loaded
+            else "  (baseline unavailable — actual number may differ)"
+        )
         preview_input.value = schemes.format_number(prefix, n) + suffix
 
 
@@ -649,7 +657,12 @@ def _current_user_id() -> str:
 
 
 def command_destroy(args: adsk.core.CommandEventArgs):
-    global local_handlers, _targets, _mode_is_table, _pending_error_message, _baseline_loaded
+    global \
+        local_handlers, \
+        _targets, \
+        _mode_is_table, \
+        _pending_error_message, \
+        _baseline_loaded
     local_handlers = []
     _targets = []
     _mode_is_table = False

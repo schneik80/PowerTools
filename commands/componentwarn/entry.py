@@ -230,7 +230,9 @@ def _is_creation_command(command_id: str) -> bool:
     return False
 
 
-def _evaluate_placement(design: adsk.fusion.Design, edit_component: adsk.fusion.Component):
+def _evaluate_placement(
+    design: adsk.fusion.Design, edit_component: adsk.fusion.Component
+):
     """Return a human-readable warning string if the active edit target is an
     inappropriate home for a new feature, otherwise None."""
     if edit_component == design.rootComponent:

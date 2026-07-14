@@ -27,7 +27,10 @@ def _ui():
 
 # ── Toolbar panel ─────────────────────────────────────────────────────────────
 
-def get_or_create_panel(workspace_id, tab_id, tab_name, panel_id, panel_name, panel_after=""):
+
+def get_or_create_panel(
+    workspace_id, tab_id, tab_name, panel_id, panel_name, panel_after=""
+):
     """Find or create a toolbar panel on the given workspace tab.
 
     Creates the tab if it does not exist.  Returns the panel, or None if the
@@ -67,6 +70,7 @@ def remove_from_panel(workspace_id, panel_id, tab_id, control_id):
 
 
 # ── QAT File dropdown ─────────────────────────────────────────────────────────
+
 
 def get_qat_file_dropdown():
     """Return the QAT FileSubMenuCommand DropDownControl, or None.
@@ -127,7 +131,10 @@ def remove_from_qat_file_dropdown(control_id):
 
 # ── QATRight flyout ───────────────────────────────────────────────────────────
 
-def get_or_create_qat_right_flyout(flyout_id, flyout_name, icon_folder="", after_id="", is_before=True):
+
+def get_or_create_qat_right_flyout(
+    flyout_id, flyout_name, icon_folder="", after_id="", is_before=True
+):
     """Find or create a flyout dropdown on the QATRight toolbar.
 
     Returns None when QATRight is not available.
@@ -138,7 +145,9 @@ def get_or_create_qat_right_flyout(flyout_id, flyout_name, icon_folder="", after
     existing = qat_right.controls.itemById(flyout_id)
     if existing:
         return adsk.core.DropDownControl.cast(existing)
-    return qat_right.controls.addDropDown(flyout_name, icon_folder, flyout_id, after_id, is_before)
+    return qat_right.controls.addDropDown(
+        flyout_name, icon_folder, flyout_id, after_id, is_before
+    )
 
 
 def remove_from_qat_right_flyout(control_id, flyout_id):

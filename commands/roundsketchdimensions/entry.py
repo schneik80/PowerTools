@@ -78,7 +78,7 @@ CM_PER_UNIT = {"mm": 0.1, "in": 2.54}
 # ---------------------------------------------------------------------------
 local_handlers = []
 _cached_sketch = None  # adsk.fusion.Sketch being edited
-_is_imperial = False   # True when the document's length unit is inch/foot
+_is_imperial = False  # True when the document's length unit is inch/foot
 
 
 # ---------------------------------------------------------------------------
@@ -366,7 +366,9 @@ def _current_increment(inputs):
 
     if _is_imperial:
         fmt = inputs.itemById(INPUT_FORMAT)
-        is_fraction = not (fmt and fmt.selectedItem and fmt.selectedItem.name == FMT_DECIMAL)
+        is_fraction = not (
+            fmt and fmt.selectedItem and fmt.selectedItem.name == FMT_DECIMAL
+        )
         if is_fraction:
             idx = max(0, min(idx, len(rounding.INCH_FRACTION_DENOMS) - 1))
             return (1.0 / rounding.INCH_FRACTION_DENOMS[idx], "in")
@@ -394,7 +396,9 @@ def _update_increment_label(inputs):
 
     if _is_imperial:
         fmt = inputs.itemById(INPUT_FORMAT)
-        is_fraction = not (fmt and fmt.selectedItem and fmt.selectedItem.name == FMT_DECIMAL)
+        is_fraction = not (
+            fmt and fmt.selectedItem and fmt.selectedItem.name == FMT_DECIMAL
+        )
         if is_fraction:
             idx = max(0, min(idx, len(rounding.INCH_FRACTION_DENOMS) - 1))
             label.text = rounding.fraction_increment_label(
@@ -414,7 +418,9 @@ def _update_angle_label(inputs):
     label = inputs.itemById(INPUT_ANGLE_LABEL)
     if not label:
         return
-    label.text = rounding.decimal_increment_label(_current_angle_increment(inputs), "deg")
+    label.text = rounding.decimal_increment_label(
+        _current_angle_increment(inputs), "deg"
+    )
 
 
 def _is_length_eligible(dim) -> bool:

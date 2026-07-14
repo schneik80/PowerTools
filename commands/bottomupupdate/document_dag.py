@@ -241,4 +241,6 @@ def document_bottom_up_names(
     Returns:
         A list of representative component names, leaves first, root omitted.
     """
-    return [record["name"] for record in document_bottom_up_order(root_component, resolver)]
+    return [
+        record["name"] for record in document_bottom_up_order(root_component, resolver)
+    ]

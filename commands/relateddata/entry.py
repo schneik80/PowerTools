@@ -221,7 +221,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     _active_hub_id = app.data.activeHub.id
 
     if _active_hub_id not in config.COMPANY_HUB:
-        ptutil.log(f"active hub is {_active_hub_id}.\n{config.COMPANY_HUB} was expected")
+        ptutil.log(
+            f"active hub is {_active_hub_id}.\n{config.COMPANY_HUB} was expected"
+        )
         ui.messageBox(
             "The active hub is not configured for this command.\nPlease switch to the correct hub and try again.",
             "Incorrect Hub",
@@ -249,7 +251,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     dropDownItems_ = dropDownCommandInput.listItems
     for key, val in my_DocsDictSorted.items():
         if isinstance(val, dict):
-            dropDownItems_.add(val.get("name"), True),
+            (dropDownItems_.add(val.get("name"), True),)
             docActive = app.activeDocument
             docWithVersion = docActive.name
             docSeed = docWithVersion.rsplit(" ", 1)[0]  # trim version

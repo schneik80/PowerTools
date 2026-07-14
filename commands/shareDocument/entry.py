@@ -137,7 +137,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
         # Check if the document is shared
         if shareState.isShared == False:
             # creating a link can take a few seconds so show a busy bar
-            progressBar.showBusy("Generating Share Link"),
+            (progressBar.showBusy("Generating Share Link"),)
 
             shareState.isShared = True  # Share the document
 

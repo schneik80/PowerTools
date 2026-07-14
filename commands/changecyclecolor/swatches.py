@@ -39,10 +39,17 @@ def _png_chunk(tag: bytes, data: bytes) -> bytes:
 def _solid_png(rgb: Color, size: int) -> bytes:
     r, g, b = rgb
     sig = b"\x89PNG\r\n\x1a\n"
-    ihdr = struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)  # 8-bit, color type 2 (RGB)
+    ihdr = struct.pack(
+        ">IIBBBBB", size, size, 8, 2, 0, 0, 0
+    )  # 8-bit, color type 2 (RGB)
     row = bytes((0,)) + bytes((r, g, b)) * size  # filter=None, then pixel triples
     idat = zlib.compress(row * size, 9)
-    return sig + _png_chunk(b"IHDR", ihdr) + _png_chunk(b"IDAT", idat) + _png_chunk(b"IEND", b"")
+    return (
+        sig
+        + _png_chunk(b"IHDR", ihdr)
+        + _png_chunk(b"IDAT", idat)
+        + _png_chunk(b"IEND", b"")
+    )
 
 
 def _quadrant_png(colors_4, size: int) -> bytes:
@@ -63,7 +70,12 @@ def _quadrant_png(colors_4, size: int) -> bytes:
     sig = b"\x89PNG\r\n\x1a\n"
     ihdr = struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)
     idat = zlib.compress(bytes(raw), 9)
-    return sig + _png_chunk(b"IHDR", ihdr) + _png_chunk(b"IDAT", idat) + _png_chunk(b"IEND", b"")
+    return (
+        sig
+        + _png_chunk(b"IHDR", ihdr)
+        + _png_chunk(b"IDAT", idat)
+        + _png_chunk(b"IEND", b"")
+    )
 
 
 def ensure_quadrant_icon(folder: str, colors_4) -> str:

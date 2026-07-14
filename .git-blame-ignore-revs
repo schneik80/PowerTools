@@ -1,0 +1,9 @@
+# Revisions git blame should skip — bulk, mechanical reformats that would
+# otherwise obscure real authorship. Nothing behavioral belongs here.
+#
+# Enable locally:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# GitHub applies this file automatically in its blame view.
+
+# style: adopt `ruff format` (double-quote) across the repo
+0de55c85a0a2316760e95934b514ade6fcc85295

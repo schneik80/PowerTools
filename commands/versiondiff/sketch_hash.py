@@ -28,6 +28,7 @@ class SketchFingerprint:
     any time the sketch is modified.  The element counts provide a
     human-readable summary of *what* changed.
     """
+
     revision_id: str
     line_count: int
     circle_count: int

@@ -126,7 +126,6 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
 
             ui.messageBox(under, CMD_ID, 0, 2)
 
-
         else:
             ui.messageBox("No sketch is currently active.", CMD_ID)
 

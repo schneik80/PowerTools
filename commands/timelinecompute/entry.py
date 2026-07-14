@@ -513,11 +513,17 @@ def _generate_table_content(csv_filepath: str, total_time: float) -> str:
                 # Wrap health state in a badge
                 health_raw = escaped_cells[3].strip().lower()
                 if "error" in health_raw:
-                    health_html = f'<span class="health-error">{escaped_cells[3]}</span>'
+                    health_html = (
+                        f'<span class="health-error">{escaped_cells[3]}</span>'
+                    )
                 elif "warning" in health_raw:
-                    health_html = f'<span class="health-warning">{escaped_cells[3]}</span>'
+                    health_html = (
+                        f'<span class="health-warning">{escaped_cells[3]}</span>'
+                    )
                 elif health_raw:
-                    health_html = f'<span class="health-healthy">{escaped_cells[3]}</span>'
+                    health_html = (
+                        f'<span class="health-healthy">{escaped_cells[3]}</span>'
+                    )
                 else:
                     health_html = escaped_cells[3]
 

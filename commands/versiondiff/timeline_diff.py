@@ -21,7 +21,13 @@ import adsk.fusion
 
 from .param_fingerprint import param_change_detail, params_differ
 from .sketch_hash import extract_sketch_fingerprint, sketch_change_detail
-from .timeline_model import TimelineFeature, VersionInfo, DiffEntry, DiffResult, AlignedRow
+from .timeline_model import (
+    TimelineFeature,
+    VersionInfo,
+    DiffEntry,
+    DiffResult,
+    AlignedRow,
+)
 
 # Pattern to parse Occurrence names like "Center Diff Mount v2:1"
 # Captures: (base_component_name, version_number, instance_number)
@@ -69,8 +75,10 @@ def walk_timeline(timeline: adsk.fusion.Timeline) -> list:
                 feature_type = "XREF"
                 match = _OCCURRENCE_NAME_RE.match(item.name)
                 if match:
-                    component_name = f"{match.group(1)}:{match.group(3)}"  # "Center Diff Mount:1"
-                    component_version = f"v{match.group(2)}"               # "v2"
+                    component_name = (
+                        f"{match.group(1)}:{match.group(3)}"  # "Center Diff Mount:1"
+                    )
+                    component_version = f"v{match.group(2)}"  # "v2"
                 else:
                     # Fallback: use full name if pattern doesn't match
                     component_name = item.name
@@ -95,19 +103,21 @@ def walk_timeline(timeline: adsk.fusion.Timeline) -> list:
         if feature_type == "Sketch" and entity is not None:
             sketch_fp = extract_sketch_fingerprint(entity)
 
-        features.append(TimelineFeature(
-            name=item.name,
-            feature_type=feature_type,
-            index=item.index,
-            is_group=item.isGroup,
-            is_suppressed=item.isSuppressed,
-            is_rolled_back=item.isRolledBack,
-            health_state=health_str,
-            entity_type=entity_type,
-            component_name=component_name,
-            component_version=component_version,
-            sketch_fingerprint=sketch_fp,
-        ))
+        features.append(
+            TimelineFeature(
+                name=item.name,
+                feature_type=feature_type,
+                index=item.index,
+                is_group=item.isGroup,
+                is_suppressed=item.isSuppressed,
+                is_rolled_back=item.isRolledBack,
+                health_state=health_str,
+                entity_type=entity_type,
+                component_name=component_name,
+                component_version=component_version,
+                sketch_fingerprint=sketch_fp,
+            )
+        )
 
     return features
 
@@ -123,7 +133,9 @@ def get_version_info(data_file: adsk.core.DataFile) -> VersionInfo:
     """
     date_str = ""
     if data_file.dateModified:
-        date_str = datetime.fromtimestamp(data_file.dateModified).strftime("%Y-%m-%d %H:%M:%S")
+        date_str = datetime.fromtimestamp(data_file.dateModified).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
 
     updated_by = ""
     if data_file.lastUpdatedBy:
@@ -178,42 +190,71 @@ def _xref_version_detail(baseline_f, compare_f) -> str:
     return ""
 
 
-def _make_aligned_row(baseline_f: 'TimelineFeature', compare_f: 'TimelineFeature') -> AlignedRow:
+def _make_aligned_row(
+    baseline_f: "TimelineFeature", compare_f: "TimelineFeature"
+) -> AlignedRow:
     """Create an AlignedRow for two matched features, detecting XREF version and sketch changes."""
     # Check for XREF version change
-    if (baseline_f.feature_type == "XREF" and compare_f.feature_type == "XREF"
-            and baseline_f.component_version and compare_f.component_version
-            and baseline_f.component_version != compare_f.component_version):
+    if (
+        baseline_f.feature_type == "XREF"
+        and compare_f.feature_type == "XREF"
+        and baseline_f.component_version
+        and compare_f.component_version
+        and baseline_f.component_version != compare_f.component_version
+    ):
         detail = _xref_version_detail(baseline_f, compare_f)
-        return AlignedRow(older=compare_f, newer=baseline_f, status="version_changed", detail=detail)
+        return AlignedRow(
+            older=compare_f, newer=baseline_f, status="version_changed", detail=detail
+        )
 
     # Check for sketch modification via fingerprint
-    if (baseline_f.feature_type == "Sketch" and compare_f.feature_type == "Sketch"
-            and baseline_f.sketch_fingerprint and compare_f.sketch_fingerprint
-            and baseline_f.sketch_fingerprint.revision_id != compare_f.sketch_fingerprint.revision_id):
-        sk_detail = sketch_change_detail(compare_f.sketch_fingerprint, baseline_f.sketch_fingerprint)
+    if (
+        baseline_f.feature_type == "Sketch"
+        and compare_f.feature_type == "Sketch"
+        and baseline_f.sketch_fingerprint
+        and compare_f.sketch_fingerprint
+        and baseline_f.sketch_fingerprint.revision_id
+        != compare_f.sketch_fingerprint.revision_id
+    ):
+        sk_detail = sketch_change_detail(
+            compare_f.sketch_fingerprint, baseline_f.sketch_fingerprint
+        )
         return AlignedRow(
-            older=compare_f, newer=baseline_f,
-            status="sketch_modified", sketch_detail=sk_detail,
+            older=compare_f,
+            newer=baseline_f,
+            status="sketch_modified",
+            sketch_detail=sk_detail,
         )
 
     # Check for parameter changes on any feature type
-    if (baseline_f.feature_params and compare_f.feature_params
-            and params_differ(compare_f.feature_params, baseline_f.feature_params)):
-        p_detail = param_change_detail(compare_f.feature_params, baseline_f.feature_params)
+    if (
+        baseline_f.feature_params
+        and compare_f.feature_params
+        and params_differ(compare_f.feature_params, baseline_f.feature_params)
+    ):
+        p_detail = param_change_detail(
+            compare_f.feature_params, baseline_f.feature_params
+        )
         if p_detail:
             return AlignedRow(
-                older=compare_f, newer=baseline_f,
-                status="params_changed", params_detail=p_detail,
+                older=compare_f,
+                newer=baseline_f,
+                status="params_changed",
+                params_detail=p_detail,
             )
 
     # Check for health state change (only change is health status)
-    if (baseline_f.health_state and compare_f.health_state
-            and baseline_f.health_state != compare_f.health_state):
+    if (
+        baseline_f.health_state
+        and compare_f.health_state
+        and baseline_f.health_state != compare_f.health_state
+    ):
         h_detail = f"{compare_f.health_state} \u2192 {baseline_f.health_state}"
         return AlignedRow(
-            older=compare_f, newer=baseline_f,
-            status="health_changed", health_detail=h_detail,
+            older=compare_f,
+            newer=baseline_f,
+            status="health_changed",
+            health_detail=h_detail,
         )
 
     return AlignedRow(older=compare_f, newer=baseline_f, status="unchanged")
@@ -262,20 +303,34 @@ def compute_diff(baseline_features: list, compare_features: list) -> tuple:
         if key in compare_map:
             cf = compare_map[key]
             # Check for XREF version change
-            if (f.feature_type == "XREF" and cf.feature_type == "XREF"
-                    and f.component_version and cf.component_version
-                    and f.component_version != cf.component_version):
+            if (
+                f.feature_type == "XREF"
+                and cf.feature_type == "XREF"
+                and f.component_version
+                and cf.component_version
+                and f.component_version != cf.component_version
+            ):
                 status = "version_changed"
                 detail = _xref_version_detail(f, cf)
             # Check for sketch modification
-            elif (f.feature_type == "Sketch" and cf.feature_type == "Sketch"
-                    and f.sketch_fingerprint and cf.sketch_fingerprint
-                    and f.sketch_fingerprint.revision_id != cf.sketch_fingerprint.revision_id):
+            elif (
+                f.feature_type == "Sketch"
+                and cf.feature_type == "Sketch"
+                and f.sketch_fingerprint
+                and cf.sketch_fingerprint
+                and f.sketch_fingerprint.revision_id
+                != cf.sketch_fingerprint.revision_id
+            ):
                 status = "sketch_modified"
-                detail = sketch_change_detail(cf.sketch_fingerprint, f.sketch_fingerprint)
+                detail = sketch_change_detail(
+                    cf.sketch_fingerprint, f.sketch_fingerprint
+                )
             # Check for parameter changes
-            elif (f.feature_params and cf.feature_params
-                    and f.feature_params != cf.feature_params):
+            elif (
+                f.feature_params
+                and cf.feature_params
+                and f.feature_params != cf.feature_params
+            ):
                 p_detail = param_change_detail(cf.feature_params, f.feature_params)
                 if p_detail:
                     status = "params_changed"
@@ -284,8 +339,9 @@ def compute_diff(baseline_features: list, compare_features: list) -> tuple:
                     status = "unchanged"
                     detail = ""
             # Check for health state change (only change is health status)
-            elif (f.health_state and cf.health_state
-                    and f.health_state != cf.health_state):
+            elif (
+                f.health_state and cf.health_state and f.health_state != cf.health_state
+            ):
                 status = "health_changed"
                 detail = f"{cf.health_state} \u2192 {f.health_state}"
             else:
@@ -297,26 +353,30 @@ def compute_diff(baseline_features: list, compare_features: list) -> tuple:
             compare_index = None
             detail = ""
 
-        diff_entries.append(DiffEntry(
-            name=f.name,
-            feature_type=f.feature_type,
-            status=status,
-            baseline_index=f.index,
-            compare_index=compare_index,
-            detail=detail,
-        ))
+        diff_entries.append(
+            DiffEntry(
+                name=f.name,
+                feature_type=f.feature_type,
+                status=status,
+                baseline_index=f.index,
+                compare_index=compare_index,
+                detail=detail,
+            )
+        )
 
     # Walk comparison features for deleted items
     for f in compare_features:
         key = _feature_key(f)
         if key not in seen_keys:
-            diff_entries.append(DiffEntry(
-                name=f.name,
-                feature_type=f.feature_type,
-                status="deleted",
-                baseline_index=None,
-                compare_index=f.index,
-            ))
+            diff_entries.append(
+                DiffEntry(
+                    name=f.name,
+                    feature_type=f.feature_type,
+                    status="deleted",
+                    baseline_index=None,
+                    compare_index=f.index,
+                )
+            )
 
     # --- Build aligned rows for two-column view ---
     # Track compare features already matched out-of-order so they aren't
@@ -328,7 +388,10 @@ def compute_diff(baseline_features: list, compare_features: list) -> tuple:
 
     while bi < len(baseline_features) or ci < len(compare_features):
         # Advance ci past any compare features already consumed out-of-order
-        while ci < len(compare_features) and _feature_key(compare_features[ci]) in consumed_compare_keys:
+        while (
+            ci < len(compare_features)
+            and _feature_key(compare_features[ci]) in consumed_compare_keys
+        ):
             ci += 1
 
         bf = baseline_features[bi] if bi < len(baseline_features) else None
@@ -375,8 +438,12 @@ def compute_diff(baseline_features: list, compare_features: list) -> tuple:
     newer_count = sum(1 for e in diff_entries if e.status == "newer")
     deleted_count = sum(1 for e in diff_entries if e.status == "deleted")
     unchanged_count = sum(1 for e in diff_entries if e.status == "unchanged")
-    version_changed_count = sum(1 for e in diff_entries if e.status == "version_changed")
-    sketch_modified_count = sum(1 for e in diff_entries if e.status == "sketch_modified")
+    version_changed_count = sum(
+        1 for e in diff_entries if e.status == "version_changed"
+    )
+    sketch_modified_count = sum(
+        1 for e in diff_entries if e.status == "sketch_modified"
+    )
     params_changed_count = sum(1 for e in diff_entries if e.status == "params_changed")
     health_changed_count = sum(1 for e in diff_entries if e.status == "health_changed")
 

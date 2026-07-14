@@ -146,9 +146,7 @@ def _wait_via_upload_state(
         try:
             current_state = future.uploadState
         except Exception as e:
-            msg = (
-                f"Reading uploadState failed for {context_label}: {e}"
-            )
+            msg = f"Reading uploadState failed for {context_label}: {e}"
             log(f"[wait_for_upload] {msg}")
             return False, msg
 
@@ -156,9 +154,7 @@ def _wait_via_upload_state(
             break
 
         if current_state != last_state:
-            log(
-                f"[wait_for_upload] {context_label}: uploadState={current_state}"
-            )
+            log(f"[wait_for_upload] {context_label}: uploadState={current_state}")
             last_state = current_state
 
         adsk.doEvents()
@@ -222,17 +218,13 @@ def _wait_via_is_complete(
             )
             last_heartbeat = now
         if timeout_seconds > 0 and elapsed >= timeout_seconds:
-            msg = (
-                f"Save wait timed out for {context_label} after {timeout_seconds}s"
-            )
+            msg = f"Save wait timed out for {context_label} after {timeout_seconds}s"
             log(f"[wait_for_upload] {msg}")
             return False, msg
         pump_events_for(poll_interval)
 
     if getattr(future, "error", False):
-        error_description = getattr(
-            future, "errorDescription", "Unknown upload error"
-        )
+        error_description = getattr(future, "errorDescription", "Unknown upload error")
         return False, f"Save failed for {context_label}: {error_description}"
     return True, f"Save+upload completed for {context_label}"
 
@@ -316,9 +308,7 @@ def _wait_via_document_state(
             last_heartbeat = now
 
         if timeout_seconds > 0 and elapsed >= timeout_seconds:
-            msg = (
-                f"Save wait timed out for {context_label} after {timeout_seconds}s"
-            )
+            msg = f"Save wait timed out for {context_label} after {timeout_seconds}s"
             log(f"[wait_for_upload] {msg}")
             return False, msg
 
