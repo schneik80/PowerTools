@@ -7,10 +7,16 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
-import adsk.core, adsk.fusion
-import os, re, base64, webbrowser, json
+import base64
+import json
+import os
+import re
+import webbrowser
+
+import adsk.core
+import adsk.fusion
+
 from ...lib import ptAddInUtils as ptutil
-from ... import config
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -44,7 +50,7 @@ def start():
     fileDropDown = qat.controls.itemById("FileSubMenuCommand")
 
     # Add a new button after the Export control.
-    control = fileDropDown.controls.addCommand(cmd_def, "ExportCommand", True)
+    fileDropDown.controls.addCommand(cmd_def, "ExportCommand", True)
 
 
 # Executed when add-in is stopped.
@@ -102,7 +108,6 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
             parentOcc, rootComp.occurrences.asList, 1, resultString
         )
 
-        msg = ""
         # Set styles of file dialog.
         folderDlg = ui.createFolderDialog()
         folderDlg.title = "Choose Folder to save Mermaid Graph"

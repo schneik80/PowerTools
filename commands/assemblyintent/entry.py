@@ -486,8 +486,9 @@ def _is_top_level_doc(doc) -> bool:
     top-level doc. No cloud round-trip, unlike DataFile.childReferences."""
     try:
         # Touch .count so the accessor actually evaluates and raises for
-        # non-top-level docs rather than handing back a lazy wrapper.
-        doc.documentReferences.count
+        # non-top-level docs rather than handing back a lazy wrapper. Assigned
+        # to _ purely to evaluate it (and raise) without tripping B018.
+        _ = doc.documentReferences.count
         return True
     except Exception:
         return False

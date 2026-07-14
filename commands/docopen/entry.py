@@ -14,10 +14,12 @@
 # Preferences settings section control when it fires: on document open
 # (`run_on_open`) and on document activate (`run_on_activate`).
 
-import adsk.core
 import os
-from ...lib import ptAddInUtils as ptutil
+
+import adsk.core
+
 from ... import settings_store
+from ...lib import ptAddInUtils as ptutil
 
 app = adsk.core.Application.get()
 ui = app.userInterface

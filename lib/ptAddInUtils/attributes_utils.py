@@ -9,14 +9,13 @@
 #  AUTODESK, INC. DOES NOT WARRANT THAT THE OPERATION OF THE PROGRAM WILL BE
 #  UNINTERRUPTED OR ERROR FREE.
 
-import sys
 from collections import defaultdict
 
+import adsk.cam
 import adsk.core
 import adsk.fusion
-import adsk.cam
 
-from ..ptAddInUtils import app, ui
+from ..ptAddInUtils import app
 
 
 def _get_name_type(selection):
@@ -88,7 +87,7 @@ def get_all_attributes(attribute_group: str, attribute_name: str) -> list:
             else:
                 orphans.append(attribute)
 
-        for key, object_attributes in unique_objects.items():
+        for _key, object_attributes in unique_objects.items():
             name, the_selection_type = _get_name_type(object_attributes[0].parent)
             attribute_list = _make_attributes_message(object_attributes, False, "")
 
@@ -126,7 +125,7 @@ def get_comptypes(attribute_group: str, attribute_name: str) -> list:
             else:
                 orphans.append(attribute)
 
-        for key, object_attributes in unique_objects.items():
+        for _key, object_attributes in unique_objects.items():
             attribute_list = _make_attributes_message(
                 object_attributes, True, "litetype"
             )

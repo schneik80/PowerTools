@@ -7,10 +7,13 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
-import adsk.core, adsk.fusion
 import os
-from ...lib import ptAddInUtils as ptutil
+
+import adsk.core
+import adsk.fusion
+
 from ... import config
+from ...lib import ptAddInUtils as ptutil
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -57,7 +60,7 @@ def start():
 
     navToolbar = ui.toolbars.itemById(_toolbar)
     navToolbarControls = navToolbar.controls
-    control = navToolbarControls.addCommand(cmd_def, "", False)
+    navToolbarControls.addCommand(cmd_def, "", False)
 
     # ****************
     # Get target workspace for the command.
@@ -92,7 +95,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         ui = app.userInterface
         cmdDefs = ui.commandDefinitions
 
-        if app.data.isDataPanelVisible == True:
+        if app.data.isDataPanelVisible:
             datatoggleclose = cmdDefs.itemById("DashboardModeCloseCommand")
             datatoggleclose.execute()
         else:

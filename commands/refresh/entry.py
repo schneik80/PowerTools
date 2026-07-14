@@ -7,10 +7,10 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
-import adsk.core, adsk.fusion
-import os
+import adsk.core
+import adsk.fusion
+
 from ...lib import ptAddInUtils as ptutil
-from ... import config
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -35,7 +35,7 @@ def start():
 
     file_dd = ptutil.get_qat_file_dropdown()
     if file_dd:
-        control = file_dd.controls.addCommand(cmd_def, "ExportCommand", False)
+        file_dd.controls.addCommand(cmd_def, "ExportCommand", False)
 
 
 # Executed when add-in is stopped.

@@ -7,10 +7,11 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
-import adsk.core, adsk.fusion
-import os
-from ...lib import ptAddInUtils as ptutil
+import adsk.core
+import adsk.fusion
+
 from ... import settings_store
+from ...lib import ptAddInUtils as ptutil
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -105,7 +106,7 @@ def start():
     fileDropDown = qat.controls.itemById("FileSubMenuCommand")
 
     # Add a new button to the end of the file menu.
-    control = fileDropDown.controls.addCommand(cmd_def)
+    fileDropDown.controls.addCommand(cmd_def)
 
 
 # Executed when add-in is stopped.

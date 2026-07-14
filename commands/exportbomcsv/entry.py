@@ -7,11 +7,13 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
-import adsk.core, adsk.fusion
 import os
 import re
+
+import adsk.core
+import adsk.fusion
+
 from ...lib import ptAddInUtils as ptutil
-from ... import config
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -49,7 +51,7 @@ def start():
     fileDropDown = qat.controls.itemById("FileSubMenuCommand")
 
     # Add a new button after the Export control.
-    control = fileDropDown.controls.addCommand(cmd_def, "ExportCommand", True)
+    fileDropDown.controls.addCommand(cmd_def, "ExportCommand", True)
 
 
 # Executed when add-in is stopped.
@@ -128,7 +130,7 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
 
             if jj == len(bom):
                 # Modify the name if versions are OFF and an occurrence is an xref
-                if showversion == False and refocc == True:
+                if not showversion and refocc:
                     longname = comp.name
                     shortname = " v".join(longname.split(" v")[:-1])
                 else:
@@ -207,7 +209,7 @@ def _csv_cell(value) -> str:
 # walk thru the assembly
 def traverseAssembly(bom):
     mStr = ""
-    if showsubs == False:
+    if not showsubs:
         for item in bom:
             if item["sub"] < 1:
                 mStr += (
@@ -223,7 +225,7 @@ def traverseAssembly(bom):
                     + "\n"
                 )
         return mStr
-    if showsubs == True:
+    if showsubs:
         for item in bom:
             mStr += (
                 '"'

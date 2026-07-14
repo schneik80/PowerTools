@@ -15,7 +15,6 @@ from pathlib import Path
 from .feature_icons import get_icon_data_uri, icon_img_tag
 from .timeline_model import DiffResult
 
-
 HTML_CSS = """<style>
     * {
         margin: 0;
@@ -856,13 +855,13 @@ def _build_visual_timeline(diff_result: DiffResult) -> str:
             )
 
     # ── Gutter strips ──
-    for pos, (ar_idx, feat, status) in enumerate(newer_items):
+    for pos, (_ar_idx, _feat, status) in enumerate(newer_items):
         fill, _, _, _ = _color(status)
         parts.append(
             f'<rect x="{bx(pos)}" y="{_GUTTER_Y_NEWER}" width="{_BOX}" height="{_GUTTER}" '
             f'fill="{fill}" rx="1"/>'
         )
-    for pos, (ar_idx, feat, status) in enumerate(older_items):
+    for pos, (_ar_idx, _feat, status) in enumerate(older_items):
         fill, _, _, _ = _color(status)
         parts.append(
             f'<rect x="{bx(pos)}" y="{_GUTTER_Y_OLDER}" width="{_BOX}" height="{_GUTTER}" '
@@ -895,9 +894,9 @@ def _build_visual_timeline(diff_result: DiffResult) -> str:
         box += f"<title>{tooltip}</title></g>"
         return box
 
-    for pos, (ar_idx, feat, status) in enumerate(newer_items):
+    for pos, (_ar_idx, feat, status) in enumerate(newer_items):
         parts.append(_draw_box(pos, feat, status, _ROW_Y_NEWER))
-    for pos, (ar_idx, feat, status) in enumerate(older_items):
+    for pos, (_ar_idx, feat, status) in enumerate(older_items):
         parts.append(_draw_box(pos, feat, status, _ROW_Y_OLDER))
 
     svg_content = "\n    ".join(parts)

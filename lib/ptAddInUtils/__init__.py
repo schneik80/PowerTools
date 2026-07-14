@@ -13,6 +13,8 @@
 # This package is kept byte-for-byte in sync across all PowerTools add-ins so
 # each add-in exposes the same helper surface. general_utils must be imported
 # first: it defines `app`/`ui`, which attributes_utils imports from the package.
+# ruff: noqa: I001 — import order is load-bearing (see the comment above); do
+# not let isort alphabetize this block.
 from .general_utils import *
 from .event_utils import *
 from .attributes_utils import *

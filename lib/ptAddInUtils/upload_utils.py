@@ -25,10 +25,10 @@ is for `Document.save` flows where the standard polling cadence works.
 """
 
 import time
+
 import adsk.core
 
 from .general_utils import pump_events_for
-
 
 DEFAULT_UPLOAD_TIMEOUT_SECONDS = 300
 DEFAULT_POLL_INTERVAL_SECONDS = 0.5

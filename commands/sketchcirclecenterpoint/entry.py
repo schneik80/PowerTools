@@ -7,14 +7,15 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
-import adsk.core
-import adsk.fusion
+import math
 import os
 import traceback
-import math
 
-from ...lib import ptAddInUtils as ptutil
+import adsk.core
+import adsk.fusion
+
 from ... import config
+from ...lib import ptAddInUtils as ptutil
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -158,7 +159,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs) -> None:
 
         # Diameter value input (Fusion internal unit = cm; default 25 mm)
         units_mgr = design.unitsManager
-        diameter_input = inputs.addValueInput(
+        inputs.addValueInput(
             "diameter",
             "Diameter",
             units_mgr.defaultLengthUnits,

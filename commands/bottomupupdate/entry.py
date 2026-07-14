@@ -7,11 +7,16 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
-import adsk.core, adsk.fusion
-import os, re, traceback
+import os
+import re
 import time
-from ...lib import ptAddInUtils as ptutil
+import traceback
+
+import adsk.core
+import adsk.fusion
+
 from ... import config
+from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
 from .document_dag import document_bottom_up_order, resolve_document
 
@@ -113,7 +118,6 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     # Get the active Fusion product and cast to Design for manipulation
     product = app.activeProduct
     design = adsk.fusion.Design.cast(product)
-    doc = app.activeDocument
     # Title for dialogs and messages
     title = CMD_NAME
 
@@ -128,7 +132,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         return
 
     # Check that the active document has been saved.
-    if ptutil.isSaved() == False:
+    if not ptutil.isSaved():
         return
 
     resume_plan = {
@@ -471,7 +475,7 @@ def hide_origins_in_document(document):
             # Check if the origin folder light bulb is on (visible) and turn it off
             if design.activeComponent.isOriginFolderLightBulbOn:
                 design.activeComponent.isOriginFolderLightBulbOn = False
-                return f"   Origin hidden "
+                return "   Origin hidden "
             else:
                 return "   Origin was already hidden"
 
@@ -1433,8 +1437,8 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
             des = None  # Clear design reference
 
-        ptutil.log(f"----- Components saved -----")
-        write_log_entry(f"----- Components saved -----")
+        ptutil.log("----- Components saved -----")
+        write_log_entry("----- Components saved -----")
 
         # Update progress bar for final steps
         progress_bar.message = "Getting latest versions of all components..."
@@ -1547,7 +1551,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
         ptutil.log("Bottom-up Update completed successfully")
         write_log_entry("Bottom-up Update completed successfully")
         ui.messageBox(completion_msg)  # Show completion message to user
-    except Exception as e:
+    except Exception:
         # Hide progress bar if it exists
         try:
             if progress_bar:

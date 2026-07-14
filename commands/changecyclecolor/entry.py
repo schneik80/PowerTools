@@ -38,9 +38,9 @@ from typing import List, Optional
 import adsk.core
 import adsk.fusion
 
-from ... import config
-from ... import settings_store
+from ... import config, settings_store
 from ...lib import ptAddInUtils as ptutil
+from . import swatches as swatch_png
 from .colors import (
     Color,
     Swatch,
@@ -49,8 +49,6 @@ from .colors import (
     rgb_to_hex,
     sort_rainbow,
 )
-from . import swatches as swatch_png
-
 
 app = adsk.core.Application.get()
 ui = app.userInterface

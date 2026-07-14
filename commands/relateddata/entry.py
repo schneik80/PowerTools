@@ -7,11 +7,14 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
-import adsk.core, adsk.fusion
-import os
 import json
-from ...lib import ptAddInUtils as ptutil
+import os
+
+import adsk.core
+import adsk.fusion
+
 from ... import config
+from ...lib import ptAddInUtils as ptutil
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -249,7 +252,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     )
 
     dropDownItems_ = dropDownCommandInput.listItems
-    for key, val in my_DocsDictSorted.items():
+    for _key, val in my_DocsDictSorted.items():
         if isinstance(val, dict):
             (dropDownItems_.add(val.get("name"), True),)
             docActive = app.activeDocument
@@ -317,7 +320,6 @@ def command_execute(args: adsk.core.CommandEventArgs):
 # allowing you to modify values of other inputs based on that change.
 def command_input_changed(args: adsk.core.InputChangedEventArgs):
     changed_input = args.input
-    inputs = args.inputs
 
     global docURN, docTitle, docSeed
     stringDocname = args.inputs.itemById("stringValueInput_")
@@ -341,7 +343,7 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
 
     # Auto name or user name input
     if changed_input.id == "boolvalueInput_":
-        if changed_input.value == True:
+        if changed_input.value:
             stringDocname.isEnabled = False
         else:
             stringDocname.isEnabled = True

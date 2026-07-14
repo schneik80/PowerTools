@@ -23,7 +23,6 @@ from typing import Iterable, Tuple
 
 from .colors import Color, rgb_to_hex
 
-
 _SIZES = (16, 32, 64)
 
 

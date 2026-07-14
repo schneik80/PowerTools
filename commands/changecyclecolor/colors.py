@@ -22,7 +22,6 @@ from typing import List, Optional, Tuple
 
 from .fusion_install import find_river_rubicon_xml
 
-
 Color = Tuple[int, int, int]  # 0..255 ints
 Swatch = Tuple[str, Color]  # (name, rgb)
 

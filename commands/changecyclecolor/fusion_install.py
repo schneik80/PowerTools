@@ -21,7 +21,6 @@ import os
 import sys
 from typing import Iterable, Optional
 
-
 # Relative path to RiverRubicon.xml from the install root, on each platform.
 # macOS bundles everything under ``Autodesk Fusion.app/Contents/...``.
 _RIVER_RUBICON_RELS = (

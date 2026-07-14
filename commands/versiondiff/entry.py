@@ -7,20 +7,21 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
-import adsk.core
-import adsk.fusion
 import os
 import traceback
 from datetime import datetime
 
-from ...lib import ptAddInUtils as ptutil
+import adsk.core
+import adsk.fusion
+
 from ... import config
+from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
 from .design_properties import extract_design_properties
-from .param_fingerprint import extract_feature_params, attach_params_to_features
-from .timeline_diff import walk_timeline, get_version_info, compute_diff, save_diff_json
-from .timeline_model import DiffResult
 from .html_report import generate_html_report
+from .param_fingerprint import attach_params_to_features, extract_feature_params
+from .timeline_diff import compute_diff, get_version_info, save_diff_json, walk_timeline
+from .timeline_model import DiffResult
 
 app = adsk.core.Application.get()
 ui = app.userInterface

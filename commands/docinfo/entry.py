@@ -7,10 +7,13 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
-import adsk.core, adsk.fusion
 import os
-from ...lib import ptAddInUtils as ptutil
+
+import adsk.core
+import adsk.fusion
+
 from ... import config
+from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
 
 app = adsk.core.Application.get()
@@ -98,7 +101,7 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
         design = adsk.fusion.Design.cast(product)
 
         # Check that the active document has been saved.
-        if ptutil.isSaved() == False:
+        if not ptutil.isSaved():
             return
 
         root_name = design.rootComponent.name  # Get root component name.
@@ -111,14 +114,14 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
         docProjectName = app.activeDocument.dataFile.parentProject.name
 
         docFolder = app.activeDocument.dataFile.parentFolder.id
-        if app.activeDocument.dataFile.parentFolder.isRoot == True:
+        if app.activeDocument.dataFile.parentFolder.isRoot:
             docFolderName = "Project Root"
         else:
             docFolderName = app.activeDocument.dataFile.parentFolder.name
 
         rootTest = app.activeDocument.dataFile.parentFolder
         docPath = f"{app.activeDocument.dataFile.parentFolder.name}"
-        while rootTest.isRoot == False:
+        while not rootTest.isRoot:
             nextFolder = rootTest.parentFolder.name
             docPath = f"{nextFolder} / {docPath}"
             rootTest = rootTest.parentFolder
@@ -155,7 +158,7 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
             VersionMigration = True
             messageIcon = 3
 
-        if VersionMigration == True:
+        if VersionMigration:
             mTitle = f"{root_name} Document Info - Document will migrate on save"
             resultString += (
                 f"<br>"

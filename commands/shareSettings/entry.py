@@ -7,10 +7,13 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
-import adsk.core, adsk.fusion
 import os
-from ...lib import ptAddInUtils as ptutil
+
+import adsk.core
+import adsk.fusion
+
 from ... import config
+from ...lib import ptAddInUtils as ptutil
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -61,7 +64,7 @@ def start():
     else:
         dropDown = qat.controls.itemById("shareDropMenu")
 
-    control = dropDown.controls.addCommand(cmd_def, "PTSHD_projectInvite", False)
+    dropDown.controls.addCommand(cmd_def, "PTSHD_projectInvite", False)
 
 
 # Executed when add-in is stopped.
@@ -83,7 +86,6 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     ptutil.log(f"{CMD_NAME} Command Created Event")
 
     # https://help.autodesk.com/view/fusion360/ENU/?contextId=CommandInputs
-    inputs = args.command.commandInputs
 
     # Connect to the events that are needed by this command.
     ptutil.add_handler(

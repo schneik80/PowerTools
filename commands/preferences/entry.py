@@ -26,10 +26,9 @@ import urllib.parse
 
 import adsk.core
 
-from ...lib import ptAddInUtils as ptutil
-from ... import config
-from ... import settings_store
 from ... import command_registry as registry
+from ... import config, settings_store
+from ...lib import ptAddInUtils as ptutil
 
 app = adsk.core.Application.get()
 ui = app.userInterface

@@ -7,12 +7,16 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
-import adsk.core, adsk.fusion
 import os
-import urllib, webbrowser
+import urllib
+import webbrowser
 from urllib.parse import quote
-from ...lib import ptAddInUtils as ptutil
+
+import adsk.core
+import adsk.fusion
+
 from ... import config
+from ...lib import ptAddInUtils as ptutil
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -66,7 +70,7 @@ def start():
         dropDown = qat.controls.itemById("shareDropMenu")
 
     # Add a button to toggle the visibility to the end of the panel.
-    control = dropDown.controls.addCommand(cmd_def, "PTSHD_sharesettings", True)
+    dropDown.controls.addCommand(cmd_def, "PTSHD_sharesettings", True)
     # control.isPromoted = True
 
 
@@ -89,7 +93,6 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     ptutil.log(f"{CMD_NAME} Command Created Event")
 
     # https://help.autodesk.com/view/fusion360/ENU/?contextId=CommandInputs
-    inputs = args.command.commandInputs
 
     # Connect to the events that are needed by this command.
     ptutil.add_handler(
