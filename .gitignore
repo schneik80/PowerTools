@@ -99,6 +99,9 @@ venv.bak/
 .spyproject
 .ropeproject
 .vscode/
+# Zed editor + debugger config. Regenerated per machine (contains absolute
+# webdeploy paths and the volatile Fusion webdeploy hash). See docs/dev/debugging.md.
+.zed/
 
 # Documentation
 /site
