@@ -138,10 +138,8 @@ a developer machine, so:
 `docs/`.
 
 **Continuous integration.** `.github/workflows/ci.yml` runs on every push and
-pull request. `ruff format --check .` and `pytest` are hard gates; `ruff check`
-runs as an *advisory* step for now because the tree still carries pre-existing
-lint violations — clear them (`ruff check --fix` fixes most) and promote it to a
-gate.
+pull request and enforces three hard gates: `ruff check .`, `ruff format --check .`,
+and `pytest`. Keep them green locally before pushing.
 
 ## The `.debug` marker
 

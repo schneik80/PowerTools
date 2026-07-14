@@ -23,16 +23,11 @@ jobs:
       - name: Formatting (ruff format --check)
         run: ruff format --check .
 
+      # Hard gate: the lint rules in pyproject.toml ([tool.ruff.lint]).
+      - name: Lint (ruff check)
+        run: ruff check .
+
       # Hard gate: pure-logic tests (adsk is stubbed in tests/conftest.py,
       # so no Fusion is required).
       - name: Tests (pytest)
         run: python -m pytest -q
-
-      # Advisory only: the lint rules in pyproject.toml are the intended gate,
-      # but the tree currently carries pre-existing violations (unused
-      # imports/vars, `== True`, multi-import lines, ...). Surface them without
-      # failing the build. Promote this to a hard gate once the backlog is
-      # cleared (`ruff check --fix` handles most of it).
-      - name: Lint (ruff check — advisory)
-        run: ruff check .
-        continue-on-error: true

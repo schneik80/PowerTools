@@ -7,3 +7,6 @@
 
 # style: adopt `ruff format` (double-quote) across the repo
 0de55c85a0a2316760e95934b514ade6fcc85295
+
+# style: apply mechanical ruff fixes (imports, f-strings, loop vars)
+89f298d60b48cec6cce1a4881fc9e3d0dd0bf994
