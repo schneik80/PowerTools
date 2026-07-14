@@ -20,7 +20,6 @@ from typing import Dict, Tuple
 
 import adsk.fusion
 
-
 # Type alias: {param_name: (value, expression, role)}
 ParamEntry = Tuple[float, str, str]
 ParamDict = Dict[str, ParamEntry]

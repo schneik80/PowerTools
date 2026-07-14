@@ -33,8 +33,8 @@ import time
 import adsk.core
 import adsk.fusion
 
-from ...lib import ptAddInUtils as ptutil
 from ... import settings_store
+from ...lib import ptAddInUtils as ptutil
 
 app = adsk.core.Application.get()
 ui = app.userInterface

@@ -15,8 +15,8 @@
 import json
 import os
 
-from . import config
 from . import command_registry as registry
+from . import config
 from .lib import ptAddInUtils as ptutil
 
 # Default folder sets for the "Add Project Folders" command (defaultfolders).

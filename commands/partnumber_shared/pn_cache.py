@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -31,9 +30,7 @@ from typing import Dict, Optional
 
 import adsk.core
 
-from . import hub_fs
-from . import schemes
-
+from . import hub_fs, schemes
 
 # Tuning: pn-cache.json is a few hundred bytes. A healthy hub upload
 # completes in well under a second. The timeouts here are deliberately

@@ -22,7 +22,6 @@ from typing import Optional
 
 import adsk.core
 
-
 ASSETS_PROJECT_NAME = "Assets"
 PN_CACHE_FOLDER_NAME = "Pn-Cache"
 PN_CACHE_FILENAME = "pn-cache.json"

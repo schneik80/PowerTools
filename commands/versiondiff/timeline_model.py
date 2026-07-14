@@ -8,7 +8,7 @@
 # permission, please contact the copyright holders and delete this file.
 
 import json
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from typing import Optional
 
 

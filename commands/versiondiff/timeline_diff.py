@@ -7,14 +7,12 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
-import json
 import os
 import re
 import secrets
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import adsk.core
 import adsk.fusion
@@ -22,11 +20,11 @@ import adsk.fusion
 from .param_fingerprint import param_change_detail, params_differ
 from .sketch_hash import extract_sketch_fingerprint, sketch_change_detail
 from .timeline_model import (
-    TimelineFeature,
-    VersionInfo,
+    AlignedRow,
     DiffEntry,
     DiffResult,
-    AlignedRow,
+    TimelineFeature,
+    VersionInfo,
 )
 
 # Pattern to parse Occurrence names like "Center Diff Mount v2:1"

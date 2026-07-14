@@ -7,18 +7,19 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
-import adsk.core
-import adsk.fusion
 import csv
 import os
 import secrets
 import tempfile
 from pathlib import Path
-from typing import Optional
+
+import adsk.core
+import adsk.fusion
+
+from ... import config
 
 # Import the ptAddInUtils module from the parent directory.
 from ...lib import ptAddInUtils as ptutil
-from ... import config
 
 # Constants
 SECONDS_PER_HOUR = 3600

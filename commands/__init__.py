@@ -16,11 +16,11 @@
 
 import importlib
 
-from . import _ui_bootstrap
-from .preferences import entry as preferences
 from .. import command_registry as registry
 from .. import settings_store
 from ..lib import ptAddInUtils as ptutil
+from . import _ui_bootstrap
+from .preferences import entry as preferences
 
 # Command entry modules are imported lazily and cached here — only when a command
 # is actually started, or when the Preferences palette introspects it for display.

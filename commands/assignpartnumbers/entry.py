@@ -29,8 +29,8 @@ import adsk.fusion
 from ... import config
 from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
-from ..partnumber_shared import hub_fs, intent as intent_mod, pn_cache, schemes
-
+from ..partnumber_shared import hub_fs, pn_cache, schemes
+from ..partnumber_shared import intent as intent_mod
 
 app = adsk.core.Application.get()
 ui = app.userInterface

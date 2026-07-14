@@ -15,7 +15,6 @@ from pathlib import Path
 from .feature_icons import get_icon_data_uri, icon_img_tag
 from .timeline_model import DiffResult
 
-
 HTML_CSS = """<style>
     * {
         margin: 0;

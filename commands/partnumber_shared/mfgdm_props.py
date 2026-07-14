@@ -38,7 +38,6 @@ from typing import Any, Optional
 
 import adsk.core
 
-
 MFGDM_URL = "mfgdm://v3"
 
 

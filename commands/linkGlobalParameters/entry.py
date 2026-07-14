@@ -7,12 +7,14 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
+import os
+
 import adsk.core
 import adsk.fusion
-import os
+
+from ... import config
 from ...lib import ptAddInUtils as ptutil
 from ...lib.ptAddInUtils import cache_utils as cache
-from ... import config
 from .. import _ui_bootstrap
 
 app = adsk.core.Application.get()

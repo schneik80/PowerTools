@@ -40,7 +40,6 @@ from ... import config
 from ...lib import ptAddInUtils as ptutil
 from ..partnumber_shared import hub_fs, mfgdm_props, pn_cache, schemes
 
-
 app = adsk.core.Application.get()
 ui = app.userInterface
 
@@ -473,7 +472,7 @@ def _sync_drawing_number_to_source_design(
             return f"Titleblock sync failed: {exc}"
         except Exception:
             ptutil.handle_error(f"{CMD_NAME} titleblock sync")
-            return f"Titleblock sync failed unexpectedly — see the Text Commands log."
+            return "Titleblock sync failed unexpectedly — see the Text Commands log."
 
         ptutil.log(
             f"{CMD_NAME}: wrote {DRAWING_NUMBER_PROPERTY_NAME!r} = "

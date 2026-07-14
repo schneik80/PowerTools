@@ -13,8 +13,8 @@ import sys
 from typing import Callable
 
 import adsk.core
-from .general_utils import handle_error
 
+from .general_utils import handle_error
 
 # Global Variable to hold Event Handlers
 _handlers = []

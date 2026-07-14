@@ -7,11 +7,14 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
-import adsk.core, adsk.fusion
-import os
 import json
-from ...lib import ptAddInUtils as ptutil
+import os
+
+import adsk.core
+import adsk.fusion
+
 from ... import config
+from ...lib import ptAddInUtils as ptutil
 
 app = adsk.core.Application.get()
 ui = app.userInterface

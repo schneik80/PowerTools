@@ -9,14 +9,13 @@
 #  AUTODESK, INC. DOES NOT WARRANT THAT THE OPERATION OF THE PROGRAM WILL BE
 #  UNINTERRUPTED OR ERROR FREE.
 
-import sys
 from collections import defaultdict
 
+import adsk.cam
 import adsk.core
 import adsk.fusion
-import adsk.cam
 
-from ..ptAddInUtils import app, ui
+from ..ptAddInUtils import app
 
 
 def _get_name_type(selection):

@@ -18,10 +18,11 @@
 #   6. Hub configuration (Related Data)
 #   7. Palette IDs (Assembly)
 
-import adsk.core
+import json
 import os
 import os.path
-import json
+
+import adsk.core
 
 from .lib import ptAddInUtils as ptutil
 

@@ -7,11 +7,16 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
-import adsk.core, adsk.fusion
-import os, re, traceback
+import os
+import re
 import time
-from ...lib import ptAddInUtils as ptutil
+import traceback
+
+import adsk.core
+import adsk.fusion
+
 from ... import config
+from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
 from .document_dag import document_bottom_up_order, resolve_document
 
@@ -471,7 +476,7 @@ def hide_origins_in_document(document):
             # Check if the origin folder light bulb is on (visible) and turn it off
             if design.activeComponent.isOriginFolderLightBulbOn:
                 design.activeComponent.isOriginFolderLightBulbOn = False
-                return f"   Origin hidden "
+                return "   Origin hidden "
             else:
                 return "   Origin was already hidden"
 
@@ -1433,8 +1438,8 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
             des = None  # Clear design reference
 
-        ptutil.log(f"----- Components saved -----")
-        write_log_entry(f"----- Components saved -----")
+        ptutil.log("----- Components saved -----")
+        write_log_entry("----- Components saved -----")
 
         # Update progress bar for final steps
         progress_bar.message = "Getting latest versions of all components..."

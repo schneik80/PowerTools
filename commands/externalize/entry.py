@@ -7,15 +7,17 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
-import adsk.core
-import adsk.fusion
 import os
 import re
 import time
 import traceback
 from datetime import datetime
-from ...lib import ptAddInUtils as ptutil
+
+import adsk.core
+import adsk.fusion
+
 from ... import config
+from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
 
 app = adsk.core.Application.get()

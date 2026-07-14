@@ -7,10 +7,13 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
-import adsk.core, adsk.fusion
 import os
-from ...lib import ptAddInUtils as ptutil
+
+import adsk.core
+import adsk.fusion
+
 from ... import config
+from ...lib import ptAddInUtils as ptutil
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -115,7 +118,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
         permLink = app.activeDocument.designDataFile.fusionWebURL
         ptutil.clipText(permLink)
         ui.messageBox(
-            f"Sharing is not allowed. Please check if your Team Hub Administrator has disabled sharing.<br><br>A private perma-link was copied to clipboard instead. This link will only allow Team hub members access to the document details page.",
+            "Sharing is not allowed. Please check if your Team Hub Administrator has disabled sharing.<br><br>A private perma-link was copied to clipboard instead. This link will only allow Team hub members access to the document details page.",
             "Share Document",
             0,
             2,
@@ -147,7 +150,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
         if shareLink == "":
             ptutil.log("Failed to get a link to the document")
             ui.messageBox(
-                f"Failed to share the document.",
+                "Failed to share the document.",
                 "Share Document",
                 1,
                 2,
@@ -158,9 +161,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
         ptutil.clipText(shareLink)
 
         if wasShared == True:
-            resultString = f"Document is already shared <br>"
+            resultString = "Document is already shared <br>"
         else:
-            resultString = f"<b>Document is now shared.</b> <br>"
+            resultString = "<b>Document is now shared.</b> <br>"
 
         resultString += f"A <b>Share link</b> for {app.activeDocument.name}: <a href=''{shareLink}''>{shareLink}</a> was added to the clipboard.<br><br>Note:"
 
@@ -184,7 +187,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
         if passwordProtected == True:
             resultString += "<br>The share is password protected.<br>"
         else:
-            resultString += f"<br>The share does not have a password. To set a password, go to <b>Share Settings</b><br>"
+            resultString += "<br>The share does not have a password. To set a password, go to <b>Share Settings</b><br>"
 
         if app.activeProduct.productType == "DesignProductType":
             rootComp = app.activeProduct.rootComponent
@@ -192,9 +195,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
             if has_external_child_reference(rootComp):
                 ptutil.log(f"{CMD_NAME} Document has external references")
                 if noDownload == True:
-                    resultString += f"<br>This design has external references. Sharing this design will allow the referenced designs to be viewed but not downloaded. <br>"
+                    resultString += "<br>This design has external references. Sharing this design will allow the referenced designs to be viewed but not downloaded. <br>"
                 else:
-                    resultString += f"<br>This design has external references. Sharing this design will also share the referenced designs. To avoid sharing referenced designs, either save this design as a new document and break link or disable download.<br>"
+                    resultString += "<br>This design has external references. Sharing this design will also share the referenced designs. To avoid sharing referenced designs, either save this design as a new document and break link or disable download.<br>"
             else:
                 ptutil.log(f"{CMD_NAME} Document has no external references")
 

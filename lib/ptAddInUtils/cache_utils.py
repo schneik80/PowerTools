@@ -19,10 +19,11 @@ Cache files (all written under add-in/cache/):
                                     lets linkGlobalParameters preview without opening the doc
 """
 
-import adsk.core
-import os
 import json
+import os
 import re
+
+import adsk.core
 
 from . import general_utils as ptutil
 

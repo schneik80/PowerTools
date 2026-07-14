@@ -40,8 +40,8 @@ import adsk.core
 import adsk.fusion
 
 from ... import config
-from .. import _ui_bootstrap
 from ...lib import ptAddInUtils as ptutil
+from .. import _ui_bootstrap
 
 app = adsk.core.Application.get()
 ui = app.userInterface

@@ -7,10 +7,14 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
-import adsk.core, adsk.fusion
-import os, re
-from ...lib import ptAddInUtils as ptutil
+import os
+import re
+
+import adsk.core
+import adsk.fusion
+
 from ... import config
+from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
 
 app = adsk.core.Application.get()
@@ -160,7 +164,7 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
                 1 for line in docTimeline.strip().split("\n") if "Context" in line
             )
         except Exception:
-            docContexts = f"<i>Error. Unable to retrieve timeline contexts.</i>"
+            docContexts = "<i>Error. Unable to retrieve timeline contexts.</i>"
             ptutil.log("Error retrieving timeline contexts.")
 
         docConstraints = rootComp.assemblyConstraints.count

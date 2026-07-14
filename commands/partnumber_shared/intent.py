@@ -16,14 +16,13 @@ occurrence.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Optional
 
 import adsk.core
 import adsk.fusion
 
 from . import schemes
-
 
 # Fusion auto-generates placeholder part numbers using the timestamp
 # YYYY-MM-DD-HH-MM-SS-mmm. The Fusion UI cosmetically displays these as
