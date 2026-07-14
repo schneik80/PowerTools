@@ -130,10 +130,14 @@ commands/relateddata/docs.json
 commands/relateddata/data.json
 commands/assemblybuilder/resources/html/init.js
 commands/assemblyintent/resources/html/init.js
+commands/preferences/resources/html/init.js
 cache/
-# NOTE: settings/ (the preferences store) and the preferences command's
-# generated init.js ARE tracked and committed deliberately -- do not re-add
-# them here.
+
+# Machine-local user preferences store. Auto-created on first run from
+# registry-derived defaults (settings_store.py); the preferences init.js above
+# is regenerated whenever the palette opens. Both are per-machine state, not
+# shipped config.
+settings/preferences.json
 .claude/
 .cursor/rules/
 
