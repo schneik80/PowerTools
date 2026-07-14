@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Pin ruff to the version the repo was formatted with so
+      # `ruff format --check` does not drift between ruff releases.
+      - name: Install tools
+        run: python -m pip install "ruff==0.15.12" "pytest>=8.0"
+
+      # Hard gate: the whole tree must stay `ruff format`-clean.
+      - name: Formatting (ruff format --check)
+        run: ruff format --check .
+
+      # Hard gate: pure-logic tests (adsk is stubbed in tests/conftest.py,
+      # so no Fusion is required).
+      - name: Tests (pytest)
+        run: python -m pytest -q
+
+      # Advisory only: the lint rules in pyproject.toml are the intended gate,
+      # but the tree currently carries pre-existing violations (unused
+      # imports/vars, `== True`, multi-import lines, ...). Surface them without
+      # failing the build. Promote this to a hard gate once the backlog is
+      # cleared (`ruff check --fix` handles most of it).
+      - name: Lint (ruff check — advisory)
+        run: ruff check .
+        continue-on-error: true

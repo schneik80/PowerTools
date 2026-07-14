@@ -109,9 +109,19 @@ uv venv                       # or: python3 -m venv .venv
 uv pip install -e ".[dev]"    # or: pip install ruff mypy pytest
 
 ruff check .                  # lint (pyflakes, pycodestyle, isort, bugbear)
-ruff format .                 # format (line length 88)
+ruff format .                 # format in place (double quotes, line length 88)
+ruff format --check .         # verify formatting without writing (used in CI)
 mypy .                        # type-check (advisory; not a gate)
 python -m pytest -q           # run the test suite
+```
+
+**Formatting is standardized on `ruff format`** (double-quote style, ruff's
+default). Run `ruff format .` before committing. The repo carries a
+`.git-blame-ignore-revs` file so the one-time bulk-reformat commit is skipped by
+`git blame`; enable it locally once with:
+
+```bash
+git config blame.ignoreRevsFile .git-blame-ignore-revs
 ```
 
 **`adsk` only resolves inside Fusion.** The `adsk.*` API packages do not exist on
@@ -126,6 +136,12 @@ a developer machine, so:
 
 `ruff`, `mypy`, and `pytest` exclude `cache/`, `settings/`, `**/resources/`, and
 `docs/`.
+
+**Continuous integration.** `.github/workflows/ci.yml` runs on every push and
+pull request. `ruff format --check .` and `pytest` are hard gates; `ruff check`
+runs as an *advisory* step for now because the tree still carries pre-existing
+lint violations — clear them (`ruff check --fix` fixes most) and promote it to a
+gate.
 
 ## The `.debug` marker
 
