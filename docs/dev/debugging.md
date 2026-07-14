@@ -16,6 +16,7 @@ For general setup, the repository layout, and tooling, see the
 - [Enabling the attach-debug server](#enabling-the-attach-debug-server)
 - [Debugging in VS Code](#debugging-in-vs-code)
 - [Debugging in Zed](#debugging-in-zed)
+- [When Zed cannot fetch debugpy (offline or proxy)](#when-zed-cannot-fetch-debugpy-offline-or-proxy)
 - [Port map](#port-map)
 - [The four setup traps](#the-four-setup-traps)
 - [Verification checklist](#verification-checklist)
@@ -156,6 +157,53 @@ Per-session workflow:
 **Run**, then re-attach in Zed (**F4**). Python module caching means you cannot
 simply continue — a fresh attach is required.
 
+## When Zed cannot fetch debugpy (offline or proxy)
+
+**Symptom.** The debug session never starts and Zed's log
+(`~/Library/Logs/Zed/Zed.log`) shows:
+
+```
+ERROR [debugger_ui::debugger_panel] debugpy installation failed (could not fetch Debugpy's wheel)
+```
+
+**Cause.** Unlike VS Code, Zed's Debugpy adapter runs its **own** copy of
+`debugpy` (a local DAP bridge) that it installs by downloading a wheel from PyPI
+into `~/Library/Application Support/Zed/debug_adapters/Debugpy/`. Zed
+**recreates that folder on every attempt**, so copying `debugpy` into it — or
+into the project `.venv` — does not help on its own. Behind a corporate proxy (or
+fully offline) the download fails and the session aborts.
+
+**Fix — point Zed at an existing debugpy so it skips the download.** In
+`.zed/settings.json`, set `dap.Debugpy.binary` to the `debugpy/adapter` directory
+of any installed debugpy:
+
+```json
+{
+  "lsp": { "…": "…" },
+  "dap": {
+    "Debugpy": {
+      "binary": "/Users/you/Library/Python/3.14/lib/python/site-packages/debugpy/adapter"
+    }
+  }
+}
+```
+
+Zed then runs `<python3> <that path> …` instead of fetching (confirmed in Zed's
+`dap_store.rs` → `python.rs`: a set `binary` short-circuits the install — note
+this is a **settings.json** key, *not* a `debugAdapterPath` field in
+`debug.json`, which the code does not read). The adapter is pure Python and adds
+its own site-packages to `sys.path`, so it runs under whatever `python3` Zed
+picks, regardless of the interpreter that built the `debugpy` you point at.
+
+Use debugpy from **Fusion's user site** (the same one the in-process server uses,
+maintained by `setup-fusion-debug.sh`) or from the repo `.venv`. The
+`setup-fusion-debug.sh` / `zed-enable-addin.sh` scripts now emit this
+`dap.Debugpy.binary` line automatically.
+
+> In Zed's **F4** picker choose the labeled **Attach to Fusion (PowerTools)**
+> entry. The auto-generated per-file / project-root scenarios lack this config
+> and will still try to download.
+
 ## Port map
 
 | Purpose | Host | Port | Where configured |
@@ -188,6 +236,10 @@ These are the non-obvious failures encountered wiring up the Zed workflow
    own `debugpy`, so our `listen()` raises *already called*. `PowerTools.py`
    catches this `RuntimeError`. If it gets in the way, fully quit Fusion (⌘Q) and
    relaunch via Finder/Spotlight — not the Debug button.
+
+A fifth, environment-specific trap — Zed failing to download `debugpy` behind a
+proxy — has its own section:
+[When Zed cannot fetch debugpy](#when-zed-cannot-fetch-debugpy-offline-or-proxy).
 
 ## Verification checklist
 
