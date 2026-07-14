@@ -114,7 +114,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
     try:
         # show a progress bar
         progressBar = ui.progressBar
-        progressBar.showBusy("Generating Share Link"),
+        (progressBar.showBusy("Generating Share Link"),)
 
         # Generate the active document link
 

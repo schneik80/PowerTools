@@ -100,8 +100,8 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     if existing is not None:
         result = ui.messageBox(
             f'"{existing.get("name", active_hub.name)}" is already configured.'
-            f'\n\nProject: {existing.get("project_name", "")}'
-            f'\nFolder: {existing.get("folder_name", "")}'
+            f"\n\nProject: {existing.get('project_name', '')}"
+            f"\nFolder: {existing.get('folder_name', '')}"
             f"\n\nClick OK to choose a new location, or Cancel to leave it unchanged.",
             "Hub Already Configured",
             adsk.core.MessageBoxButtonTypes.OKCancelButtonType,

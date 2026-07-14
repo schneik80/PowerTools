@@ -24,7 +24,7 @@ from .fusion_install import find_river_rubicon_xml
 
 
 Color = Tuple[int, int, int]  # 0..255 ints
-Swatch = Tuple[str, Color]    # (name, rgb)
+Swatch = Tuple[str, Color]  # (name, rgb)
 
 
 def _coerce_unit_float(token: str) -> Optional[float]:

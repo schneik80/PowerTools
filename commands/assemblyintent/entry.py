@@ -85,10 +85,14 @@ def _diag(msg: str) -> None:
     if not config.DEBUG:
         return
     try:
-        app.log(f"[New Assembly] {msg}", adsk.core.LogLevels.InfoLogLevel,
-                adsk.core.LogTypes.ConsoleLogType)
+        app.log(
+            f"[New Assembly] {msg}",
+            adsk.core.LogLevels.InfoLogLevel,
+            adsk.core.LogTypes.ConsoleLogType,
+        )
     except Exception:
         pass
+
 
 # Data-file ids inserted from the palette during this palette-open session.
 # Cleared on every _show_palette() so a fresh palette open starts clean.
@@ -427,7 +431,10 @@ def _send_target_project(palette: adsk.core.Palette) -> None:
     palette.sendInfoToHTML(
         "setTargetProject",
         json.dumps(
-            {"hasProject": folder is not None, "name": cache.target_project_label(folder)}
+            {
+                "hasProject": folder is not None,
+                "name": cache.target_project_label(folder),
+            }
         ),
     )
 

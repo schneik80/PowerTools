@@ -118,7 +118,6 @@ def command_execute(args: adsk.core.CommandEventArgs):
         return
 
     try:
-
         cmdDefs = ui.commandDefinitions
         showShareSettings = cmdDefs.itemById("SimpleSharingPublicLinkCommand")
         showShareSettings.execute()

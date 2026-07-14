@@ -10,7 +10,9 @@ from pathlib import Path
 
 _RSD = (
     Path(__file__).resolve().parent.parent
-    / "commands" / "roundsketchdimensions" / "rounding.py"
+    / "commands"
+    / "roundsketchdimensions"
+    / "rounding.py"
 )
 
 _spec = importlib.util.spec_from_file_location("rsd_rounding", _RSD)

@@ -55,7 +55,9 @@ HIDE_SKETCHES_ID = "hide_sketches"  # Checkbox to hide component sketches
 HIDE_JOINTORIGINS_ID = "hide_jointorigins"  # Checkbox to hide joint origin markers
 HIDE_CANVASES_ID = "hide_canvases"  # Checkbox to hide canvases
 APPLY_INTENT_ID = "apply_intent"  # Checkbox to apply design intent before saving
-PAUSE_TIME_ID = "pause_time"  # Text input for upload completion poll interval in seconds
+PAUSE_TIME_ID = (
+    "pause_time"  # Text input for upload completion poll interval in seconds
+)
 LOG_ENABLE_ID = "enable_log"  # Checkbox to enable progress logging
 LOG_PATH_ID = "log_path"  # Text input for custom log file path
 LOG_BROWSE_ID = "browse_log"  # Button to browse for log file location
@@ -198,9 +200,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         3,
         True,
     )
-    resume_status_input.tooltip = (
-        "Startup check based on temp log, Fusion client version, and current bottom-up list."
-    )
+    resume_status_input.tooltip = "Startup check based on temp log, Fusion client version, and current bottom-up list."
 
     advanced_group = main_inputs.addGroupCommandInput("advancedGroup", "Advanced")
     advanced_group.isExpanded = False
@@ -210,9 +210,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     pause_time_input = advanced_inputs.addStringValueInput(
         PAUSE_TIME_ID, "Upload check interval (seconds)", "0.5"
     )
-    pause_time_input.tooltip = (
-        "How often to check upload status after each save. Lower values react faster, higher values reduce CPU usage."
-    )
+    pause_time_input.tooltip = "How often to check upload status after each save. Lower values react faster, higher values reduce CPU usage."
 
     # Visualization tab
     vis_tab = inputs.addTabCommandInput("visTab", "Visibility")
@@ -265,9 +263,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     open_view = log_inputs.addBoolValueInput(
         LOG_OPEN_VIEW_ID, "Open live log viewer", True, "", True
     )
-    open_view.tooltip = (
-        "Automatically opens a system console window to live-monitor log output while the command runs."
-    )
+    open_view.tooltip = "Automatically opens a system console window to live-monitor log output while the command runs."
 
     log_path.isEnabled = log_enable.value
     browse_btn.isEnabled = log_enable.value
@@ -719,8 +715,6 @@ def execute_command_with_timeout(
         ptutil.pump_events_for(poll_interval)
 
 
-
-
 def _suspend_autosave(log_fn=None):
     """Temporarily disable Fusion's background autosave for the current run.
 
@@ -828,7 +822,11 @@ def command_execute(args: adsk.core.CommandEventArgs):
             if doc == top_document:
                 return True
             try:
-                return bool(top_document_id and doc.dataFile and doc.dataFile.id == top_document_id)
+                return bool(
+                    top_document_id
+                    and doc.dataFile
+                    and doc.dataFile.id == top_document_id
+                )
             except Exception:
                 return False
 
@@ -1050,9 +1048,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
                     fh.write(
                         f"  Resume requested: {resume_info.get('should_resume', False)}\n"
                     )
-                    fh.write(
-                        f"  Resume start index: {resume_start_index}\n"
-                    )
+                    fh.write(f"  Resume start index: {resume_start_index}\n")
                     fh.write("\nBottom-up order:\n")
                     fh.write(
                         "\n".join(
@@ -1149,9 +1145,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
             parent_project = None
             try:
                 # Get the project name to check if it's a standard component
-                parent_project = (
-                    parent_document.dataFile.parentProject.name
-                )
+                parent_project = parent_document.dataFile.parentProject.name
             except Exception:
                 parent_project = None
 
@@ -1213,17 +1207,13 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 # skip them unless the user opted in to processing them.
                 config_label = _configuration_label(document)
                 if config_label and skip_configs:
-                    log_entry = (
-                        f"Skipping {config_label}: {component_name}"
-                    )
+                    log_entry = f"Skipping {config_label}: {component_name}"
                     ptutil.log(log_entry)
                     write_log_entry(log_entry)
                     progress_bar.message = f"Skipping {config_label}: {component_name} ({processed_count} of {docCount})"
                     continue
                 if config_label:
-                    write_log_entry(
-                        f"   Note: {component_name} is a {config_label}"
-                    )
+                    write_log_entry(f"   Note: {component_name} is a {config_label}")
 
                 # Drain pending events (e.g. configuration/PIM cache updates
                 # from prior saves) before opening the next document; the
@@ -1325,7 +1315,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
                     if sketch_count > 0 or body_count > 0:
                         # Has children AND has sketches or bodies = hybrid assembly
-                        intent_type = adsk.fusion.DesignIntentTypes.HybridDesignIntentType
+                        intent_type = (
+                            adsk.fusion.DesignIntentTypes.HybridDesignIntentType
+                        )
                         intent_label = "hybrid assembly"
                         ptutil.log(
                             f"   Applying hybrid assembly intent to {component_name} ({child_count} children, {sketch_count} sketches, {body_count} bodies)"
@@ -1335,7 +1327,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
                         )
                     else:
                         # Has children but no sketches or bodies = regular assembly
-                        intent_type = adsk.fusion.DesignIntentTypes.AssemblyDesignIntentType
+                        intent_type = (
+                            adsk.fusion.DesignIntentTypes.AssemblyDesignIntentType
+                        )
                         intent_label = "assembly"
                         ptutil.log(
                             f"   Applying assembly intent to {component_name} ({child_count} children, no sketches/bodies)"
@@ -1346,8 +1340,12 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
                 try:
                     des.designIntent = intent_type
-                    ptutil.log(f"   {intent_label.capitalize()} intent applied to {component_name}")
-                    write_log_entry(f"   {intent_label.capitalize()} intent applied to {component_name}")
+                    ptutil.log(
+                        f"   {intent_label.capitalize()} intent applied to {component_name}"
+                    )
+                    write_log_entry(
+                        f"   {intent_label.capitalize()} intent applied to {component_name}"
+                    )
                 except Exception as intent_error:
                     ptutil.log(
                         f"   Failed to apply {intent_label} intent to {component_name}: {intent_error}"
@@ -1386,7 +1384,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
             active_doc = app.activeDocument
             pre_save_version = None
             try:
-                if active_doc.dataFile and hasattr(active_doc.dataFile, "versionNumber"):
+                if active_doc.dataFile and hasattr(
+                    active_doc.dataFile, "versionNumber"
+                ):
                     pre_save_version = active_doc.dataFile.versionNumber
             except Exception:
                 pre_save_version = None

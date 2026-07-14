@@ -232,7 +232,9 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
         # row-selection, so we also trigger off the row's checkbox / joint
         # dropdown (which always fire) - clicking either highlights the pair.
         if changed.id == TABLE_ID:
-            _highlight_selected_row(args.inputs, adsk.core.TableCommandInput.cast(changed))
+            _highlight_selected_row(
+                args.inputs, adsk.core.TableCommandInput.cast(changed)
+            )
             return
         cand = _candidate_for_input(changed.id)
         if cand is not None:
@@ -514,9 +516,7 @@ def _rescan(design, inputs):
                     )
                 return
             _large_scan_confirmed = True
-            bar = _begin_scan_progress(
-                f"{CMD_NAME}: comparing {n_faces:,} faces…"
-            )
+            bar = _begin_scan_progress(f"{CMD_NAME}: comparing {n_faces:,} faces…")
 
         _candidates, stats = _infer(design, faces, stats, lin_tol, ang_tol)
     finally:
@@ -661,15 +661,23 @@ def _add_body_faces(records, body, src, name):
             cyl = adsk.core.Cylinder.cast(geom)
             if cyl:
                 records.append(
-                    _FaceRec(src, name, "cyl", cyl.origin, _unit(cyl.axis),
-                             cyl.radius, face)
+                    _FaceRec(
+                        src, name, "cyl", cyl.origin, _unit(cyl.axis), cyl.radius, face
+                    )
                 )
                 continue
             plane = adsk.core.Plane.cast(geom)
             if plane:
                 records.append(
-                    _FaceRec(src, name, "plane", plane.origin,
-                             _unit(plane.normal), None, face)
+                    _FaceRec(
+                        src,
+                        name,
+                        "plane",
+                        plane.origin,
+                        _unit(plane.normal),
+                        None,
+                        face,
+                    )
                 )
         except Exception as face_err:
             ptutil.log(f"{CMD_NAME}: skipped a face ({face_err})")
@@ -1022,14 +1030,17 @@ def _max_move_cm(saved):
     for occ, before in saved:
         after = occ.transform2
         r = _probe_radius_cm(occ)
-        for px, py, pz in ((0.0, 0.0, 0.0), (r, 0.0, 0.0), (0.0, r, 0.0), (0.0, 0.0, r)):
+        for px, py, pz in (
+            (0.0, 0.0, 0.0),
+            (r, 0.0, 0.0),
+            (0.0, r, 0.0),
+            (0.0, 0.0, r),
+        ):
             pb = adsk.core.Point3D.create(px, py, pz)
             pb.transformBy(before)
             pa = adsk.core.Point3D.create(px, py, pz)
             pa.transformBy(after)
-            d = math.sqrt(
-                (pa.x - pb.x) ** 2 + (pa.y - pb.y) ** 2 + (pa.z - pb.z) ** 2
-            )
+            d = math.sqrt((pa.x - pb.x) ** 2 + (pa.y - pb.y) ** 2 + (pa.z - pb.z) ** 2)
             worst = max(worst, d)
     return worst
 

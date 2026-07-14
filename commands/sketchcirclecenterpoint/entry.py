@@ -40,24 +40,26 @@ local_handlers = []
 # ---------------------------------------------------------------------------
 # Preview state – shared between event handlers
 # ---------------------------------------------------------------------------
-_preview_center_model: adsk.core.Point3D | None = None   # world-space center
-_preview_sketch: adsk.fusion.Sketch | None = None         # active sketch ref
-_preview_selected_entity = None                           # original SketchPoint/Vertex
-_cmd_inputs: adsk.core.CommandInputs | None = None        # live command inputs
-_active_command: adsk.core.Command | None = None          # command ref for deferred execute
+_preview_center_model: adsk.core.Point3D | None = None  # world-space center
+_preview_sketch: adsk.fusion.Sketch | None = None  # active sketch ref
+_preview_selected_entity = None  # original SketchPoint/Vertex
+_cmd_inputs: adsk.core.CommandInputs | None = None  # live command inputs
+_active_command: adsk.core.Command | None = None  # command ref for deferred execute
 
 # args.position (MouseEventArgs) is in application-window coordinates while
 # viewport.modelToViewSpace() returns viewport-local coordinates.  The two
 # spaces share the same scale but differ by a constant offset equal to the
 # viewport's top-left corner within the application window.  We calibrate
 # this offset once at selection time and apply it on every mouseMove.
-_selection_click_pos: adsk.core.Point2D | None = None   # window coords of the selection click
-_vp_offset_x: float = 0.0   # window_x - viewport_local_x
+_selection_click_pos: adsk.core.Point2D | None = (
+    None  # window coords of the selection click
+)
+_vp_offset_x: float = 0.0  # window_x - viewport_local_x
 _vp_offset_y: float = 0.0
 
 # Tag used to find / delete the preview graphics group each frame.
-_PREVIEW_GFX_NAME  = f"{CMD_ID}_preview"
-_COMMIT_EVENT_ID   = f"{CMD_ID}_commit"   # custom event used to defer doExecute
+_PREVIEW_GFX_NAME = f"{CMD_ID}_preview"
+_COMMIT_EVENT_ID = f"{CMD_ID}_commit"  # custom event used to defer doExecute
 
 # Set to True once geometry has been committed so neither a second click
 # nor the OK-button fallback creates duplicate geometry.
@@ -68,6 +70,7 @@ _geometry_created: bool = False
 # Add-in lifecycle
 # ---------------------------------------------------------------------------
 
+
 def start() -> None:
     try:
         cmd_def = ui.commandDefinitions.addButtonDefinition(
@@ -77,12 +80,16 @@ def start() -> None:
 
         sketch_tab = ui.allToolbarTabs.itemById(TAB_ID)
         if not sketch_tab:
-            ptutil.log(f"{CMD_NAME}: Toolbar tab '{TAB_ID}' not found – command not added to UI.")
+            ptutil.log(
+                f"{CMD_NAME}: Toolbar tab '{TAB_ID}' not found – command not added to UI."
+            )
             return
 
         panel = sketch_tab.toolbarPanels.itemById(PANEL_ID)
         if not panel:
-            ptutil.log(f"{CMD_NAME}: Panel '{PANEL_ID}' not found in '{TAB_ID}' – command not added to UI.")
+            ptutil.log(
+                f"{CMD_NAME}: Panel '{PANEL_ID}' not found in '{TAB_ID}' – command not added to UI."
+            )
             return
 
         control = panel.controls.addCommand(cmd_def)
@@ -112,6 +119,7 @@ def stop() -> None:
 # ---------------------------------------------------------------------------
 # Command created – builds dialog UI and wires up event handlers
 # ---------------------------------------------------------------------------
+
 
 def command_created(args: adsk.core.CommandCreatedEventArgs) -> None:
     global _cmd_inputs, _active_command
@@ -158,20 +166,32 @@ def command_created(args: adsk.core.CommandCreatedEventArgs) -> None:
         )
 
         # Wire up all event handlers
-        ptutil.add_handler(cmd.execute,         command_execute,         local_handlers=local_handlers)
-        ptutil.add_handler(cmd.executePreview,  command_execute_preview, local_handlers=local_handlers)
-        ptutil.add_handler(cmd.validateInputs,  command_validate,        local_handlers=local_handlers)
-        ptutil.add_handler(cmd.inputChanged,    command_input_changed,   local_handlers=local_handlers)
-        ptutil.add_handler(cmd.mouseMove,       command_mouse_move,      local_handlers=local_handlers)
-        ptutil.add_handler(cmd.mouseClick,      command_mouse_click,     local_handlers=local_handlers)
-        ptutil.add_handler(cmd.destroy,         command_destroy,         local_handlers=local_handlers)
+        ptutil.add_handler(cmd.execute, command_execute, local_handlers=local_handlers)
+        ptutil.add_handler(
+            cmd.executePreview, command_execute_preview, local_handlers=local_handlers
+        )
+        ptutil.add_handler(
+            cmd.validateInputs, command_validate, local_handlers=local_handlers
+        )
+        ptutil.add_handler(
+            cmd.inputChanged, command_input_changed, local_handlers=local_handlers
+        )
+        ptutil.add_handler(
+            cmd.mouseMove, command_mouse_move, local_handlers=local_handlers
+        )
+        ptutil.add_handler(
+            cmd.mouseClick, command_mouse_click, local_handlers=local_handlers
+        )
+        ptutil.add_handler(cmd.destroy, command_destroy, local_handlers=local_handlers)
 
         # Register the custom event used to defer doExecute outside the mouse
         # event stack (Fusion raises RuntimeError if doExecute is called from
         # within any command event handler).
         app_local = adsk.core.Application.get()
         custom_event = app_local.registerCustomEvent(_COMMIT_EVENT_ID)
-        ptutil.add_handler(custom_event, custom_event_commit, local_handlers=local_handlers)
+        ptutil.add_handler(
+            custom_event, custom_event_commit, local_handlers=local_handlers
+        )
 
     except Exception:
         ui.messageBox(f"{CMD_NAME}: Setup failed.\n{traceback.format_exc()}", CMD_NAME)
@@ -180,6 +200,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs) -> None:
 # ---------------------------------------------------------------------------
 # inputChanged – capture center point as soon as it is selected
 # ---------------------------------------------------------------------------
+
 
 def command_input_changed(args: adsk.core.InputChangedEventArgs) -> None:
     global _preview_center_model, _preview_sketch, _preview_selected_entity
@@ -207,7 +228,7 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs) -> None:
             # world-space position (same pipeline used everywhere else in this
             # command).  worldGeometry can silently return the origin for some
             # sketch point types.
-            local_pt = sk_pt.geometry   # Point3D in sketch 2-D coords (z=0)
+            local_pt = sk_pt.geometry  # Point3D in sketch 2-D coords (z=0)
             _preview_center_model = _preview_sketch.sketchToModelSpace(
                 adsk.core.Point3D.create(local_pt.x, local_pt.y, 0.0)
             )
@@ -247,6 +268,7 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs) -> None:
 # mouseMove – live preview circle via Custom Graphics
 # ---------------------------------------------------------------------------
 
+
 def command_mouse_move(args: adsk.core.MouseEventArgs) -> None:
     global _cmd_inputs
 
@@ -280,6 +302,7 @@ def command_mouse_move(args: adsk.core.MouseEventArgs) -> None:
 # ---------------------------------------------------------------------------
 # mouseClick – lock diameter at click position and commit the command
 # ---------------------------------------------------------------------------
+
 
 def command_mouse_click(args: adsk.core.MouseEventArgs) -> None:
     global _selection_click_pos
@@ -336,13 +359,14 @@ def command_mouse_click(args: adsk.core.MouseEventArgs) -> None:
 # custom_event_commit – deferred commit, fires after the mouse event unwinds
 # ---------------------------------------------------------------------------
 
+
 def custom_event_commit(args: adsk.core.CustomEventArgs) -> None:
     """Fired asynchronously after mouseClick unwinds. Calls doExecute(True) to
     run the execute handler and close the command. command_execute is guarded
     by _geometry_created so it skips geometry that was already created."""
     try:
         if _active_command is not None:
-            _active_command.doExecute(True)    # True = run execute then close
+            _active_command.doExecute(True)  # True = run execute then close
     except Exception:
         ptutil.log(f"{CMD_NAME} custom_event_commit failed:\n{traceback.format_exc()}")
 
@@ -350,6 +374,7 @@ def custom_event_commit(args: adsk.core.CustomEventArgs) -> None:
 # ---------------------------------------------------------------------------
 # executePreview – redraws graphics whenever a dialog input changes
 # ---------------------------------------------------------------------------
+
 
 def command_execute_preview(args: adsk.core.CommandEventArgs) -> None:
     # Do not actually commit geometry here; just update the graphics preview.
@@ -371,6 +396,7 @@ def command_execute_preview(args: adsk.core.CommandEventArgs) -> None:
 # Validate inputs – keeps OK button disabled until required data is present
 # ---------------------------------------------------------------------------
 
+
 def command_validate(args: adsk.core.ValidateInputsEventArgs) -> None:
     # The center selection input is hidden after picking, so we check the
     # module-level state variable rather than the (now-hidden) selection count.
@@ -387,6 +413,7 @@ def command_validate(args: adsk.core.ValidateInputsEventArgs) -> None:
 # ---------------------------------------------------------------------------
 # Execute – fallback for OK-button press (geometry normally created on click)
 # ---------------------------------------------------------------------------
+
 
 def command_execute(args: adsk.core.CommandEventArgs) -> None:
     _clear_preview()
@@ -416,8 +443,19 @@ def command_execute(args: adsk.core.CommandEventArgs) -> None:
 # Destroy – release event handler references
 # ---------------------------------------------------------------------------
 
+
 def command_destroy(args: adsk.core.CommandEventArgs) -> None:
-    global local_handlers, _cmd_inputs, _preview_center_model, _preview_sketch, _preview_selected_entity, _active_command, _geometry_created, _selection_click_pos, _vp_offset_x, _vp_offset_y
+    global \
+        local_handlers, \
+        _cmd_inputs, \
+        _preview_center_model, \
+        _preview_sketch, \
+        _preview_selected_entity, \
+        _active_command, \
+        _geometry_created, \
+        _selection_click_pos, \
+        _vp_offset_x, \
+        _vp_offset_y
     _clear_preview()
     # Unregister the custom event so it doesn't accumulate across re-runs.
     try:
@@ -441,6 +479,7 @@ def command_destroy(args: adsk.core.CommandEventArgs) -> None:
 # Helpers
 # ===========================================================================
 
+
 def _create_sketch_geometry(radius: float) -> None:
     """
     Create the construction circle, diameter dimension, constrained sketch
@@ -453,7 +492,9 @@ def _create_sketch_geometry(radius: float) -> None:
         selected_entity = _preview_selected_entity
 
         if sketch is None or center_model is None:
-            ptutil.log(f"{CMD_NAME}: _create_sketch_geometry called with no sketch/center.")
+            ptutil.log(
+                f"{CMD_NAME}: _create_sketch_geometry called with no sketch/center."
+            )
             return
 
         # Map world-space center → sketch-local 2D
@@ -470,12 +511,16 @@ def _create_sketch_geometry(radius: float) -> None:
         )
 
         # 1. Construction circle (diameter / 2-point method)
-        circle = sketch.sketchCurves.sketchCircles.addByTwoPoints(left_model, right_model)
+        circle = sketch.sketchCurves.sketchCircles.addByTwoPoints(
+            left_model, right_model
+        )
         circle.isConstruction = True
 
         # 2. Coincident: circle center → selected sketch point
         if selected_entity is not None:
-            sketch.geometricConstraints.addCoincident(circle.centerSketchPoint, selected_entity)
+            sketch.geometricConstraints.addCoincident(
+                circle.centerSketchPoint, selected_entity
+            )
 
         # 3. Diameter dimension
         dim_text_model = sketch.sketchToModelSpace(
@@ -509,6 +554,7 @@ def _create_sketch_geometry(radius: float) -> None:
 
     except Exception:
         ui.messageBox(f"{CMD_NAME} failed:\n{traceback.format_exc()}", CMD_NAME)
+
 
 def _clear_preview() -> None:
     """
@@ -567,7 +613,7 @@ def _update_preview(radius: float, hit: adsk.core.Point3D | None = None) -> None
         # We compute the model-space arm length that projects to PX_ARM pixels
         # on screen by sampling the local screen-space basis at the hit point.
         if hit is not None:
-            PX_ARM = 8   # half-length of each crosshair arm, in pixels
+            PX_ARM = 8  # half-length of each crosshair arm, in pixels
             sketch = _preview_sketch
             hit_local = sketch.modelToSketchSpace(hit)
             hx, hy = hit_local.x, hit_local.y
@@ -593,12 +639,20 @@ def _update_preview(radius: float, hit: adsk.core.Point3D | None = None) -> None
                 arm_x = PX_ARM / px_per_cm_x if px_per_cm_x > 1e-9 else 0.4
                 arm_y = PX_ARM / px_per_cm_y if px_per_cm_y > 1e-9 else 0.4
             else:
-                arm_x = arm_y = 0.4   # fallback: ~4 mm
+                arm_x = arm_y = 0.4  # fallback: ~4 mm
 
-            h0 = sketch.sketchToModelSpace(adsk.core.Point3D.create(hx - arm_x, hy, 0.0))
-            h1 = sketch.sketchToModelSpace(adsk.core.Point3D.create(hx + arm_x, hy, 0.0))
-            v0 = sketch.sketchToModelSpace(adsk.core.Point3D.create(hx, hy - arm_y, 0.0))
-            v1 = sketch.sketchToModelSpace(adsk.core.Point3D.create(hx, hy + arm_y, 0.0))
+            h0 = sketch.sketchToModelSpace(
+                adsk.core.Point3D.create(hx - arm_x, hy, 0.0)
+            )
+            h1 = sketch.sketchToModelSpace(
+                adsk.core.Point3D.create(hx + arm_x, hy, 0.0)
+            )
+            v0 = sketch.sketchToModelSpace(
+                adsk.core.Point3D.create(hx, hy - arm_y, 0.0)
+            )
+            v1 = sketch.sketchToModelSpace(
+                adsk.core.Point3D.create(hx, hy + arm_y, 0.0)
+            )
 
             for p0, p1 in ((h0, h1), (v0, v1)):
                 lg = graphics.addCurve(adsk.core.Line3D.create(p0, p1))
@@ -625,9 +679,9 @@ def _mouse_to_sketch_plane(
     only as a raw 2-D value – no NDC conversion, no camera math needed.
     """
     try:
-        viewport   = args.viewport
-        mouse_pos  = args.position   # Point2D – raw coords, any space
-        sketch     = _preview_sketch
+        viewport = args.viewport
+        mouse_pos = args.position  # Point2D – raw coords, any space
+        sketch = _preview_sketch
         center_mdl = _preview_center_model
 
         # Project world-space center and two 1-cm reference points to screen.
@@ -639,19 +693,21 @@ def _mouse_to_sketch_plane(
             adsk.core.Point3D.create(center_local.x, center_local.y + 1.0, 0.0)
         )
 
-        cs  = viewport.modelToViewSpace(center_mdl)
+        cs = viewport.modelToViewSpace(center_mdl)
         rxs = viewport.modelToViewSpace(ref_x_mdl)
         rys = viewport.modelToViewSpace(ref_y_mdl)
         if cs is None or rxs is None or rys is None:
             return None
 
         # 2-D screen-space basis vectors (screen units per 1 cm in each sketch axis).
-        sxx = rxs.x - cs.x;  sxy = rxs.y - cs.y   # sketch-X direction on screen
-        syx = rys.x - cs.x;  syy = rys.y - cs.y   # sketch-Y direction on screen
+        sxx = rxs.x - cs.x
+        sxy = rxs.y - cs.y  # sketch-X direction on screen
+        syx = rys.x - cs.x
+        syy = rys.y - cs.y  # sketch-Y direction on screen
 
         det = sxx * syy - sxy * syx
         if abs(det) < 1e-9:
-            return None   # sketch is edge-on to the camera
+            return None  # sketch is edge-on to the camera
 
         # Convert args.position (window coords) to viewport-local coords by
         # subtracting the calibrated viewport origin offset, then compute the
@@ -664,8 +720,8 @@ def _mouse_to_sketch_plane(
         # Solve the 2×2 system to get sketch-local coords (a, b) in cm.
         # [ sxx  syx ] [ a ]   [ dx ]
         # [ sxy  syy ] [ b ] = [ dy ]
-        a = ( dx * syy - dy * syx) / det   # cm along sketch-X
-        b = (-dx * sxy + dy * sxx) / det   # cm along sketch-Y
+        a = (dx * syy - dy * syx) / det  # cm along sketch-X
+        b = (-dx * sxy + dy * sxx) / det  # cm along sketch-Y
 
         radius = math.sqrt(a * a + b * b)
         if radius < 1e-6:
@@ -678,6 +734,7 @@ def _mouse_to_sketch_plane(
         return hit
 
     except Exception:
-        ptutil.log(f"{CMD_NAME} _mouse_to_sketch_plane failed:\n{traceback.format_exc()}")
+        ptutil.log(
+            f"{CMD_NAME} _mouse_to_sketch_plane failed:\n{traceback.format_exc()}"
+        )
         return None
-

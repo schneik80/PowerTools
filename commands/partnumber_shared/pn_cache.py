@@ -72,8 +72,7 @@ class Snapshot:
 # ---------------------------------------------------------------------------
 
 
-def download_snapshot(folder: adsk.core.DataFolder,
-                      tmp_dir: str) -> Snapshot:
+def download_snapshot(folder: adsk.core.DataFolder, tmp_dir: str) -> Snapshot:
     """Download pn-cache.json from *folder* and return a Snapshot.
 
     Returns an empty snapshot (counters all zero, source_version_number=0)
@@ -113,7 +112,9 @@ def download_snapshot(folder: adsk.core.DataFolder,
     if isinstance(schemes_obj, dict):
         for k, v in schemes_obj.items():
             try:
-                counters[str(k)] = int(v.get("lastUsed", 0)) if isinstance(v, dict) else 0
+                counters[str(k)] = (
+                    int(v.get("lastUsed", 0)) if isinstance(v, dict) else 0
+                )
             except Exception:
                 counters[str(k)] = 0
 
@@ -137,7 +138,9 @@ def download_snapshot(folder: adsk.core.DataFolder,
 def _serialize(counters: Dict[str, int], updated_by: str) -> bytes:
     payload = {
         "version": CACHE_SCHEMA_VERSION,
-        "schemes": {p: {"lastUsed": int(counters.get(p, 0))} for p in schemes.SCHEME_PREFIXES},
+        "schemes": {
+            p: {"lastUsed": int(counters.get(p, 0))} for p in schemes.SCHEME_PREFIXES
+        },
         "updatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "updatedBy": updated_by or "",
     }
@@ -194,11 +197,13 @@ def _wait_for_upload(future, progress_label: str = "") -> None:
     )
 
 
-def upload_snapshot(folder: adsk.core.DataFolder,
-                    counters: Dict[str, int],
-                    updated_by: str,
-                    tmp_dir: str,
-                    progress_label: str = "") -> int:
+def upload_snapshot(
+    folder: adsk.core.DataFolder,
+    counters: Dict[str, int],
+    updated_by: str,
+    tmp_dir: str,
+    progress_label: str = "",
+) -> int:
     """Upload the given counters as a new version of pn-cache.json.
 
     Returns the new latest version number (>= 1). Raises PnCacheError on
@@ -245,10 +250,12 @@ class CommitResult:
     retries_used: int
 
 
-def commit_assignments(app: adsk.core.Application,
-                       increments: Dict[str, int],
-                       updated_by: str,
-                       tmp_dir: str) -> CommitResult:
+def commit_assignments(
+    app: adsk.core.Application,
+    increments: Dict[str, int],
+    updated_by: str,
+    tmp_dir: str,
+) -> CommitResult:
     """Atomically bump the named scheme counters in pn-cache.json.
 
     ``increments`` maps prefix -> how many numbers to reserve. The returned
@@ -286,7 +293,10 @@ def commit_assignments(app: adsk.core.Application,
                 )
 
             new_version = upload_snapshot(
-                folder, new_counters, updated_by, tmp_dir,
+                folder,
+                new_counters,
+                updated_by,
+                tmp_dir,
                 progress_label=label,
             )
 

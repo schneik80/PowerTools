@@ -355,7 +355,9 @@ def _make_navigate_handler(urn: str, display: str):
                     "Favorites",
                 )
 
-        ptutil.add_handler(args.command.execute, _execute, local_handlers=local_handlers)
+        ptutil.add_handler(
+            args.command.execute, _execute, local_handlers=local_handlers
+        )
 
     return _created
 

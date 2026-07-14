@@ -17,7 +17,9 @@ ui = app.userInterface
 
 CMD_NAME = "Sketch Repair"
 CMD_ID = "PTPM-sketchfix"
-CMD_Description = "Attempt to repair a sketch with small gaps or disconnected endpoints."
+CMD_Description = (
+    "Attempt to repair a sketch with small gaps or disconnected endpoints."
+)
 IS_PROMOTED = False
 
 # Global variables by referencing values from /config.py

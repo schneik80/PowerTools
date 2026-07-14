@@ -25,7 +25,7 @@ def add_handler(
     callback: Callable,
     *,
     name: str = None,
-    local_handlers: list = None
+    local_handlers: list = None,
 ):
     """Adds an event handler to the specified event.
 

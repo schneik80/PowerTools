@@ -151,7 +151,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
             except Exception:
                 return False
 
-        def _collect_roots(data_file, visited_ids: set, root_ids: set, root_items: list, depth: int = 0):
+        def _collect_roots(
+            data_file, visited_ids: set, root_ids: set, root_items: list, depth: int = 0
+        ):
             """Recursively walk parent references, collecting files that have no
             non-drawing, non-related parents as roots.
 
@@ -181,14 +183,18 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                 parents = data_file.parentReferences
             except Exception:
                 parents = []
-                ptutil.log(f"[Roots]{indent} WARNING — parentReferences raised, treating as root: '{fname}'")
+                ptutil.log(
+                    f"[Roots]{indent} WARNING — parentReferences raised, treating as root: '{fname}'"
+                )
 
             all_parent_names = [getattr(p, "name", "?") for p in (parents or [])]
-            ptutil.log(f"[Roots]{indent} '{fname}' raw parents ({len(all_parent_names)}): {all_parent_names}")
+            ptutil.log(
+                f"[Roots]{indent} '{fname}' raw parents ({len(all_parent_names)}): {all_parent_names}"
+            )
 
             # Filter to only meaningful parents (skip drawings and related data).
             real_parents = []
-            for p in (parents or []):
+            for p in parents or []:
                 pname = getattr(p, "name", "?")
                 if _is_drawing(p):
                     ptutil.log(f"[Roots]{indent} SKIP parent (drawing): '{pname}'")
@@ -203,13 +209,17 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                 if fid == _active_doc_id:
                     ptutil.log(f"[Roots]{indent} SKIP — is active document: '{fname}'")
                 elif fid in root_ids:
-                    ptutil.log(f"[Roots]{indent} SKIP — already in roots list: '{fname}'")
+                    ptutil.log(
+                        f"[Roots]{indent} SKIP — already in roots list: '{fname}'"
+                    )
                 else:
                     ptutil.log(f"[Roots]{indent} ROOT FOUND: '{fname}'")
                     root_ids.add(fid)
                     root_items.append(make_file_data(data_file))
             else:
-                ptutil.log(f"[Roots]{indent} '{fname}' has {len(real_parents)} real parent(s) — recursing")
+                ptutil.log(
+                    f"[Roots]{indent} '{fname}' has {len(real_parents)} real parent(s) — recursing"
+                )
                 for parent in real_parents:
                     _collect_roots(parent, visited_ids, root_ids, root_items, depth + 1)
 
@@ -405,10 +415,10 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
             grp = group.children
 
-            def _set_row_tooltip(input_obj, item_name, thumb_path, action_text=None, path=None):
-                short_desc = (
-                    f"{action_text}: {item_name}" if action_text else item_name
-                )
+            def _set_row_tooltip(
+                input_obj, item_name, thumb_path, action_text=None, path=None
+            ):
+                short_desc = f"{action_text}: {item_name}" if action_text else item_name
                 try:
                     input_obj.tooltip = short_desc
                 except Exception:
@@ -435,7 +445,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                 name_in = grp.addTextBoxCommandInput(
                     f"{prefix}_name_{i}", "", html.escape(item["name"]), 1, True
                 )
-                _set_row_tooltip(name_in, item["name"], thumb_path, path=item.get("path"))
+                _set_row_tooltip(
+                    name_in, item["name"], thumb_path, path=item.get("path")
+                )
 
                 if item.get("file"):
                     open_btn = grp.addBoolValueInput(
@@ -453,7 +465,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                     open_btn = grp.addTextBoxCommandInput(
                         f"{prefix}_nopen_{i}", "", "–", 1, True
                     )
-                    _set_row_tooltip(open_btn, item["name"], thumb_path, path=item.get("path"))
+                    _set_row_tooltip(
+                        open_btn, item["name"], thumb_path, path=item.get("path")
+                    )
 
                 if item.get("url"):
                     web_btn = grp.addBoolValueInput(
@@ -471,7 +485,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                     web_btn = grp.addTextBoxCommandInput(
                         f"{prefix}_nweb_{i}", "", "–", 1, True
                     )
-                    _set_row_tooltip(web_btn, item["name"], thumb_path, path=item.get("path"))
+                    _set_row_tooltip(
+                        web_btn, item["name"], thumb_path, path=item.get("path")
+                    )
 
                 table.addCommandInput(name_in, i, 0)
                 table.addCommandInput(open_btn, i, 1)

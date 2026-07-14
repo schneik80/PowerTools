@@ -27,7 +27,9 @@ ui = app.userInterface
 
 CMD_NAME = "Version Diff"
 CMD_ID = "PTND-versiondiff"
-CMD_Description = "Compare timeline differences between two versions of the active document"
+CMD_Description = (
+    "Compare timeline differences between two versions of the active document"
+)
 IS_PROMOTED = True
 
 # Global variables by referencing values from /config.py
@@ -100,7 +102,8 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
             ui.messageBox(
                 "The active document must be saved before you can compare versions.",
                 "Document Not Saved",
-                0, 2,
+                0,
+                2,
             )
             args.command.doExecute(True)  # cancel
             return
@@ -112,7 +115,8 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
             ui.messageBox(
                 "Version Diff requires an active Fusion 3D design.",
                 "No Design Found",
-                0, 2,
+                0,
+                2,
             )
             args.command.doExecute(True)
             return
@@ -123,7 +127,8 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                 "Version Diff requires a parametric (timeline) design.\n"
                 "Direct modeling designs do not have a timeline to compare.",
                 "Direct Design Not Supported",
-                0, 2,
+                0,
+                2,
             )
             args.command.doExecute(True)
             return
@@ -136,7 +141,8 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                 "This document has only one version.\n"
                 "Save at least one more version before comparing.",
                 "Insufficient Versions",
-                0, 2,
+                0,
+                2,
             )
             args.command.doExecute(True)
             return
@@ -153,7 +159,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
             inputs = cmd.commandInputs
 
             # Current version info group
-            info_group = inputs.addGroupCommandInput("current_version_info", "Current Version")
+            info_group = inputs.addGroupCommandInput(
+                "current_version_info", "Current Version"
+            )
             info_group.isEnabledCheckBoxDisplayed = False
             info_group.isExpanded = True
 
@@ -163,7 +171,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
             version_num = data_file.versionNumber
             date_str = ""
             if data_file.dateModified:
-                date_str = datetime.fromtimestamp(data_file.dateModified).strftime("%Y-%m-%d %H:%M:%S")
+                date_str = datetime.fromtimestamp(data_file.dateModified).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
             updated_by = ""
             if data_file.lastUpdatedBy:
                 updated_by = data_file.lastUpdatedBy.displayName
@@ -173,31 +183,41 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
             adsk.doEvents()
 
             group_inputs.addTextBoxCommandInput(
-                "info_version", "Version",
+                "info_version",
+                "Version",
                 f"<b>Version {version_num}</b> of {data_file.latestVersionNumber}",
-                1, True,
+                1,
+                True,
             )
             group_inputs.addTextBoxCommandInput(
-                "info_date", "Date Saved",
+                "info_date",
+                "Date Saved",
                 date_str,
-                1, True,
+                1,
+                True,
             )
             group_inputs.addTextBoxCommandInput(
-                "info_user", "Saved By",
+                "info_user",
+                "Saved By",
                 updated_by,
-                1, True,
+                1,
+                True,
             )
             group_inputs.addTextBoxCommandInput(
-                "info_desc", "Description",
+                "info_desc",
+                "Description",
                 description,
-                1, True,
+                1,
+                True,
             )
 
             # --- Version Summary group (collapsed by default) ---
             progress.message = "Version Diff — Gathering version summary..."
             adsk.doEvents()
 
-            summary_group = inputs.addGroupCommandInput("version_summary", "Version Summary")
+            summary_group = inputs.addGroupCommandInput(
+                "version_summary", "Version Summary"
+            )
             summary_group.isEnabledCheckBoxDisplayed = False
             summary_group.isExpanded = False
 
@@ -222,7 +242,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                         earliest_date = d
                     if latest_date is None or d > latest_date:
                         latest_date = d
-                        latest_user = ver.lastUpdatedBy.displayName if ver.lastUpdatedBy else ""
+                        latest_user = (
+                            ver.lastUpdatedBy.displayName if ver.lastUpdatedBy else ""
+                        )
                 try:
                     if ver.isMilestone:
                         milestone_count += 1
@@ -244,12 +266,18 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                 for i in range(mss.count):
                     ms = mss.item(i)
                     ms_name = ms.name or ""
-                    is_auto = any(ms_name.startswith(p) for p in _auto_milestone_prefixes)
+                    is_auto = any(
+                        ms_name.startswith(p) for p in _auto_milestone_prefixes
+                    )
                     if not is_auto and ms_name:
                         revision_count += 1
                         # Check if this revision is on the latest version
                         try:
-                            if ms.version and ms.version.versionNumber == data_file.latestVersionNumber:
+                            if (
+                                ms.version
+                                and ms.version.versionNumber
+                                == data_file.latestVersionNumber
+                            ):
                                 latest_is_revision = True
                                 latest_revision_label = ms_name
                         except Exception:
@@ -268,58 +296,80 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
             # Populate summary fields
             sg.addTextBoxCommandInput(
-                "sum_versions", "Versions",
+                "sum_versions",
+                "Versions",
                 str(total_versions),
-                1, True,
+                1,
+                True,
             )
             if earliest_date:
                 sg.addTextBoxCommandInput(
-                    "sum_created", "Created",
+                    "sum_created",
+                    "Created",
                     datetime.fromtimestamp(earliest_date).strftime("%Y-%m-%d %H:%M:%S"),
-                    1, True,
+                    1,
+                    True,
                 )
             if latest_date:
                 sg.addTextBoxCommandInput(
-                    "sum_last_saved", "Last Saved",
+                    "sum_last_saved",
+                    "Last Saved",
                     datetime.fromtimestamp(latest_date).strftime("%Y-%m-%d %H:%M:%S"),
-                    1, True,
+                    1,
+                    True,
                 )
             if latest_user:
                 sg.addTextBoxCommandInput(
-                    "sum_last_user", "Last Saved By",
+                    "sum_last_user",
+                    "Last Saved By",
                     latest_user,
-                    1, True,
+                    1,
+                    True,
                 )
             sg.addTextBoxCommandInput(
-                "sum_users", "Contributors",
+                "sum_users",
+                "Contributors",
                 f"{len(unique_users)} user{'s' if len(unique_users) != 1 else ''}",
-                1, True,
+                1,
+                True,
             )
             sg.addTextBoxCommandInput(
-                "sum_milestones", "Milestones",
+                "sum_milestones",
+                "Milestones",
                 str(milestone_count),
-                1, True,
+                1,
+                True,
             )
             sg.addTextBoxCommandInput(
-                "sum_latest_ms", "Latest Is Milestone",
+                "sum_latest_ms",
+                "Latest Is Milestone",
                 "Yes" if latest_is_milestone else "No",
-                1, True,
+                1,
+                True,
             )
             sg.addTextBoxCommandInput(
-                "sum_revisions", "Revisions",
+                "sum_revisions",
+                "Revisions",
                 str(revision_count),
-                1, True,
+                1,
+                True,
             )
-            rev_text = f"Yes — <b>{latest_revision_label}</b>" if latest_is_revision else "No"
+            rev_text = (
+                f"Yes — <b>{latest_revision_label}</b>" if latest_is_revision else "No"
+            )
             sg.addTextBoxCommandInput(
-                "sum_latest_rev", "Latest Is Revision",
+                "sum_latest_rev",
+                "Latest Is Revision",
                 rev_text,
-                1, True,
+                1,
+                True,
             )
             sg.addTextBoxCommandInput(
-                "sum_public", "Public Share Link",
+                "sum_public",
+                "Public Share Link",
                 "Yes" if has_public_link else "No",
-                1, True,
+                1,
+                True,
             )
 
             # Comparison version dropdown
@@ -352,7 +402,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
             for ver in version_list:
                 ver_date = ""
                 if ver.dateModified:
-                    ver_date = datetime.fromtimestamp(ver.dateModified).strftime("%Y-%m-%d %H:%M")
+                    ver_date = datetime.fromtimestamp(ver.dateModified).strftime(
+                        "%Y-%m-%d %H:%M"
+                    )
                 ver_user = ""
                 if ver.lastUpdatedBy:
                     ver_user = ver.lastUpdatedBy.displayName
@@ -366,15 +418,11 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
             progress.hide()
 
         # Connect event handlers
-        ptutil.add_handler(
-            cmd.execute, command_execute, local_handlers=local_handlers
-        )
+        ptutil.add_handler(cmd.execute, command_execute, local_handlers=local_handlers)
         ptutil.add_handler(
             cmd.inputChanged, on_input_changed, local_handlers=local_handlers
         )
-        ptutil.add_handler(
-            cmd.destroy, command_destroy, local_handlers=local_handlers
-        )
+        ptutil.add_handler(cmd.destroy, command_destroy, local_handlers=local_handlers)
 
     except Exception as e:
         ptutil.log(f"Error in command_created: {e}\n{traceback.format_exc()}")
@@ -421,7 +469,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
         if not compare_doc:
             ui.messageBox(
                 "Failed to open the comparison version.",
-                CMD_NAME, 0, 3,
+                CMD_NAME,
+                0,
+                3,
             )
             return
 
@@ -432,12 +482,16 @@ def command_execute(args: adsk.core.CommandEventArgs):
         if not compare_design:
             ui.messageBox(
                 "The comparison version does not contain a valid design.",
-                CMD_NAME, 0, 3,
+                CMD_NAME,
+                0,
+                3,
             )
             return
 
         compare_features = walk_timeline(compare_design.timeline)
-        attach_params_to_features(compare_features, extract_feature_params(compare_design))
+        attach_params_to_features(
+            compare_features, extract_feature_params(compare_design)
+        )
         compare_info = get_version_info(compare_data_file)
         compare_properties = extract_design_properties(compare_design)
 
@@ -451,7 +505,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
         compare_doc = None
 
         # Compute diff
-        diff_entries, aligned_rows, summary = compute_diff(baseline_features, compare_features)
+        diff_entries, aligned_rows, summary = compute_diff(
+            baseline_features, compare_features
+        )
 
         # Determine chronological order: is comparison older or newer?
         older_is_comparison = compare_info.version_number < baseline_info.version_number

@@ -322,9 +322,7 @@ def _send_palette_init(palette: adsk.core.Palette):
     state = _gather_palette_state()
     palette.sendInfoToHTML("setDocumentName", state["docName"])
     palette.sendInfoToHTML("setTheme", state["theme"])
-    palette.sendInfoToHTML(
-        "setSaveState", "saved" if state["saved"] else "unsaved"
-    )
+    palette.sendInfoToHTML("setSaveState", "saved" if state["saved"] else "unsaved")
     palette.sendInfoToHTML("setParamDocs", json.dumps(state["paramDocs"]))
     palette.sendInfoToHTML(
         "setTargetProject",
@@ -345,7 +343,10 @@ def _send_target_project(palette: adsk.core.Palette) -> None:
     palette.sendInfoToHTML(
         "setTargetProject",
         json.dumps(
-            {"hasProject": folder is not None, "name": cache.target_project_label(folder)}
+            {
+                "hasProject": folder is not None,
+                "name": cache.target_project_label(folder),
+            }
         ),
     )
 
@@ -460,9 +461,7 @@ def is_param_node(nodes: dict, node_id: int) -> bool:
 def get_structural_child_ids(nodes: dict, parent_id: int) -> list:
     """Child component IDs of *parent_id*, excluding param-doc links."""
     return [
-        cid
-        for cid in get_child_ids(nodes, parent_id)
-        if not is_param_node(nodes, cid)
+        cid for cid in get_child_ids(nodes, parent_id) if not is_param_node(nodes, cid)
     ]
 
 
@@ -473,9 +472,7 @@ def get_structural_parent_ids(nodes: dict, node_id: int) -> list:
     they must be filtered out before counting parents.
     """
     return [
-        pid
-        for pid in get_parent_ids(nodes, node_id)
-        if not is_param_node(nodes, pid)
+        pid for pid in get_parent_ids(nodes, node_id) if not is_param_node(nodes, pid)
     ]
 
 
@@ -689,8 +686,7 @@ def _derive_param_links(
         data_file = _resolve_target_data_file(occ, label, progress)
         if data_file is None:
             errors.append(
-                f"no DataFile for param target {target_id} "
-                f"(external doc not flushed)"
+                f"no DataFile for param target {target_id} (external doc not flushed)"
             )
             continue
         work.append((data_file, resolved))
@@ -733,9 +729,7 @@ def _derive_param_links(
                         derived += 1
                         ptutil.log(f"  Derived '{pname}' into {name}")
                     except Exception as e:
-                        errors.append(
-                            f"derive '{pname}' into {name} failed: {e}"
-                        )
+                        errors.append(f"derive '{pname}' into {name} failed: {e}")
                 # Save AND wait for the cloud upload to commit — otherwise
                 # the root's updateAllReferences() below would pull a stale
                 # version of (especially) the last component.
@@ -937,9 +931,7 @@ def create_assembly_from_graph(graph_data: dict) -> str:
     if deferred_inserts:
         for parent_node_id, parent_comp, child_id in deferred_inserts:
             child_node = nodes.get(str(child_id))
-            child_name = child_node.get("data", {}).get(
-                "name", f"Component_{child_id}"
-            )
+            child_name = child_node.get("data", {}).get("name", f"Component_{child_id}")
             src_occ = created_map.get(child_id)
             if not src_occ:
                 ptutil.log(f"  Shared insert skipped — no source for: {child_name}")

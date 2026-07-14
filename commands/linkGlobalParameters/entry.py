@@ -149,7 +149,6 @@ def _add_header_row(
         table.addCommandInput(hdr, HEADER_ROW, col)
 
 
-
 def _populate_preview_table(
     params: list[dict],
     inputs: adsk.core.CommandInputs,
@@ -176,7 +175,7 @@ def _populate_preview_table(
         raw_comment = p.get(comment_key, "")
         # Strip the PT-globparm sentinel prefix if present
         if raw_comment.startswith(_PARAM_TAG):
-            raw_comment = raw_comment[len(_PARAM_TAG):].strip()
+            raw_comment = raw_comment[len(_PARAM_TAG) :].strip()
         comment_in = inputs.addStringValueInput(f"lgp_comment_{rid}", "", raw_comment)
         comment_in.isReadOnly = True
         table.addCommandInput(name_in, row, 0)
@@ -360,7 +359,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     inputs = args.command.commandInputs
 
     # Check if the active document is saved (not untitled)
-    if not getattr(doc, 'isSaved', True):
+    if not getattr(doc, "isSaved", True):
         ui.messageBox(
             "Please save your document before using Link Global Parameters.\n\n"
             "The command cannot be used on an unsaved (untitled) document."
@@ -383,7 +382,12 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         )
         return
 
-    global _param_doc_map, _param_doc_entries, _active_doc_ref, _active_project_ref, _row_counter
+    global \
+        _param_doc_map, \
+        _param_doc_entries, \
+        _active_doc_ref, \
+        _active_project_ref, \
+        _row_counter
     _active_doc_ref = doc
     _active_project_ref = project
     _row_counter = 0
@@ -432,7 +436,6 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         source_dd.listItems.add(entry["name"], first, "")
         first = False
 
-
     # Read-only preview table: Name | Expression | Unit | Comment
     table = adsk.core.TableCommandInput.cast(
         inputs.addTableCommandInput(TABLE_ID, "Parameters", 4, "3:4:2:4")
@@ -443,7 +446,6 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     table.hasGrid = True
 
     _add_header_row(inputs, table)
-
 
     # Pre-load preview for the initially-selected document
     first_name = _param_doc_entries[0]["name"]
@@ -499,7 +501,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
 def command_input_changed(args: adsk.core.InputChangedEventArgs):
     if args.input.id == SOURCE_DD_ID:
-        source_dd = adsk.core.DropDownCommandInput.cast(args.inputs.itemById(SOURCE_DD_ID))
+        source_dd = adsk.core.DropDownCommandInput.cast(
+            args.inputs.itemById(SOURCE_DD_ID)
+        )
         table = adsk.core.TableCommandInput.cast(args.inputs.itemById(TABLE_ID))
         if source_dd is None or table is None or source_dd.selectedItem is None:
             return
@@ -508,7 +512,9 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
         project = _active_project_ref
         data_file = _resolve_selected_data_file(project, source_dd.selectedItem.name)
         if data_file is not None:
-            with ptutil.perf_timer("load_preview (dropdown change)", "LGP.input_changed"):
+            with ptutil.perf_timer(
+                "load_preview (dropdown change)", "LGP.input_changed"
+            ):
                 _load_preview(data_file, args.inputs, table)
 
 
@@ -519,7 +525,13 @@ def command_validate_input(args: adsk.core.ValidateInputsEventArgs):
 
 def command_destroy(args: adsk.core.CommandEventArgs):
     ptutil.log(f"{CMD_NAME} Command Destroy Event")
-    global local_handlers, _active_doc_ref, _active_project_ref, _param_doc_map, _param_doc_entries, _row_counter
+    global \
+        local_handlers, \
+        _active_doc_ref, \
+        _active_project_ref, \
+        _param_doc_map, \
+        _param_doc_entries, \
+        _row_counter
     local_handlers = []
     _active_doc_ref = None
     _active_project_ref = None

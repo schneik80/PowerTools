@@ -18,10 +18,7 @@ import sys
 import types
 from pathlib import Path
 
-_CCC_DIR = (
-    Path(__file__).resolve().parent.parent
-    / "commands" / "changecyclecolor"
-)
+_CCC_DIR = Path(__file__).resolve().parent.parent / "commands" / "changecyclecolor"
 
 # Synthetic parent package so colors.py's `from .fusion_install import ...` resolves.
 _pkg = types.ModuleType("ccc_pkg")
@@ -39,7 +36,7 @@ def _load(mod_name):
     return module
 
 
-_load("fusion_install")          # dependency must exist before colors.py loads
+_load("fusion_install")  # dependency must exist before colors.py loads
 colors = _load("colors")
 
 

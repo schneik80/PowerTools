@@ -57,7 +57,9 @@ def _folder_set(option_key: str) -> list[str]:
     command_settings.defaultfolders; falls back to the canonical defaults in
     settings_store.
     """
-    fallback = settings_store.COMMAND_SETTING_DEFAULTS["defaultfolders"].get(option_key, [])
+    fallback = settings_store.COMMAND_SETTING_DEFAULTS["defaultfolders"].get(
+        option_key, []
+    )
     value = settings_store.command_setting("defaultfolders", option_key, fallback)
     if not isinstance(value, list):
         return list(fallback)

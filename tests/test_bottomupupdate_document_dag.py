@@ -17,7 +17,9 @@ from pathlib import Path
 
 _MODULE_PATH = (
     Path(__file__).resolve().parent.parent
-    / "commands" / "bottomupupdate" / "document_dag.py"
+    / "commands"
+    / "bottomupupdate"
+    / "document_dag.py"
 )
 _spec = importlib.util.spec_from_file_location("pt_document_dag", _MODULE_PATH)
 document_dag = importlib.util.module_from_spec(_spec)
@@ -136,7 +138,11 @@ def test_cycle_in_document_graph_terminates():
     node_b = {"doc_id": "B", "name": "B", "children": {}}
     node_a["children"]["B"] = node_b
     node_b["children"]["A"] = node_a
-    nodes = {"R": {"doc_id": "R", "name": "R", "children": {"A": node_a}}, "A": node_a, "B": node_b}
+    nodes = {
+        "R": {"doc_id": "R", "name": "R", "children": {"A": node_a}},
+        "A": node_a,
+        "B": node_b,
+    }
 
     # Act
     order = document_dag.sort_document_dag_bottom_up(nodes, "R")

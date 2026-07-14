@@ -376,7 +376,9 @@ def _add_data_row_with_values(
     name_in = inputs.addStringValueInput(f"gp_name_{rid}", "Name", name)
     val_in = inputs.addStringValueInput(f"gp_val_{rid}", "Value", value_str)
     unit_in = inputs.addDropDownCommandInput(
-        f"gp_unit_{rid}", "Unit", adsk.core.DropDownStyles.TextListDropDownStyle  # type: ignore[arg-type]
+        f"gp_unit_{rid}",
+        "Unit",
+        adsk.core.DropDownStyles.TextListDropDownStyle,  # type: ignore[arg-type]
     )
     for u in UNIT_OPTIONS:
         unit_in.listItems.add(u, u == unit, "")
@@ -650,7 +652,6 @@ def _apply_parameters(inputs: adsk.core.CommandInputs) -> str | None:
     parameters = _collect_rows(table)
     ptutil.log(f"{CMD_NAME}: {len(parameters)} parameter(s) collected → {parameters}")
 
-
     mode_dd = adsk.core.DropDownCommandInput.cast(inputs.itemById(MODE_INPUT_ID))
     selected_mode = (
         mode_dd.selectedItem.name
@@ -733,7 +734,14 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
     # ── 2. Reset per-dialog state ─────────────────────────────────────────────
 
-    global _param_doc_map, _param_doc_names, _active_doc_ref, _active_project_ref, _row_counter, _table_dirty, _command_executed
+    global \
+        _param_doc_map, \
+        _param_doc_names, \
+        _active_doc_ref, \
+        _active_project_ref, \
+        _row_counter, \
+        _table_dirty, \
+        _command_executed
     _active_doc_ref = doc
     _active_project_ref = project
     _row_counter = 0
@@ -1014,7 +1022,15 @@ def command_validate_input(args: adsk.core.ValidateInputsEventArgs):
 
 def command_destroy(args: adsk.core.CommandEventArgs):
     ptutil.log(f"{CMD_NAME} Command Destroy Event")
-    global local_handlers, _active_doc_ref, _active_project_ref, _param_doc_map, _param_doc_names, _row_counter, _table_dirty, _command_executed
+    global \
+        local_handlers, \
+        _active_doc_ref, \
+        _active_project_ref, \
+        _param_doc_map, \
+        _param_doc_names, \
+        _row_counter, \
+        _table_dirty, \
+        _command_executed
 
     should_reopen = False
 

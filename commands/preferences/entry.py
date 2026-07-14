@@ -44,7 +44,9 @@ PALETTE_NAME = "PowerTools Preferences"
 # No icon assets yet — an empty resource folder string is valid and renders the
 # default menu glyph (the palette itself supplies all the visuals).
 ICON_FOLDER = ""
-_HTML_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "html")
+_HTML_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "resources", "html"
+)
 PALETTE_URL = os.path.join(_HTML_DIR, "index.html").replace("\\", "/")
 INIT_JS_PATH = os.path.join(_HTML_DIR, "init.js")
 
@@ -95,7 +97,9 @@ def stop():
 
 
 def command_created(args: adsk.core.CommandCreatedEventArgs):
-    ptutil.add_handler(args.command.execute, command_execute, local_handlers=local_handlers)
+    ptutil.add_handler(
+        args.command.execute, command_execute, local_handlers=local_handlers
+    )
 
 
 def command_execute(args: adsk.core.CommandEventArgs):
@@ -329,21 +333,29 @@ def _palette_incoming(html_args: adsk.core.HTMLEventArgs):
         elif action == "setGroup":
             key = data.get("key")
             value = bool(data.get("enabled"))
-            _mutate(lambda p: p["groups"].setdefault(key, {}).__setitem__("enabled", value))
+            _mutate(
+                lambda p: p["groups"].setdefault(key, {}).__setitem__("enabled", value)
+            )
 
         elif action == "setCommand":
             key = data.get("key")
             value = bool(data.get("enabled"))
-            _mutate(lambda p: p["commands"].setdefault(key, {}).__setitem__("enabled", value))
+            _mutate(
+                lambda p: (
+                    p["commands"].setdefault(key, {}).__setitem__("enabled", value)
+                )
+            )
 
         elif action == "setCommandSetting":
             key = data.get("key")
             sub = data.get("sub")
             value = data.get("value")
             _mutate(
-                lambda p: p.setdefault("command_settings", {})
-                .setdefault(key, {})
-                .__setitem__(sub, value)
+                lambda p: (
+                    p.setdefault("command_settings", {})
+                    .setdefault(key, {})
+                    .__setitem__(sub, value)
+                )
             )
 
         elif action == "openDoc":

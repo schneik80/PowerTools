@@ -49,9 +49,9 @@ INTENT_ASSEMBLY = 1
 INTENT_HYBRID = 2
 
 _INTENT_TO_PREFIXES: Dict[int, List[str]] = {
-    INTENT_PART:     ["PRT", "COT", "TOL"],
+    INTENT_PART: ["PRT", "COT", "TOL"],
     INTENT_ASSEMBLY: ["ASY", "WLD", "TOL"],
-    INTENT_HYBRID:   ["PRT", "ASY", "WLD", "COT", "TOL"],
+    INTENT_HYBRID: ["PRT", "ASY", "WLD", "COT", "TOL"],
 }
 
 # DWG is reserved for the drawing command; never appears in the design command.
@@ -64,7 +64,9 @@ def prefixes_for_intent(intent_value: int) -> List[str]:
     Unknown/undetectable intent (e.g. occurrence whose intent we can't read)
     falls back to the HYBRID superset so the user can still choose.
     """
-    return list(_INTENT_TO_PREFIXES.get(intent_value, _INTENT_TO_PREFIXES[INTENT_HYBRID]))
+    return list(
+        _INTENT_TO_PREFIXES.get(intent_value, _INTENT_TO_PREFIXES[INTENT_HYBRID])
+    )
 
 
 # ---------------------------------------------------------------------------

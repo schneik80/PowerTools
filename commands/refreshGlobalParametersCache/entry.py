@@ -20,7 +20,9 @@ ui = app.userInterface
 # Command identity
 CMD_ID = "PTAT-refreshGlobalParametersCache"
 CMD_NAME = "Refresh Global Parameters Cache"
-CMD_Description = "Scan the active project for global parameter sets and update the cache."
+CMD_Description = (
+    "Scan the active project for global parameter sets and update the cache."
+)
 
 # UI placement (reuse config from other commands)
 WORKSPACE_ID = config.design_workspace
@@ -28,6 +30,7 @@ TAB_ID = config.tools_tab_id
 PANEL_ID = config.my_panel_id
 ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "")
 IS_PROMOTED = False
+
 
 def start():
     existing_def = ui.commandDefinitions.itemById(CMD_ID)
@@ -44,6 +47,7 @@ def start():
         control = panel.controls.addCommand(cmd_def)
         control.isPromoted = IS_PROMOTED
 
+
 def stop():
     panel = _ui_bootstrap.get_power_tools_panel()
     if panel:
@@ -53,6 +57,7 @@ def stop():
     command_definition = ui.commandDefinitions.itemById(CMD_ID)
     if command_definition:
         command_definition.deleteMe()
+
 
 def command_created(args):
     ptutil.log(f"{CMD_NAME} Command Created Event")

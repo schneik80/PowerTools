@@ -15,6 +15,7 @@ from typing import Optional
 @dataclass
 class TimelineFeature:
     """Represents a single feature in a Fusion 360 design timeline."""
+
     name: str
     feature_type: str
     index: int
@@ -23,15 +24,22 @@ class TimelineFeature:
     is_rolled_back: bool
     health_state: str
     entity_type: str
-    component_name: str = ""       # For Occurrence (XREF) features: the referenced component name
-    component_version: str = ""    # For Occurrence (XREF) features: the source document version
-    sketch_fingerprint: object = None  # Optional[SketchFingerprint] — set for Sketch features
-    feature_params: dict = None        # Optional[dict] — {param_name: (expression, role)}
+    component_name: str = (
+        ""  # For Occurrence (XREF) features: the referenced component name
+    )
+    component_version: str = (
+        ""  # For Occurrence (XREF) features: the source document version
+    )
+    sketch_fingerprint: object = (
+        None  # Optional[SketchFingerprint] — set for Sketch features
+    )
+    feature_params: dict = None  # Optional[dict] — {param_name: (expression, role)}
 
 
 @dataclass
 class VersionInfo:
     """Metadata about a Fusion 360 document version."""
+
     version_number: int
     version_id: str
     name: str
@@ -44,6 +52,7 @@ class VersionInfo:
 @dataclass
 class DiffEntry:
     """A single entry in the timeline diff result."""
+
     name: str
     feature_type: str
     status: str  # "newer" | "deleted" | "unchanged" | "version_changed"
@@ -59,6 +68,7 @@ class AlignedRow:
     Each row has an older side and a newer side. One side may be None
     when a feature only exists in one version.
     """
+
     older: Optional[TimelineFeature]
     newer: Optional[TimelineFeature]
     status: str  # "newer" | "deleted" | "unchanged" | "version_changed" | "sketch_modified" | "params_changed" | "health_changed"
@@ -71,14 +81,15 @@ class AlignedRow:
 @dataclass
 class DiffResult:
     """Complete diff output comparing two version timelines."""
+
     baseline: VersionInfo
     comparison: VersionInfo
-    features: list = field(default_factory=list)      # list[DiffEntry]
-    aligned_rows: list = field(default_factory=list)   # list[AlignedRow]
+    features: list = field(default_factory=list)  # list[DiffEntry]
+    aligned_rows: list = field(default_factory=list)  # list[AlignedRow]
     summary: dict = field(default_factory=dict)
     older_is_comparison: bool = True  # True when comparison is older than baseline
-    baseline_properties: object = None   # Optional[DesignProperties]
-    comparison_properties: object = None # Optional[DesignProperties]
+    baseline_properties: object = None  # Optional[DesignProperties]
+    comparison_properties: object = None  # Optional[DesignProperties]
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2, default=str)

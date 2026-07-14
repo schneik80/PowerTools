@@ -100,7 +100,6 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
     ptutil.log(f"{CMD_NAME} Command Execute Event")
 
     try:
-
         # Get the application and user interface objects.
         app = adsk.core.Application.get()
         ui = app.userInterface

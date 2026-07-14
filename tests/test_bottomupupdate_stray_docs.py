@@ -56,7 +56,11 @@ def _never_top(_doc):
 def test_open_document_index_maps_ids_to_names_and_skips_unsaved():
     """The snapshot maps dataFile ids to names; unsaved docs are omitted."""
     docs = FakeDocuments(
-        [FakeDoc("id-a", "Top ASSY"), FakeDoc("id-b", "Child"), FakeDoc(None, "Unsaved")]
+        [
+            FakeDoc("id-a", "Top ASSY"),
+            FakeDoc("id-b", "Child"),
+            FakeDoc(None, "Unsaved"),
+        ]
     )
 
     index = entry._open_document_index(docs)

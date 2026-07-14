@@ -24,7 +24,7 @@ def run(context):
         commands.start()
 
     except Exception:
-        ptutil.handle_error('run')
+        ptutil.handle_error("run")
 
 
 def _maybe_start_debug_server():
@@ -43,10 +43,10 @@ def _maybe_start_debug_server():
     try:
         import debugpy
 
-        if not getattr(debugpy, '_fusion_listening', False):
+        if not getattr(debugpy, "_fusion_listening", False):
             try:
                 debugpy.listen(
-                    ('127.0.0.1', config.DEBUGGER_PORT),
+                    ("127.0.0.1", config.DEBUGGER_PORT),
                     # Run the adapter inside Fusion's process — spawning
                     # sys.executable would make macOS launch a second Fusion.
                     in_process_debug_adapter=True,
@@ -60,7 +60,7 @@ def _maybe_start_debug_server():
             debugpy.wait_for_client()
     except Exception:
         # The debugger is a developer convenience; never let it block startup.
-        ptutil.log('PowerTools: debugpy attach server not started (continuing).')
+        ptutil.log("PowerTools: debugpy attach server not started (continuing).")
 
 
 def stop(context):
@@ -73,4 +73,4 @@ def stop(context):
         commands.stop()
 
     except Exception:
-        ptutil.handle_error('stop')
+        ptutil.handle_error("stop")

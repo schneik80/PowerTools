@@ -37,7 +37,7 @@ def start():
         CMD_ID, CMD_NAME, CMD_Description
     )
 
-        # Define an event handler for the command created event. It will be called when the button is clicked.
+    # Define an event handler for the command created event. It will be called when the button is clicked.
     ptutil.add_handler(cmd_def.commandCreated, command_created)
 
     # ******** Add a button into the UI so the user can run the command. ********
@@ -67,7 +67,7 @@ def stop():
     # Delete the command definition
     if command_definition:
         command_definition.deleteMe()
-        
+
 
 # Function that is called when a user clicks the corresponding button in the UI.
 # This defines the contents of the command dialog and connects to the command related events.

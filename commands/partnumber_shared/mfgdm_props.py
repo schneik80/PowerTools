@@ -74,15 +74,12 @@ def _gql(query: str, variables: Optional[dict] = None) -> dict:
     resp = req.executeSync()
 
     if resp.statusCode != 200:
-        raise MfgdmPropsError(
-            f"MFGDM HTTP {resp.statusCode}: {resp.data[:500]}"
-        )
+        raise MfgdmPropsError(f"MFGDM HTTP {resp.statusCode}: {resp.data[:500]}")
 
     parsed = json.loads(resp.data)
     if parsed.get("errors"):
         raise MfgdmPropsError(
-            "MFGDM GraphQL errors: "
-            + json.dumps(parsed["errors"], default=str)
+            "MFGDM GraphQL errors: " + json.dumps(parsed["errors"], default=str)
         )
     return parsed.get("data", {})
 
@@ -188,7 +185,9 @@ def _find_definition_in_hub(hub_id: str, property_name: str) -> Optional[dict]:
         return None
 
     hub = data.get("hub") or {}
-    collections = ((hub.get("propertyDefinitionCollections") or {}).get("results")) or []
+    collections = (
+        (hub.get("propertyDefinitionCollections") or {}).get("results")
+    ) or []
     for coll in collections:
         defs = ((coll.get("definitions") or {}).get("results")) or []
         for defn in defs:
@@ -209,9 +208,7 @@ def _find_definition_in_hub(hub_id: str, property_name: str) -> Optional[dict]:
 # ---------------------------------------------------------------------------
 
 
-def set_component_custom_property(model_id: str,
-                                  property_name: str,
-                                  value: Any) -> str:
+def set_component_custom_property(model_id: str, property_name: str, value: Any) -> str:
     """Set ``property_name`` on the component identified by ``model_id``.
 
     Lookup is two-tier:
@@ -242,13 +239,10 @@ def set_component_custom_property(model_id: str,
     comp = model.get("component") or {}
     comp_id = comp.get("id")
     if not comp_id:
-        raise MfgdmPropsError(
-            f"No component returned for modelId={model_id!r}."
-        )
+        raise MfgdmPropsError(f"No component returned for modelId={model_id!r}.")
     if not comp.get("isWritableByUser", False):
         raise MfgdmPropsError(
-            "Component is not writable by the current user "
-            "(isWritableByUser=False)."
+            "Component is not writable by the current user (isWritableByUser=False)."
         )
 
     defn_id: Optional[str] = None
@@ -282,19 +276,20 @@ def set_component_custom_property(model_id: str,
             f"Custom property {property_name!r} has no definition id."
         )
     if defn_read_only:
-        raise MfgdmPropsError(
-            f"Custom property {property_name!r} is read-only."
-        )
+        raise MfgdmPropsError(f"Custom property {property_name!r} is read-only.")
 
     # 2. setProperties mutation — targetId is the componentId (time-specific).
-    mut = _gql(_M_SET_PROPERTIES, {
-        "input": {
-            "targetId": comp_id,
-            "propertyInputs": [
-                {"propertyDefinitionId": defn_id, "value": value},
-            ],
+    mut = _gql(
+        _M_SET_PROPERTIES,
+        {
+            "input": {
+                "targetId": comp_id,
+                "propertyInputs": [
+                    {"propertyDefinitionId": defn_id, "value": value},
+                ],
+            },
         },
-    })
+    )
     echoed = ((mut.get("setProperties") or {}).get("properties")) or []
     if not echoed:
         raise MfgdmPropsError("setProperties returned no property echo.")

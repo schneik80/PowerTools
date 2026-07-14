@@ -26,12 +26,27 @@ from typing import Iterable, Optional
 # macOS bundles everything under ``Autodesk Fusion.app/Contents/...``.
 _RIVER_RUBICON_RELS = (
     os.path.join(
-        "Contents", "Libraries", "Neutron", "Neutron", "Server",
-        "Scene", "Resources", "Environments", "RiverRubicon", "RiverRubicon.xml",
+        "Contents",
+        "Libraries",
+        "Neutron",
+        "Neutron",
+        "Server",
+        "Scene",
+        "Resources",
+        "Environments",
+        "RiverRubicon",
+        "RiverRubicon.xml",
     ),
     os.path.join(
-        "Libraries", "Neutron", "Neutron", "Server", "Scene",
-        "Resources", "Environments", "RiverRubicon", "RiverRubicon.xml",
+        "Libraries",
+        "Neutron",
+        "Neutron",
+        "Server",
+        "Scene",
+        "Resources",
+        "Environments",
+        "RiverRubicon",
+        "RiverRubicon.xml",
     ),
 )
 
@@ -43,6 +58,7 @@ def _candidate_seeds() -> Iterable[str]:
     """
     try:
         import adsk.core as _adsk_core  # type: ignore
+
         path = getattr(_adsk_core, "__file__", None)
         if path:
             yield os.path.dirname(os.path.abspath(path))

@@ -112,7 +112,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
     try:
         # show a progress bar
         progressBar = ui.progressBar
-        progressBar.showBusy("Generating Fusion Team Link"),
+        (progressBar.showBusy("Generating Fusion Team Link"),)
 
         # Generate the share link
         shareLink = app.activeDocument.dataFile.fusionWebURL
@@ -126,7 +126,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
         ptutil.clipText(shareLink)
 
         doc_name = html.escape(app.activeDocument.name)
-        resultString = f"An <b>Open in Team</b> link for {doc_name} was added to the clipboard."
+        resultString = (
+            f"An <b>Open in Team</b> link for {doc_name} was added to the clipboard."
+        )
 
         if app.activeProduct.productType == "DesignProductType":
             rootComp = app.activeProduct.rootComponent
