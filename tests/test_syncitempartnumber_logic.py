@@ -22,15 +22,15 @@ _AUTO_PN_NAMED = "Widget: 2024-01-02-03-04-05-678"
 @pytest.mark.parametrize(
     "item, part, expected",
     [
-        (None, "A-100", False),          # no item number
-        ("", "A-100", False),            # no item number
-        ("A-100", "A-100", False),       # exact match
-        ("  A-100 ", "A-100", False),    # match after strip
-        ("A-100", "  A-100  ", False),   # match after strip (part side)
-        ("A-100", "B-200", True),        # genuine mismatch
-        ("A-100", "", True),             # item exists, no part number
-        ("A-100", None, True),           # item exists, no part number
-        ("A-100", _AUTO_PN, True),       # part is Fusion auto-PN -> normalizes to ""
+        (None, "A-100", False),  # no item number
+        ("", "A-100", False),  # no item number
+        ("A-100", "A-100", False),  # exact match
+        ("  A-100 ", "A-100", False),  # match after strip
+        ("A-100", "  A-100  ", False),  # match after strip (part side)
+        ("A-100", "B-200", True),  # genuine mismatch
+        ("A-100", "", True),  # item exists, no part number
+        ("A-100", None, True),  # item exists, no part number
+        ("A-100", _AUTO_PN, True),  # part is Fusion auto-PN -> normalizes to ""
         ("A-100", _AUTO_PN_NAMED, True),  # auto-PN "Name: timestamp" form
         ("PN-000038", "PN-000038", False),  # real Manage item number, matches part
         ("PN-000038", "Chassis Bottom", True),  # item differs from a named part
