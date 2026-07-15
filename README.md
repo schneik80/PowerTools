@@ -66,6 +66,7 @@ Most commands appear in **Design › Tools › Power Tools**. Some appear in oth
 | [Version Diff](./docs/Version%20Diff.md) | Design › Tools › Power Tools | Compare versions of the active document. |
 | [Assign Part Numbers](./docs/Assign%20Part%20Numbers.md) | Design › Tools › Power Tools | Assign part numbers across the active design. |
 | [Assign Drawing Number](./docs/Assign%20Drawing%20Number.md) | Drawing › Power Tools | Assign a drawing number inside the Drawing workspace. |
+| [Sync Item to Part Number](./docs/Sync%20Item%20to%20Part%20Number.md) | Design › Manage › Power Tools | Copy the Fusion Manage Item Number into the Part Number (Manage Extension). |
 | [Default Folders](./docs/Default%20Folders.md) | Design › Tools › Power Tools | Configure default project folders. |
 | [Favorites](./docs/Favorites.md) | Design › Tools › Power Tools | Manage favorite documents and folders. |
 | [Open Recent](./docs/Open%20Recent.md) | File › Open Recent | Reopen a recently used document from a File-menu flyout, with location and thumbnail tooltips. |

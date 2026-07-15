@@ -53,6 +53,7 @@ GROUPS = [
         "commands": [
             _cmd("assigndrawingnumber", "Assign Drawing Number.md"),
             _cmd("assignpartnumbers", "Assign Part Numbers.md"),
+            _cmd("syncitempartnumber", "Sync Item to Part Number.md"),
             _cmd("autosave", "Recovery Save.md"),
             _cmd("datatoggle", "Toggle Data Pane.md"),
             _cmd("defaultfolders", "Default Folders.md", settings=True),

@@ -293,3 +293,96 @@ def set_component_custom_property(model_id: str, property_name: str, value: Any)
     if not echoed:
         raise MfgdmPropsError("setProperties returned no property echo.")
     return str(echoed[0].get("value", ""))
+
+
+# ---------------------------------------------------------------------------
+# Item Number / Part Number (cloud values) + shared-part-number status
+#
+# The Fusion Manage "Item Number" is a cloud property with no local Desktop API
+# accessor, so it is read via GraphQL. The local ``mfgdmModelId`` anchors the
+# query; the time-specific componentId and the MDM ``hub.id`` come from the
+# server. IMPORTANT: cloud queries need ``Component.hub.id`` (``urn:adsk...``),
+# NOT the local ``app.data.activeHub.id`` (``a.<base64>``), which the service
+# rejects with "Invalid hub or project id. It must start with 'urn:adsk'."
+# ---------------------------------------------------------------------------
+
+
+_Q_ITEM_PART_HUB = """
+query ($modelId: ID!, $time: DateTime) {
+  model(modelId: $modelId, time: $time) {
+    component {
+      hub { id }
+      itemNumber { id }
+      partNumber { value }
+    }
+  }
+}
+"""
+
+
+def fetch_item_part_hub(model_id: str, timestamp: str = "") -> tuple:
+    """Return ``(item_number, part_number, hub_id)`` for a model's component.
+
+    - ``item_number`` — the Fusion Manage Item Number (``Component.itemNumber.id``,
+      e.g. ``"PN-000038"``), or "" when none is assigned.
+    - ``part_number`` — ``Component.partNumber.value`` (cloud-authoritative), or "".
+    - ``hub_id`` — the MDM ``Component.hub.id`` needed by :func:`is_part_number_shared`.
+
+    Raises :class:`MfgdmPropsError` on transport / GraphQL failure.
+    """
+    if not model_id:
+        raise MfgdmPropsError("No MFGDM model id provided.")
+    variables: dict = {"modelId": model_id}
+    if timestamp:
+        variables["time"] = timestamp
+    data = _gql(_Q_ITEM_PART_HUB, variables)
+    comp = ((data.get("model") or {}).get("component")) or {}
+    item_number = ((comp.get("itemNumber") or {}).get("id")) or ""
+    part_number = ((comp.get("partNumber") or {}).get("value")) or ""
+    hub_id = ((comp.get("hub") or {}).get("id")) or ""
+    return item_number, part_number, hub_id
+
+
+_Q_SHARED_PART_NUMBER = """
+query ($hubId: ID!, $partNumber: String!) {
+  sharedPartNumber(hubId: $hubId, partNumber: $partNumber) {
+    isPresent
+    isModeled
+    component {
+      models {
+        isAllReadableByUser
+        pagination { cursor }
+        results { id }
+      }
+    }
+  }
+}
+"""
+
+
+def is_part_number_shared(hub_id: str, part_number: str) -> bool:
+    """Return True if ``part_number`` is in a shared part number group (2+ models).
+
+    ``hub_id`` must be the MDM hub id (``urn:adsk...``) from
+    :func:`fetch_item_part_hub`, not the local ``activeHub.id``.
+
+    "Shared" means the part number is present and modeled AND its component's
+    ``models`` collection resolves to more than one member. That collection is
+    permission-filtered and paginated, so membership is inferred from any of:
+    more than one returned result, ``isAllReadableByUser == False`` (the group
+    holds models this user can't read), or a non-empty pagination cursor (more
+    members beyond the first page).
+
+    Raises :class:`MfgdmPropsError` on transport / GraphQL failure.
+    """
+    if not hub_id or not part_number:
+        return False
+    data = _gql(_Q_SHARED_PART_NUMBER, {"hubId": hub_id, "partNumber": part_number})
+    info = data.get("sharedPartNumber") or {}
+    if not info.get("isPresent") or not info.get("isModeled"):
+        return False
+    models = ((info.get("component") or {}).get("models")) or {}
+    results = models.get("results") or []
+    all_readable = models.get("isAllReadableByUser", True)
+    cursor = ((models.get("pagination") or {}).get("cursor")) or ""
+    return len(results) > 1 or (not all_readable) or bool(cursor)

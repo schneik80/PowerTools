@@ -216,6 +216,7 @@ created and torn down by the individual command that uses it:
 | Location | Owner domain | Notes |
 |---|---|---|
 | Drawing-tab panel `PT_DrawingPowerTools` | Document Tools | On the built-in `FusionDocTab` of the Drawing workspace; the tab itself is never created or deleted. |
+| Manage-tab panel `PT_ManagePowerTools` | Document Tools | On the built-in `ManageTab` of the Design workspace (present only with the Fusion Manage Extension); the tab itself is never created or deleted, and the panel is skipped when the tab is absent. Owned by Sync Item to Part Number. |
 | QATRight "Share" flyout `shareDropMenu` | Share | Right Quick Access Toolbar drop-down for the Share commands. |
 | SolidTab panels / sketch & modify menus | Part Modeling, Assembly | Context-specific placement near sketch and modify tools. |
 | Assembly palettes (`*_assembly_builder_palette`, `*_assembly_intent_palette`) | Assembly | Palette IDs derived from company + add-in name in `config.py`. |

@@ -85,6 +85,19 @@ drawing_panel_name = "Power Tools"
 drawing_panel_after = ""
 
 # ---------------------------------------------------------------------------
+# 3b. Manage tab (Design workspace) — added by the Fusion Manage Extension.
+# "ManageTab" is a built-in tab (name "MANAGE"); we never create or delete it,
+# we only add/remove our own PowerTools panel on it. Absent when the Manage
+# Extension is not enabled for the hub, in which case the command skips its UI.
+# ---------------------------------------------------------------------------
+
+manage_workspace = "FusionSolidEnvironment"
+manage_tab_id = "ManageTab"
+manage_panel_id = "PT_ManagePowerTools"
+manage_panel_name = "Power Tools"
+manage_panel_after = ""
+
+# ---------------------------------------------------------------------------
 # 4. Shared PowerTools Settings dropdown in the QAT File menu
 # ---------------------------------------------------------------------------
 
