@@ -183,7 +183,7 @@ def loadHub(__file__):
     global COMPANY_HUB, COMPANY_HUB_CONFIGS
 
     my_addin_path = os.path.dirname(os.path.realpath(__file__))
-    my_hub_path = os.path.join(my_addin_path, "hub.json")
+    my_hub_path = os.path.join(my_addin_path, "cache", "hub.json")
 
     if not os.path.isfile(my_hub_path):
         # No hub configured yet — commands will surface their own error message.

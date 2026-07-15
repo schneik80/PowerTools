@@ -33,11 +33,8 @@ CMD_Description = (
 # Resource location for command icons, here we assume a sub folder in this directory named "resources".
 ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "")
 
-# Path to hub.json at the add-in root (two levels up from this file's directory).
-ADDIN_PATH = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
-HUB_JSON_PATH = os.path.join(ADDIN_PATH, "hub.json")
+# Path to hub.json in the add-in's shared cache folder.
+HUB_JSON_PATH = os.path.join(config.CACHE_PATH, "hub.json")
 
 
 # Executed when add-in is run.

@@ -382,11 +382,11 @@ commands.
 | `cache/favorites_<hub-id>.json` | Document Tools (Favorites) | Per-hub saved document locations. |
 | `cache/recent_docs.json` | `recents_utils` (New Assembly + Open Recent) | Recently-touched part/hybrid/assembly `DataFile` ids with name, intent, and folder location; owned by `lib/ptAddInUtils/recents_utils`. |
 | `<temp>/powertools_assembly_thumbs/` | `recents_utils` (New Assembly + Open Recent) | Per-document thumbnail PNGs keyed by `md5(dataFileId)`, rendered while a document is open. |
-| `hub.json` | Related Data | Registered hub IDs, project IDs, and folder IDs (loaded by `loadHub()`). |
+| `cache/hub.json` | Related Data | Registered hub IDs, project IDs, and folder IDs (loaded by `loadHub()`). |
 
 Per-domain caches live under the add-in's single `cache/` directory
-(`config.CACHE_PATH`). `hub.json` lives at the add-in root and is read at import
-time and re-read by `reload_hub_config()` after it is written.
+(`config.CACHE_PATH`). `cache/hub.json` lives in that same directory and is read
+at import time and re-read by `reload_hub_config()` after it is written.
 
 ---
 
@@ -414,8 +414,7 @@ PowerTools/
 ├── PowerTools.py                 # Add-in entry point (run / stop)
 ├── PowerTools.manifest
 ├── config.py                     # Merged configuration (7 sections)
-├── hub.json                      # Related Data hub configuration (optional)
-├── cache/                        # Per-domain caches (settings.json, [hub-id].json)
+├── cache/                        # Per-domain caches (recent_docs.json, hub.json, …)
 ├── commands/
 │   ├── __init__.py               # Command registry; bulk start()/stop() around bootstrap
 │   ├── _ui_bootstrap.py          # Creates/removes the two shared access points

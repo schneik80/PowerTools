@@ -28,7 +28,7 @@ C4Context
   }
 
   System_Ext(fusionTeam, "Autodesk Fusion Team", "Hosts the hub, projects, folders, and template .f3d files")
-  SystemDb(hubJson, "hub.json", "Local file at the add-in root — stores registered hub IDs, project IDs, and folder IDs")
+  SystemDb(hubJson, "hub.json", "Local file in the add-in cache/ folder — stores registered hub IDs, project IDs, and folder IDs")
 
   Rel(user, configHub, "Runs the command and selects the templates folder")
   Rel(configHub, fusionTeam, "Browses cloud folders; resolves the owning hub and project via Fusion API")
@@ -49,7 +49,7 @@ C4Container
     Container(configModule, "config.py", "Python", "Loads and exposes COMPANY_HUB and COMPANY_HUB_CONFIGS in memory from hub.json")
   }
 
-  SystemDb(hubJson, "hub.json", "Local JSON configuration file at the add-in root")
+  SystemDb(hubJson, "hub.json", "Local JSON configuration file in the add-in cache/ folder")
   System_Ext(fusionApi, "Fusion API (adsk.core)", "Provides createCloudFolderDialog(), DataFolder.parentProject, app.data.dataHubs, and DataProjects.itemById()")
 
   Rel(user, cmdCreated, "Runs the command and picks the templates folder")

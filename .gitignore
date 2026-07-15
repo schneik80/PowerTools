@@ -128,7 +128,6 @@ Network Trash Folder
 # Generated files
 docs.json
 data.json
-hub.json
 commands/relateddata/docs.json
 commands/relateddata/data.json
 commands/assemblybuilder/resources/html/init.js

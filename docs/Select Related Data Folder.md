@@ -47,7 +47,7 @@ See [Create Related Data — Step 1](./Related%20Data.md#step-1--create-the-temp
 
 If the active hub is already in `hub.json`, you are asked first whether to keep the existing entry or pick a new folder. Choosing a new folder overwrites the entry in place.
 
-The hub entry is written to `hub.json` at the add-in root in the following format:
+The hub entry is written to `hub.json` in the add-in's `cache/` folder in the following format:
 
 ```json
 {

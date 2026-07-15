@@ -165,7 +165,7 @@ In brief:
 2. Click **OK** on the prompt to launch the cloud folder picker.
 3. Browse to the folder that contains your template `.f3d` files and confirm the selection.
 
-The hub configuration is written to `hub.json` at the add-in root. Multiple hubs can be configured, and the folder must be selected once for each hub. Re-running on an already-configured hub lets you re-point it to a new folder.
+The hub configuration is written to `hub.json` in the add-in's `cache/` folder. Multiple hubs can be configured, and the folder must be selected once for each hub. Re-running on an already-configured hub lets you re-point it to a new folder.
 
 ### Step 3 — Use the command
 
