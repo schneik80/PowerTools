@@ -21,7 +21,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 # ── Command identity ──────────────────────────────────────────────────────────
-CMD_ID = "PTAT-linkGlobalParameters"
+CMD_ID = "PTAT_linkGlobalParameters"
 CMD_NAME = "Link Global Parameters"
 CMD_Description = (
     "Derive global parameters from a parameter set into the active document"
@@ -336,7 +336,7 @@ def start():
     panel = _ui_bootstrap.get_power_tools_panel()
     if panel:
         # Position Link Global Parameters immediately after Global Parameters
-        control = panel.controls.addCommand(cmd_def, "PTAT-globalParameters", False)
+        control = panel.controls.addCommand(cmd_def, "PTAT_globalParameters", False)
         control.isPromoted = IS_PROMOTED
 
 

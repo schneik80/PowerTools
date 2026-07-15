@@ -44,7 +44,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Assign Drawing Number"
-CMD_ID = "PTND-assignDrawingNumber"
+CMD_ID = "PTND_assignDrawingNumber"
 CMD_Description = (
     "Reserve the next DWG-NNNNNN number from the hub Pn-Cache and stamp it "
     "on the active drawing document."

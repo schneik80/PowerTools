@@ -24,7 +24,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Bottom-up Update"
-CMD_ID = "PTAT-bottomupupdate"
+CMD_ID = "PTAT_bottomupupdate"
 CMD_Description = "Save and update all references in the open assembly from the bottom up\n \nOptions to Rebuild all, log the results, hide objects and apply document intent.\nUpdating can skip standard components and already saved documents."
 IS_PROMOTED = False
 

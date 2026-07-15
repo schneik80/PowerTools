@@ -26,7 +26,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Document References"
-CMD_ID = "PTAT-docrefs"
+CMD_ID = "PTAT_docrefs"
 CMD_Description = "List Active Document References"
 IS_PROMOTED = False
 

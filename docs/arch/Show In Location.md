@@ -8,7 +8,7 @@ The Show In Location automation registers application-level event handlers on st
 
 ### Command IDs
 
-- Toggle button: `PT-showinlocation-toggle` (in the **PowerTools Settings** dropdown in the QAT File menu)
+- Toggle button: `PT_showinlocation_toggle` (in the **PowerTools Settings** dropdown in the QAT File menu)
 
 ### Execution flow
 
@@ -32,7 +32,7 @@ C4Component
     Component(addin, "PowerTools Add-In", "Python, Fusion API", "Registers and hosts automation handlers")
     Component(events, "documentOpened/documentActivated", "Fusion Application Events", "Signals document open and tab activation")
     Component(cmd, "Show In Location Automation", "docopen/entry.py", "Resolves document URN and executes text command; manages toggle state")
-    Component(toggleBtn, "PT-showinlocation-toggle", "QAT → File → PowerTools Settings", "Enable/Disable toggle that flips the persisted state")
+    Component(toggleBtn, "PT_showinlocation_toggle", "QAT → File → PowerTools Settings", "Enable/Disable toggle that flips the persisted state")
     Component(settings, "cache/settings.json", "Local JSON", "Persists the enabled/disabled state between sessions")
     Component(fusion, "Dashboard.ShowInLocation", "Fusion Internal Command", "Navigates Data Panel to document location")
 

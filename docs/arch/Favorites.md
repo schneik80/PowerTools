@@ -30,10 +30,10 @@ The Favorites module creates one static dropdown control and a set of dynamic co
 
 ### Command IDs
 
-- Dropdown: `PTAT-favorites-dropdown`
-- Add action: `PTAT-favorites-add`
-- Edit action: `PTAT-favorites-edit`
-- Dynamic favorite entries: `PTAT-fav-<index>`
+- Dropdown: `PTAT_favorites_dropdown`
+- Add action: `PTAT_favorites_add`
+- Edit action: `PTAT_favorites_edit`
+- Dynamic favorite entries: `PTAT_fav_<index>`
 
 ### Execution flow
 

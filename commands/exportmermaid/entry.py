@@ -21,7 +21,7 @@ from ...lib import ptAddInUtils as ptutil
 app = adsk.core.Application.get()
 ui = app.userInterface
 
-CMD_ID = "PTE-exportmermaid"
+CMD_ID = "PTE_exportmermaid"
 CMD_NAME = "Export Mermaid Diagram..."
 CMD_Description = "Export Active Document as Mermaid mmd diagram"
 IS_PROMOTED = False

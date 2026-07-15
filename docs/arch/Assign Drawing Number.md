@@ -6,7 +6,7 @@
 
 ### Command ID
 
-`PTND-assignDrawingNumber`
+`PTND_assignDrawingNumber`
 
 ### System context
 

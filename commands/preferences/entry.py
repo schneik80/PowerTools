@@ -33,7 +33,7 @@ from ...lib import ptAddInUtils as ptutil
 app = adsk.core.Application.get()
 ui = app.userInterface
 
-CMD_ID = "PT-preferences"
+CMD_ID = "PT_preferences"
 CMD_NAME = "PowerTools Preferences"
 CMD_Description = "Configure PowerTools: enable commands, beta tier, and hub settings."
 

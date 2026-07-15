@@ -19,11 +19,11 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Favorites"
-CMD_ID = "PTAT-favorites-dropdown"  # The QAT dropdown control ID
-CMD_ADD_ID = "PTAT-favorites-add"  # The "Favorite This Location" button definition ID
+CMD_ID = "PTAT_favorites_dropdown"  # The QAT dropdown control ID
+CMD_ADD_ID = "PTAT_favorites_add"  # The "Favorite This Location" button definition ID
 CMD_ADD_NAME = "Favorite This Location"
 CMD_ADD_Description = "Save the current document location to your Favorites menu"
-CMD_EDIT_ID = "PTAT-favorites-edit"
+CMD_EDIT_ID = "PTAT_favorites_edit"
 CMD_EDIT_NAME = "Edit Favorites"
 CMD_EDIT_DESCRIPTION = "Edit and remove saved favorites"
 
@@ -56,9 +56,9 @@ _edit_staged_favorites = []
 _edit_checkbox_map = {}
 _edit_build_version = 0
 
-EDIT_TABLE_ID = "PTAT-favorites-edit-table"
-EDIT_DELETE_BTN_ID = "PTAT-favorites-edit-delete"
-EDIT_COUNT_ID = "PTAT-favorites-edit-count"
+EDIT_TABLE_ID = "PTAT_favorites_edit_table"
+EDIT_DELETE_BTN_ID = "PTAT_favorites_edit_delete"
+EDIT_COUNT_ID = "PTAT_favorites_edit_count"
 
 
 # ---------------------------------------------------------------------------
@@ -313,7 +313,7 @@ def _rebuild_menu() -> None:
     favorites = _load_favorites()
 
     for i, fav in enumerate(favorites):
-        cmd_id = f"PTAT-fav-{i}"
+        cmd_id = f"PTAT_fav_{i}"
         display = fav.get("display", "Unknown Location")
         urn = fav.get("urn", "")
 

@@ -8,7 +8,7 @@ The Document Information command registers a button in a custom **Power Tools** 
 
 ### Command ID
 
-`PTND-docinfo`
+`PTND_docinfo`
 
 ### Execution flow
 

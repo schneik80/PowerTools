@@ -23,7 +23,7 @@ showsubs = False  # show the subassemblies in list, for flat BOM default is off.
 docname = ""  # a default name
 
 CMD_NAME = "Export BOM as CSV"
-CMD_ID = "PTE-exportbom"
+CMD_ID = "PTE_exportbom"
 CMD_Description = "Export active assembly structure and quantities as a CSV file"
 IS_PROMOTED = False
 

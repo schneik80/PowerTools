@@ -18,7 +18,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Insert STEP File"
-CMD_ID = "PTAT-insertSTEP"
+CMD_ID = "PTAT_insertSTEP"
 CMD_Description = "Insert a STEP file into the active Design Document"
 IS_PROMOTED = False
 
@@ -77,7 +77,7 @@ def start():
                 tab_info["PANEL_ID"], tab_info["PANEL_NAME"]
             )
 
-        control = panel.controls.addCommand(cmd_def, "PT-assemblystats", True)
+        control = panel.controls.addCommand(cmd_def)
         control.isPromoted = IS_PROMOTED
 
 

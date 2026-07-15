@@ -6,7 +6,7 @@
 
 ### Command ID
 
-`PTND-assignPartNumbers`
+`PTND_assignPartNumbers`
 
 ### System context
 

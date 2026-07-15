@@ -37,9 +37,9 @@ CMD_Description = (
 
 # The flyout control (a DropDownControl nested in the File dropdown) and the
 # per-item command definitions it holds.
-DROPDOWN_ID = "PT-openrecent-dropdown"
-ITEM_ID_PREFIX = "PT-openrecent-item-"
-EMPTY_ITEM_ID = "PT-openrecent-empty"
+DROPDOWN_ID = "PT_openrecent_dropdown"
+ITEM_ID_PREFIX = "PT_openrecent_item_"
+EMPTY_ITEM_ID = "PT_openrecent_empty"
 
 # Max entries shown in the flyout. The cache itself holds up to
 # recents.RECENT_LIMIT; the menu is capped shorter to stay quick to scan.
@@ -66,7 +66,7 @@ _OPEN_ANCHOR_CANDIDATES = (
 # Fallbacks when no Open control is found: sit just after New, else just before
 # the PowerTools Preferences item (always present — it is infrastructure).
 _NEW_ANCHOR_CANDIDATES = ("NewDocumentCommand", "new")
-_PREFERENCES_CMD_ID = "PT-preferences"
+_PREFERENCES_CMD_ID = "PT_preferences"
 
 local_handlers = []
 

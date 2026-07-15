@@ -47,7 +47,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Infer Constraints"
-CMD_ID = "PTAT-inferConstraints"
+CMD_ID = "PTAT_inferConstraints"
 CMD_Description = (
     "Infer assembly constraints for an already-positioned assembly: detect "
     "concentric cylindrical faces and coincident planar faces, then apply "

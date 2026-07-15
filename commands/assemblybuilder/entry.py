@@ -25,7 +25,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Assembly Builder"
-CMD_ID = "PTAT-AssemblyBuilder"
+CMD_ID = "PTAT_AssemblyBuilder"
 CMD_Description = (
     "Design an assembly hierarchy in a visual node editor, then generate "
     "all external components with the correct design intent in one step."

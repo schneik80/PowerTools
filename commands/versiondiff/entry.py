@@ -27,7 +27,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Version Diff"
-CMD_ID = "PTND-versiondiff"
+CMD_ID = "PTND_versiondiff"
 CMD_Description = (
     "Compare timeline differences between two versions of the active document"
 )

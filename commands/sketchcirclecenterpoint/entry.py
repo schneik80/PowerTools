@@ -21,7 +21,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Radial Hole Circle"
-CMD_ID = "PTPM-sketchcirclecenterpoint"
+CMD_ID = "PTPM_sketchcirclecenterpoint"
 CMD_Description = (
     "In an active sketch, interactively place a construction circle by selecting "
     "a center point and dragging to set the diameter. A sketch point is then "

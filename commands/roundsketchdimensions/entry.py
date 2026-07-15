@@ -36,7 +36,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Round Sketch Dimensions"
-CMD_ID = "PTPM-roundsketchdimensions"
+CMD_ID = "PTPM_roundsketchdimensions"
 CMD_Description = (
     "Round the length and angular dimensions of the active sketch to clean, "
     "adjustable increments. Formula-driven and reference dimensions are left "

@@ -52,7 +52,7 @@ C4Component
   Rel(cmd_def, resume_status, "Displays resume status")
   Rel(cmd_def, resume, "Computes skip set on launch and on execute")
   Rel(cmd_def, log_writer, "Writes header / status lines")
-  Rel(cmd_def, handler, "fireCustomEvent('PTAT-externalize-runner') with state in _pending_run")
+  Rel(cmd_def, handler, "fireCustomEvent('PTAT_externalize_runner') with state in _pending_run")
   Rel(handler, save_to_cloud, "Per component (if no existing cloud file): upload and get DataFile")
   Rel(handler, temp_save, "Per component (after replace): local recovery checkpoint")
   Rel(handler, save_parent, "Once at end: commit single new parent cloud version")
@@ -75,7 +75,7 @@ sequenceDiagram
 
   U->>Cmd: OK
   Cmd->>Cmd: read inputs, build pending list, write log header
-  Cmd->>API: app.fireCustomEvent('PTAT-externalize-runner')
+  Cmd->>API: app.fireCustomEvent('PTAT_externalize_runner')
   Cmd-->>U: dialog closes
   Note over Cmd,H: command_execute returns; handler runs in customEvent context
 

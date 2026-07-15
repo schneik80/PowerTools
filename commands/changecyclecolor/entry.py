@@ -54,7 +54,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Change Cycle Color"
-CMD_ID = "PTAT-changecyclecolor"
+CMD_ID = "PTAT_changecyclecolor"
 CMD_Description = (
     "Set the per-component color (used by Fusion's Color Cycling Toggle) "
     "for every selected component."

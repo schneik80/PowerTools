@@ -8,7 +8,7 @@ The Document History command registers a button directly on the QAT (not in the 
 
 ### Command ID
 
-`PTND-history`
+`PTND_history`
 
 ### Execution flow
 

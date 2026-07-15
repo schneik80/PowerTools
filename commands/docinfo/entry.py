@@ -20,7 +20,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Document Information"
-CMD_ID = "PTND-docinfo"
+CMD_ID = "PTND_docinfo"
 CMD_Description = (
     "Document data management Id`s for document in Autodesk`s Fusion Industry Cloud"
 )

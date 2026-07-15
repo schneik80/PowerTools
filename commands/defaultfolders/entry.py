@@ -17,7 +17,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "PowerTools Add Project Folders"
-CMD_ID = "PT-defaultfolders"
+CMD_ID = "PT_defaultfolders"
 CMD_Description = "Create default project folders if they do not exist"
 
 # Input IDs used in the command dialog

@@ -20,7 +20,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 # Command identity
-CMD_ID = "PTAT-refreshGlobalParametersCache"
+CMD_ID = "PTAT_refreshGlobalParametersCache"
 CMD_NAME = "Refresh Global Parameters Cache"
 CMD_Description = (
     "Scan the active project for global parameter sets and update the cache."

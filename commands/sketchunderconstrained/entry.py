@@ -19,7 +19,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Sketch Under-constrained"
-CMD_ID = "PTPM-sketchunderconstrain"
+CMD_ID = "PTPM_sketchunderconstrain"
 CMD_Description = "Highlight sketch objects that are under-constrained"
 IS_PROMOTED = False
 

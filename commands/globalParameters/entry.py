@@ -23,7 +23,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 # ── Command identity ──────────────────────────────────────────────────────────
-CMD_ID = "PTAT-globalParameters"
+CMD_ID = "PTAT_globalParameters"
 CMD_NAME = "Global Parameters"
 CMD_Description = "Create and Manage global parameters for the active Fusion Project"
 IS_PROMOTED = False

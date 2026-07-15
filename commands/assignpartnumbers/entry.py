@@ -36,7 +36,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Assign Part Numbers"
-CMD_ID = "PTND-assignPartNumbers"
+CMD_ID = "PTND_assignPartNumbers"
 CMD_Description = (
     "Assign a controlled part number to the active design and its local components "
     "using hub-shared sequential schemes (PRT / ASY / WLD / COT / TOL)."

@@ -19,7 +19,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "History"
-CMD_ID = "PTND-history"
+CMD_ID = "PTND_history"
 CMD_Description = "Show History for the open document"
 
 # Resource location for command icons, here we assume a sub folder in this directory named "resources".

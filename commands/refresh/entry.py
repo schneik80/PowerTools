@@ -16,7 +16,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Refresh Active Document"
-CMD_ID = "PTAT-refresh"
+CMD_ID = "PTAT_refresh"
 CMD_Description = (
     "Close and reopen the active document to get new versions from Team Hub"
 )

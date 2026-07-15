@@ -255,13 +255,13 @@ A few ordering constraints are encoded in the `commands` list in
 - The Share commands keep their original relative order for correct QATRight
   flyout positioning.
 - `scriptsmanager` (Tools group) positions its QAT File-menu control directly
-  before the `PT-preferences` control. The Preferences command is infrastructure
+  before the `PT_preferences` control. The Preferences command is infrastructure
   and always starts before the registry commands, so the anchor is present; the
   command falls back to appending if it is ever missing.
 - `openrecent` (Document Tools group) inserts its "Open Recent" flyout into the
   QAT File dropdown directly after the native **Open** command. Fusion has
   renamed that control across releases, so the command probes a list of
-  candidate IDs and falls back (after New → before `PT-preferences` → append);
+  candidate IDs and falls back (after New → before `PT_preferences` → append);
   a DEBUG build logs the File dropdown's actual control IDs to confirm the
   anchor. See the [Open Recent architecture note](Open%20Recent.md).
 

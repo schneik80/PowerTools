@@ -16,7 +16,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Local Recovery Save"
-CMD_ID = "PTND-autoSave"
+CMD_ID = "PTND_autoSave"
 CMD_Description = "Force local recovery save"
 
 # Local list of event handlers used to maintain a reference so

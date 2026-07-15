@@ -22,7 +22,7 @@ from ...lib import ptAddInUtils as ptutil
 app = adsk.core.Application.get()
 ui = app.userInterface
 
-CMD_ID = "PT-scriptsmanager"
+CMD_ID = "PT_scriptsmanager"
 CMD_NAME = "Scripts and Add-ins"
 CMD_Description = "Open the Fusion Scripts and Add-Ins manager."
 
@@ -32,7 +32,7 @@ TARGET_CMD_ID = "ScriptsManagerCommand"
 # QAT File-dropdown control this item is inserted directly before. The
 # Preferences command is infrastructure and always starts first (see
 # commands/__init__.py), so this anchor exists by the time start() runs.
-PREFERENCES_CMD_ID = "PT-preferences"
+PREFERENCES_CMD_ID = "PT_preferences"
 
 # No icon assets — an empty resource folder renders the default menu glyph.
 ICON_FOLDER = ""

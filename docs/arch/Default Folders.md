@@ -8,7 +8,7 @@ The Add Default Project Folders command registers a button in the QAT File dropd
 
 ### Command ID
 
-`PT-defaultfolders`
+`PT_defaultfolders`
 
 ### Execution flow
 

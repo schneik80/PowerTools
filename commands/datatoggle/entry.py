@@ -19,7 +19,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Toggle Data"
-CMD_ID = "PTND-toggledata"
+CMD_ID = "PTND_toggledata"
 CMD_Description = "Hide or show the data pane"
 IS_PROMOTED = False
 

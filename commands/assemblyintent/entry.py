@@ -57,14 +57,14 @@ _THUMB_SIZE = recents.THUMB_SIZE
 _RECENT_LIMIT = recents.RECENT_LIMIT
 
 # Commands we hand off to from the palette.
-_ASSEMBLY_BUILDER_CMD_ID = "PTAT-AssemblyBuilder"
-_GLOBAL_PARAMETERS_CMD_ID = "PTAT-globalParameters"
+_ASSEMBLY_BUILDER_CMD_ID = "PTAT_AssemblyBuilder"
+_GLOBAL_PARAMETERS_CMD_ID = "PTAT_globalParameters"
 
 # Toolbar button that manually launches the palette. Lives in the Assembly
 # Insert panel, directly below the Insert STEP command. The palette also pops
 # automatically on new empty Assembly docs (see the documentActivated trigger);
 # this button is the on-demand entry point.
-LAUNCH_CMD_ID = "PTAT-newAssembly"
+LAUNCH_CMD_ID = "PTAT_newAssembly"
 LAUNCH_CMD_NAME = "New Assembly"
 LAUNCH_CMD_DESC = "Open the New Assembly quick-start palette."
 LAUNCH_WORKSPACE_ID = "FusionSolidEnvironment"
@@ -73,7 +73,7 @@ LAUNCH_TAB_NAME = "ASSEMBLY"
 LAUNCH_PANEL_ID = "InsertAssemblePanel"
 LAUNCH_PANEL_NAME = "INSERT"
 # Position the control immediately after (below) the Insert STEP command.
-LAUNCH_POSITION_REF = "PTAT-insertSTEP"
+LAUNCH_POSITION_REF = "PTAT_insertSTEP"
 
 local_handlers = []
 

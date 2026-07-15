@@ -4,7 +4,7 @@
 
 ## Command identity
 
-- **CMD_ID:** `PTPM-roundsketchdimensions`
+- **CMD_ID:** `PTPM_roundsketchdimensions`
 - **Location:** Design workspace → **Sketch** tab → **Modify** panel (`SketchTab` / `SketchModifyPanel`).
 - **Module:** `commands/roundsketchdimensions/` — `entry.py` (Fusion wiring + apply) and `rounding.py` (pure math).
 

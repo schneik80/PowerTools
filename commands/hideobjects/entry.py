@@ -19,7 +19,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Hide Objects"
-CMD_ID = "PTPM-hideobjects"
+CMD_ID = "PTPM_hideobjects"
 CMD_DESCRIPTION = (
     "Hide selected types of objects across all components in the active design."
 )

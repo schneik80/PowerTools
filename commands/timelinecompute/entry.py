@@ -164,7 +164,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Timeline Compute Report"
-CMD_ID = "PTPM-timelinecompute"
+CMD_ID = "PTPM_timelinecompute"
 CMD_Description = "Display a timeline compute report. Also exports a CSF as source data. Features are sorted by compute time."
 IS_PROMOTED = False
 

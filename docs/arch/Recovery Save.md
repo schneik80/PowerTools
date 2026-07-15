@@ -8,7 +8,7 @@ The Local Recovery Save command is a thin wrapper around Fusion's built-in `Auto
 
 ### Command ID
 
-`PTND-autoSave`
+`PTND_autoSave`
 
 ### Execution flow
 

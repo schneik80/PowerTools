@@ -20,7 +20,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Create Mirrored Design"
-CMD_ID = "PTPM-createmirrordesign"
+CMD_ID = "PTPM_createmirrordesign"
 CMD_DESCRIPTION = "Save the active documents bodies as an associative mirror using derive. Names the component after the source plus -Mirror"
 IS_PROMOTED = False
 

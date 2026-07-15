@@ -24,7 +24,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Externalize"
-CMD_ID = "PTAT-externalize"
+CMD_ID = "PTAT_externalize"
 CMD_Description = (
     "Save a component as an external cloud document and re-insert it at its "
     "original assembly position."
@@ -36,7 +36,7 @@ IS_PROMOTED = False
 # command_execute holds the main thread (Autodesk forum 11164467); inside
 # a customEvent handler it does. The spike command_test_customevent_save
 # proved a stuck component (KLROLLE) went from ∞ stall to 5.9s.
-EVENT_ID = "PTAT-externalize-runner"
+EVENT_ID = "PTAT_externalize_runner"
 
 # Global variables by referencing values from /config.py
 WORKSPACE_ID = config.design_workspace

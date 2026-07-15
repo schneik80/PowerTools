@@ -18,9 +18,9 @@ for the recents format so the two surfaces can never drift.
 
 | Element | ID |
 |---|---|
-| Flyout (DropDownControl) | `PT-openrecent-dropdown` |
-| Per-item command definitions | `PT-openrecent-item-<index>` |
-| Empty-state placeholder | `PT-openrecent-empty` |
+| Flyout (DropDownControl) | `PT_openrecent_dropdown` |
+| Per-item command definitions | `PT_openrecent_item_<index>` |
+| Empty-state placeholder | `PT_openrecent_empty` |
 
 ### Anchor resolution
 
@@ -31,7 +31,7 @@ Scripts and Add-ins use for File-menu placement):
 
 1. after **Open** — `OpenCommand` (confirmed on the current build), then `OpenDocumentCommand`, `FusionOpenDocumentCommand`, `OpenClientCommand`, `OpenFromMyComputerCommand`, `open` as fallbacks for other releases;
 2. else after **New** — `NewDocumentCommand`, `new`;
-3. else before **PowerTools Preferences** — `PT-preferences` (always present; it is infrastructure);
+3. else before **PowerTools Preferences** — `PT_preferences` (always present; it is infrastructure);
 4. else appended to the File dropdown.
 
 A DEBUG build logs the File dropdown's actual control IDs on `start()`
@@ -84,8 +84,8 @@ C4Component
 
     Container_Boundary(cmd, "Open Recent command") {
         Component(entry, "openrecent/entry.py", "Command module", "Builds the File-menu flyout, rebuilds it on document events, opens the chosen document")
-        Component(flyout, "Open Recent flyout", "DropDownControl", "PT-openrecent-dropdown nested in FileSubMenuCommand, after Open")
-        Component(items, "Item command defs", "ButtonDefinition[]", "PT-openrecent-item-<i>; name + location tooltip + thumbnail tool-clip")
+        Component(flyout, "Open Recent flyout", "DropDownControl", "PT_openrecent_dropdown nested in FileSubMenuCommand, after Open")
+        Component(items, "Item command defs", "ButtonDefinition[]", "PT_openrecent_item_<i>; name + location tooltip + thumbnail tool-clip")
     }
 
     Container_Boundary(shared, "Shared recents layer") {

@@ -40,7 +40,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Component Warning"
-CMD_ID = "PTAT-componentWarn"
+CMD_ID = "PTAT_componentWarn"
 CMD_Description = (
     "Warn before creating a feature outside of a component (directly in the "
     "root component or referencing another component)."
