@@ -48,6 +48,14 @@ GROUPS = [
         ],
     },
     {
+        "key": "cable",
+        "label": "Cable",
+        # Cable-routing prove-out; future routing commands join this group.
+        "commands": [
+            _cmd("definewires", "Define Wires.md", beta=True),
+        ],
+    },
+    {
         "key": "document",
         "label": "Document Tools",
         "commands": [
