@@ -16,52 +16,68 @@ import pytest
 PT_PKG = Path(__file__).resolve().parent.parent.name
 logic = importlib.import_module(f"{PT_PKG}.commands.updatewire.logic")
 
-_CANDIDATES = [
-    {"token": "tok-a", "connector_id": "ConnA-3f9a2b1c"},
-    {"token": "tok-b", "connector_id": "ConnB-9ab04d12"},
-    {"token": "tok-b2", "connector_id": "ConnB-9ab04d12"},  # second instance
-    {"token": "tok-x", "connector_id": ""},  # not a connector
-]
+
+def _candidates(token_index: int | None = None, extra_indices: tuple = ()) -> list:
+    """Candidate table: A, two instances of B, and a non-connector.
+
+    ``token_match`` is set by the caller-side findEntityByToken resolution
+    (token strings are never compared); these tests set it directly.
+    """
+    matched = {token_index, *extra_indices}
+    return [
+        {"token_match": 0 in matched, "connector_id": "ConnA-3f9a2b1c"},
+        {"token_match": 1 in matched, "connector_id": "ConnB-9ab04d12"},
+        {"token_match": 2 in matched, "connector_id": "ConnB-9ab04d12"},
+        {"token_match": 3 in matched, "connector_id": ""},
+    ]
 
 
 # ---------------------------------------------------------------------------
 # choose_end_occurrence
 # ---------------------------------------------------------------------------
-def test_choose_end_token_match_wins() -> None:
-    end = {"occ_token": "tok-b2", "connector_id": "ConnB-9ab04d12"}
-    assert logic.choose_end_occurrence(_CANDIDATES, end) == (2, "token")
+def test_choose_end_token_resolution_wins() -> None:
+    end = {"connector_id": "ConnB-9ab04d12"}
+    assert logic.choose_end_occurrence(_candidates(2), end) == (2, "token")
 
 
 def test_choose_end_token_beats_connector_id() -> None:
-    # Token points at A even though the connector_id says B.
-    end = {"occ_token": "tok-a", "connector_id": "ConnB-9ab04d12"}
-    assert logic.choose_end_occurrence(_CANDIDATES, end) == (0, "token")
+    # Token resolved to A even though the connector_id says B.
+    end = {"connector_id": "ConnB-9ab04d12"}
+    assert logic.choose_end_occurrence(_candidates(0), end) == (0, "token")
+
+
+def test_choose_end_multiple_token_matches_fall_through() -> None:
+    # A token resolving to several occurrences carries no verdict; the
+    # unique connector id still resolves the end.
+    end = {"connector_id": "ConnA-3f9a2b1c"}
+    result = logic.choose_end_occurrence(_candidates(1, (2,)), end)
+    assert result == (0, "connector_id")
 
 
 def test_choose_end_unique_connector_id_fallback() -> None:
-    end = {"occ_token": "tok-dead", "connector_id": "ConnA-3f9a2b1c"}
-    assert logic.choose_end_occurrence(_CANDIDATES, end) == (0, "connector_id")
+    end = {"connector_id": "ConnA-3f9a2b1c"}
+    assert logic.choose_end_occurrence(_candidates(None), end) == (0, "connector_id")
 
 
 def test_choose_end_ambiguous_connector_id() -> None:
-    end = {"occ_token": "tok-dead", "connector_id": "ConnB-9ab04d12"}
-    assert logic.choose_end_occurrence(_CANDIDATES, end) == (None, "ambiguous")
+    end = {"connector_id": "ConnB-9ab04d12"}
+    assert logic.choose_end_occurrence(_candidates(None), end) == (None, "ambiguous")
 
 
 def test_choose_end_not_found() -> None:
-    end = {"occ_token": "tok-dead", "connector_id": "ConnZ-00000000"}
-    assert logic.choose_end_occurrence(_CANDIDATES, end) == (None, "not_found")
+    end = {"connector_id": "ConnZ-00000000"}
+    assert logic.choose_end_occurrence(_candidates(None), end) == (None, "not_found")
 
 
 def test_choose_end_empty_fields() -> None:
-    assert logic.choose_end_occurrence(_CANDIDATES, {}) == (None, "not_found")
+    assert logic.choose_end_occurrence(_candidates(None), {}) == (None, "not_found")
     # An empty connector_id must not match candidates that also have "".
-    end = {"occ_token": "", "connector_id": ""}
-    assert logic.choose_end_occurrence(_CANDIDATES, end) == (None, "not_found")
+    end = {"connector_id": ""}
+    assert logic.choose_end_occurrence(_candidates(None), end) == (None, "not_found")
 
 
 def test_choose_end_no_candidates() -> None:
-    end = {"occ_token": "tok-a", "connector_id": "ConnA-3f9a2b1c"}
+    end = {"connector_id": "ConnA-3f9a2b1c"}
     assert logic.choose_end_occurrence([], end) == (None, "not_found")
 
 

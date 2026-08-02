@@ -195,7 +195,7 @@ def command_validate(args: adsk.core.ValidateInputsEventArgs):
         )
     except Exception:
         ptutil.handle_error(f"{CMD_NAME} validateInputs")
-        args.areInputsValid = True  # fail-open so the user is never stuck
+        args.areInputsValid = False  # fail closed - never enable OK unchecked
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +220,10 @@ def command_execute(args: adsk.core.CommandEventArgs):
             )
             return
 
-        if not _delete_wire(route["occ"]):
+        params = resolution["params"]
+        is_cable = resolution["kind"] == route_logic.KIND_CABLE
+        group_label = f"{'Cable' if is_cable else 'Wire'} {params['name']}"
+        if not _delete_wire(route["occ"], group_label):
             ui.messageBox(
                 f"{CMD_NAME}: the existing assembly could not be deleted "
                 "- nothing was changed. Delete its timeline group manually "
@@ -231,8 +234,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
             )
             return
 
-        params = resolution["params"]
-        if resolution["kind"] == route_logic.KIND_CABLE:
+        if is_cable:
             result = builder.build_cable(design, tuple(resolution["ends"]), params)
             wire_count = len(resolution["ends"][0][1])
             headline = f"Cable {params['name']} rebuilt ({wire_count} wires).\n\n"
@@ -254,30 +256,21 @@ def command_execute(args: adsk.core.CommandEventArgs):
             )
             + sizes
         )
-        if result["spline_fallback"]:
-            summary += (
-                "\n\nNote: tangency constraints could not be applied "
-                "everywhere - some splines were shaped with guide points."
-            )
-        if result["baked_points"]:
-            summary += (
-                f"\n\nNote: {result['baked_points']} point(s) could not be "
-                "linked to the connector geometry and were baked at fixed "
-                "positions."
-            )
-        if result.get("dropped_tangents"):
-            summary += (
-                f"\n\nNote: {result['dropped_tangents']} fan-out tangency "
-                "constraint(s) made their sketch unsolvable and were dropped."
-            )
-        ui.messageBox(summary, CMD_NAME)
+        ui.messageBox(summary + route_logic.result_notes(result), CMD_NAME)
     except Exception:
         ui.messageBox(f"{CMD_NAME} failed:\n{traceback.format_exc()}", CMD_NAME)
 
 
-def _delete_wire(occ) -> bool:
-    """Delete the wire assembly: its timeline group when present, else the
-    occurrence (which removes the components, sketches, and features)."""
+def _delete_wire(occ, expected_group: str) -> bool:
+    """Delete the wire assembly: its OWN timeline group when present, else
+    the occurrence (which removes the components, sketches, and features).
+
+    The parent group is deleted with contents only when its name still
+    matches the builder's label for this route. Build-time grouping can
+    fail silently, and a user may later have grouped the occurrence with
+    unrelated features - a name mismatch means the group is not ours, and
+    deleting it wholesale would destroy those features.
+    """
     group = None
     try:
         timeline_object = occ.timelineObject
@@ -285,12 +278,24 @@ def _delete_wire(occ) -> bool:
     except Exception:
         ptutil.log(f"{CMD_NAME}: wire timeline group lookup failed.")
     if group is not None:
+        group_name = ""
         try:
-            if group.deleteMe(True):
-                return True
+            group_name = group.name or ""
         except Exception:
+            ptutil.log(f"{CMD_NAME}: timeline group name read failed.")
+        if group_name == expected_group:
+            try:
+                if group.deleteMe(True):
+                    return True
+            except Exception:
+                ptutil.log(
+                    f"{CMD_NAME}: timeline group delete failed:\n"
+                    f"{traceback.format_exc()}"
+                )
+        else:
             ptutil.log(
-                f"{CMD_NAME}: timeline group delete failed:\n{traceback.format_exc()}"
+                f"{CMD_NAME}: timeline group '{group_name}' does not match "
+                f"'{expected_group}' - deleting only the occurrence."
             )
     try:
         return bool(occ.deleteMe())
@@ -362,6 +367,7 @@ def _resolve_route(design, route) -> dict:
     # Candidate occurrences: everything except the route assembly's own tree.
     route_path = builder.occ_path(route["occ"])
     candidate_occs: list = []
+    candidate_paths: list = []
     candidates: list = []
     all_occs = design.rootComponent.allOccurrences
     for index in range(all_occs.count):
@@ -370,9 +376,10 @@ def _resolve_route(design, route) -> dict:
         if path == route_path or path.startswith(route_path + "+"):
             continue
         candidate_occs.append(occ)
+        candidate_paths.append(path)
         candidates.append(
             {
-                "token": builder.entity_token(occ),
+                "token_match": False,
                 "connector_id": builder.component_connector_id(occ.component),
             }
         )
@@ -382,6 +389,7 @@ def _resolve_route(design, route) -> dict:
     used_paths: set = set()
     for end in ends_payload:
         label = _end_label(end, kind)
+        _mark_token_matches(design, candidates, candidate_paths, end)
         index, how = logic.choose_end_occurrence(candidates, end)
         if index is None:
             if how == logic.REASON_AMBIGUOUS:
@@ -449,6 +457,35 @@ def _resolve_route(design, route) -> dict:
         "hows": hows,
         "problems": problems,
     }
+
+
+def _mark_token_matches(design, candidates: list, paths: list, end: dict):
+    """Flag the candidates that one end's stored occurrence token resolves to.
+
+    Tokens are resolved through ``Design.findEntityByToken`` - NEVER by
+    comparing token strings, which the Fusion API documents as invalid (the
+    same entity can return different token strings over time). Resolved
+    occurrences are matched to candidates by their occurrence path, both
+    read at this same instant.
+    """
+    for candidate in candidates:
+        candidate["token_match"] = False
+    token = str(end.get("occ_token") or "")
+    if not token:
+        return
+    try:
+        entities = design.findEntityByToken(token) or []
+    except Exception:
+        ptutil.log(f"{CMD_NAME}: findEntityByToken failed for a stored token.")
+        return
+    for entity in entities:
+        occ = adsk.fusion.Occurrence.cast(entity)
+        if occ is None:
+            continue
+        path = builder.occ_path(occ)
+        for index, candidate_path in enumerate(paths):
+            if candidate_path == path:
+                candidates[index]["token_match"] = True
 
 
 def _end_label(end: dict, kind: str) -> str:

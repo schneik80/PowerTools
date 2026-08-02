@@ -104,6 +104,12 @@ local_handlers: list = []
 _ui_refs: dict = {}  # long-lived input refs (selections, dropdowns, textboxes)
 _sides: list = [None, None]  # per-side data dict (see builder.read_connector)
 _loading = False  # reentrancy guard while mutating inputs programmatically
+# Last auto-filled recommendation keys. The diameter inputs are only
+# overwritten when the inputs BEHIND the recommendation change, so a
+# hand-edited value survives unrelated events (the tooltips say "edit
+# freely").
+_auto_awg = None  # AWG behind the last wire-diameter auto-fill
+_auto_cable_key = None  # (wire dia cm, wire count) behind the cable auto-fill
 
 
 # ---------------------------------------------------------------------------
@@ -398,7 +404,7 @@ def command_validate(args: adsk.core.ValidateInputsEventArgs):
         args.areInputsValid = not _route_problems()
     except Exception:
         ptutil.handle_error(f"{CMD_NAME} validateInputs")
-        args.areInputsValid = True  # fail-open so the user is never stuck
+        args.areInputsValid = False  # fail closed - never enable OK unchecked
 
 
 def _route_problems() -> list:
@@ -535,7 +541,7 @@ def _execute_single(design, name: str, awg: int, sheath_dia_cm: float):
         f"Sheath diameter: {sheath_dia_cm * 10.0:.3f} mm\n"
         "Bodies: 2 conductor stubs + 1 sheath run."
     )
-    ui.messageBox(summary + _result_notes(result), CMD_NAME)
+    ui.messageBox(summary + logic.result_notes(result), CMD_NAME)
 
 
 def _execute_cable(design, name: str, awg: int, sheath_dia_cm: float):
@@ -565,32 +571,7 @@ def _execute_cable(design, name: str, awg: int, sheath_dia_cm: float):
         f"Cable diameter: {cable_dia_cm * 10.0:.3f} mm\n"
         f"Bodies: 1 jacket + {len(wires_a) * 4} wire bodies."
     )
-    ui.messageBox(summary + _result_notes(result), CMD_NAME)
-
-
-def _result_notes(result: dict) -> str:
-    """The build result's fallback/baked-point notes for the summary box."""
-    notes = ""
-    if result["spline_fallback"]:
-        notes += (
-            "\n\nNote: tangency constraints could not be applied everywhere "
-            "- some splines were shaped with guide points instead (see the "
-            "debug log for the reason)."
-        )
-    if result["baked_points"]:
-        notes += (
-            f"\n\nNote: {result['baked_points']} point(s) could not be "
-            "linked to the connector geometry and were baked at fixed "
-            "positions (those parts will not follow connector moves)."
-        )
-    if result.get("dropped_tangents"):
-        notes += (
-            f"\n\nNote: {result['dropped_tangents']} fan-out tangency "
-            "constraint(s) made their sketch unsolvable and were dropped - "
-            "those wires stay associative but are not exactly tangent at "
-            "the exit."
-        )
-    return notes
+    ui.messageBox(summary + logic.result_notes(result), CMD_NAME)
 
 
 # ---------------------------------------------------------------------------
@@ -670,7 +651,13 @@ def _rebuild_awg_dropdown():
 
 
 def _update_cable_dia():
-    """Refresh the recommended cable jacket OD from wire dia and count."""
+    """Auto-fill the recommended cable jacket OD when its inputs change.
+
+    Keyed on (wire diameter, wire count): a hand-edited cable OD survives
+    every event that leaves both unchanged (connector re-picks, kind
+    toggles, status refreshes).
+    """
+    global _auto_cable_key
     if _current_kind() != logic.KIND_CABLE:
         return
     cable_dia = _ui_refs.get("cable_dia")
@@ -678,7 +665,11 @@ def _update_cable_dia():
     count = len(_cable_wires(0))
     if cable_dia is None or dia is None or count == 0:
         return
+    key = (round(dia.value, 9), count)
+    if key == _auto_cable_key:
+        return
     cable_dia.value = logic.cable_od_mm(dia.value * 10.0, count) / 10.0
+    _auto_cable_key = key
 
 
 def _selected_wire(side: int):
@@ -706,12 +697,19 @@ def _selected_awg():
 
 
 def _update_dia():
-    """Refresh the recommended sheathed diameter for the selected gauge."""
+    """Auto-fill the recommended sheathed diameter when the gauge changes.
+
+    Only overwrites on an actual gauge change: _rebuild_awg_dropdown calls
+    this on every connector/pin/kind event, and unconditionally resetting
+    the value here silently discarded hand-edited diameters.
+    """
+    global _auto_awg
     awg = _selected_awg()
     dia = _ui_refs.get("dia")
-    if awg is None or dia is None:
+    if awg is None or dia is None or awg == _auto_awg:
         return
     dia.value = logic.recommended_od_mm(awg) / 10.0  # mm -> cm internal
+    _auto_awg = awg
 
 
 def _update_info(side: int):
@@ -787,10 +785,12 @@ def _update_preview():
 
 def _reset_state():
     """Reset all per-dialog module state."""
-    global _ui_refs, _sides, _loading
+    global _ui_refs, _sides, _loading, _auto_awg, _auto_cable_key
     _ui_refs = {}
     _sides = [None, None]
     _loading = False
+    _auto_awg = None
+    _auto_cable_key = None
 
 
 # ---------------------------------------------------------------------------

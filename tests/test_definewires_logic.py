@@ -204,6 +204,11 @@ def test_cable_point_payload_round_trip() -> None:
         (["A", "B"], "1"),  # non-numeric pins ignored
         (["A", "2"], "3"),  # mixed
         (["", " 7 "], "8"),  # whitespace-tolerant
+        # Unicode digits (superscript two, circled two) pass str.isdigit()
+        # but int() rejects them - they must be ignored, never crash Add.
+        (["²"], "1"),
+        (["²", "2"], "3"),
+        (["②", "9"], "10"),
     ],
 )
 def test_next_pin(pins, expected) -> None:

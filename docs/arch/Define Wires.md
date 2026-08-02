@@ -107,8 +107,10 @@ design-wide wildcard queries below remain the intent for future tooling:
 - **JSON in attribute values** is a first for this add-in (existing attributes
   are scalar strings). Justified here: six correlated fields per point, ~150
   bytes, versioned via `"schema": 1` so a v2 can migrate. `logic.parse_payload`
-  is tolerant (returns None on damage) and unknown/damaged names in the group
-  are cleaned up on execute.
+  is tolerant (returns None on damage), and attributes whose NAME this build
+  does not recognize are reported but never deleted — they may belong to a
+  future schema version or a sibling feature, and destroying them on every OK
+  would silently eat that data.
 - **Point resolution** (`entry._resolve_point`): sketch/work points pass
   through; a sketch circle/arc contributes its existing `centerSketchPoint`
   (no redundant geometry); a circular BRep edge gets a work point via
@@ -120,7 +122,10 @@ design-wide wildcard queries below remain the intent for future tooling:
   `command_created`; unchanged rows rewrite onto the same points (idempotent —
   `attributes.add` overwrites same-name), moved points get the stale attribute
   deleted first, deleted rows remove all their attributes (deletion wins over
-  re-addition via `logic.diff_wires`).
+  re-addition via `logic.diff_wires`). A wire whose points FAIL to resolve
+  during execute is *kept*, not removed: its stored attributes stay and its
+  manifest entry is re-emitted, so a transient resolution failure can never
+  destroy a stored definition (only explicit row deletion removes wires).
 - **Selection UX**: Fusion does not support SelectionCommandInputs in table
   cells, so per-wire selections live in a "Wire editor" group that always
   edits the active row; rows activate via a per-row Edit button (bare table
@@ -135,8 +140,12 @@ design-wide wildcard queries below remain the intent for future tooling:
   a row explicitly focuses the first editor input so canvas picks land on
   the intended wire rather than auto-advancing into the cable input.
 - **Pin defaults auto-increment** (`logic.next_pin`): highest numeric pin
-  plus one, "1" for the first wire; non-numeric names are ignored.
-  Duplicate pins are rejected by `logic.validate_wires`.
+  plus one, "1" for the first wire; non-numeric names are ignored. int() is
+  the numeric arbiter — `str.isdigit()` alone accepts unicode digits
+  (superscripts, circled numbers) that int() rejects, and pins are free
+  text. Duplicate pins are rejected by `logic.validate_wires`; duplicate
+  POINTS are compared by their *resolved* identity (a circle and its own
+  center sketch point are the same point).
 - **No executePreview**: attributes are invisible and preview would churn
   work-point create/rollback on every input change for nothing.
 - **Icons are placeholders** copied from `roundsketchdimensions` — replace

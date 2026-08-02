@@ -178,9 +178,20 @@ def next_pin(pins: Iterable[str]) -> str:
     """Default pin name for a new wire: highest numeric pin + 1.
 
     Non-numeric pin names are ignored; with no numeric pins the first
-    default is ``"1"``. The user can always edit the result.
+    default is ``"1"``. The user can always edit the result. int() is the
+    numeric arbiter: str.isdigit() alone is not enough because it accepts
+    unicode digits (superscripts, circled numbers) that int() rejects with
+    ValueError, and pins are free text.
     """
-    numbers = [int(pin) for pin in pins if str(pin).strip().isdigit()]
+    numbers = []
+    for pin in pins:
+        text = str(pin).strip()
+        if not text.isdigit():
+            continue
+        try:
+            numbers.append(int(text))
+        except ValueError:
+            continue  # unicode digit that int() rejects
     return str(max(numbers) + 1) if numbers else "1"
 
 

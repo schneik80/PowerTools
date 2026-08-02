@@ -110,7 +110,7 @@ _loading_row = False  # reentrancy guard while seeding editor inputs
 _row_counter = 0
 # Connector-level cable point (multi-conductor cable breakout); required by
 # validateInputs when the connector has more than one wire.
-_cable_point: dict = {"entity": None, "missing": False}
+_cable_point: dict = {"entity": None}
 
 
 # ---------------------------------------------------------------------------
@@ -388,26 +388,34 @@ def _handle_cable_selection_changed(changed):
         except Exception:
             ptutil.log(f"{CMD_NAME}: stored cable point no longer selectable.")
             _cable_point["entity"] = None
-            _cable_point["missing"] = True
         finally:
             _loading_row = False
         return
     entity = sel.selection(0).entity
     if not _is_supported_point_source(entity):
-        # Guard the programmatic clearSelection - it re-fires inputChanged.
+        # Reject the pick but KEEP the stored point (re-seed it like the
+        # empty-selection branch above): clearing state here armed silent
+        # deletion of the stored cablepoint attribute on the next OK after
+        # a stray click. Guard the programmatic clearSelection/addSelection
+        # - they re-fire inputChanged.
+        stored = _cable_point.get("entity")
         _loading_row = True
         try:
             sel.clearSelection()
+            if stored is not None:
+                try:
+                    sel.addSelection(stored)
+                except Exception:
+                    ptutil.log(f"{CMD_NAME}: stored cable point not re-seedable.")
+                    _cable_point["entity"] = None
         finally:
             _loading_row = False
-        _cable_point["entity"] = None
         _update_editor_label(
             "Pick a circular edge, circular/arc sketch curve, sketch point, "
             "or work point for the cable."
         )
         return
     _cable_point["entity"] = entity
-    _cable_point["missing"] = False
     _update_editor_label()
 
 
@@ -434,10 +442,13 @@ def command_validate(args: adsk.core.ValidateInputsEventArgs):
             for rid in _row_order:
                 wire = _wires[rid]
                 tokens = [
-                    _entity_token(wire["points"][r])
+                    _point_identity(wire["points"][r])
                     for r in logic.ROLES
                     if wire["points"][r] is not None
                 ]
+                # Unreadable tokens ("") carry no verdict - they must not
+                # collide with each other and falsely block OK.
+                tokens = [token for token in tokens if token]
                 if len(set(tokens)) != len(tokens):
                     problems.append("Same point used twice in one wire.")
                     break
@@ -448,7 +459,7 @@ def command_validate(args: adsk.core.ValidateInputsEventArgs):
         args.areInputsValid = not problems
     except Exception:
         ptutil.handle_error(f"{CMD_NAME} validateInputs")
-        args.areInputsValid = True  # fail-open so the user is never stuck
+        args.areInputsValid = False  # fail closed - never enable OK unchecked
 
 
 # ---------------------------------------------------------------------------
@@ -470,6 +481,8 @@ def command_execute(args: adsk.core.CommandEventArgs):
         connector_id = logic.connector_id_for(root.name, manifest.get("connector_id"))
 
         desired: list = []
+        manifest_wires: list = []
+        kept_ids: list = []
         created_points = 0
         failures: list = []
         for rid in _row_order:
@@ -478,14 +491,26 @@ def command_execute(args: adsk.core.CommandEventArgs):
             if fields is None:
                 failures.append(
                     f"Wire pin '{_wires[rid]['pin']}': could not resolve all "
-                    "three points - wire skipped."
+                    "three points - wire skipped (stored data kept)."
                 )
+                # A write failure is NOT a deletion: keep the wire's stored
+                # attributes and manifest entry so a transient resolution
+                # failure never destroys the definition.
+                wire_id = _wires[rid].get("wire_id")
+                if wire_id and wire_id in state["wires"]:
+                    kept_ids.append(wire_id)
+                    kept = logic.wire_fields(
+                        state["wires"][wire_id],
+                        logic.manifest_entry(manifest, wire_id),
+                    )
+                    manifest_wires.append({"wire_id": wire_id, **kept})
             else:
                 desired.append(fields)
+                manifest_wires.append(fields)
 
         diff = logic.diff_wires(
             state["wires"].keys(),
-            [fields["wire_id"] for fields in desired],
+            [fields["wire_id"] for fields in desired] + kept_ids,
             _deleted_wire_ids,
         )
         removed = _delete_removed_attributes(existing, diff["remove"])
@@ -493,7 +518,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
         root.attributes.add(
             logic.ATTR_GROUP,
             logic.MANIFEST_NAME,
-            logic.build_manifest_payload(connector_id, root.name, desired),
+            logic.build_manifest_payload(connector_id, root.name, manifest_wires),
         )
 
         cable_note = _write_cable_point(root, connector_id, existing)
@@ -508,8 +533,11 @@ def command_execute(args: adsk.core.CommandEventArgs):
             lines.append(f"Work points created: {created_points}")
         if diff["remove"]:
             lines.append(f"Wires removed: {len(diff['remove'])} ({removed} attrs)")
-        if existing["bad_attrs"]:
-            lines.append(f"Damaged attributes cleaned: {len(existing['bad_attrs'])}")
+        if existing["unknown_attrs"]:
+            lines.append(
+                f"Unrecognized cable attributes left untouched: "
+                f"{len(existing['unknown_attrs'])}"
+            )
         lines.extend(failures)
         ui.messageBox("\n".join(lines), CMD_NAME)
 
@@ -653,7 +681,13 @@ def _replace_stale_attr(existing: dict, key: tuple, point):
 
 
 def _delete_removed_attributes(existing: dict, remove_ids: set) -> int:
-    """Delete every attribute of removed wires plus unparseable leftovers."""
+    """Delete every attribute of wires the user removed.
+
+    Attributes with unrecognized names (``existing["unknown_attrs"]``) are
+    deliberately NOT deleted: they may belong to a future schema version or
+    a sibling feature, and destroying them here would silently eat that
+    data every time this dialog is OK'd.
+    """
     removed = 0
     for (wire_id, _role), attribute in existing["attr_objs"].items():
         if wire_id not in remove_ids:
@@ -663,11 +697,6 @@ def _delete_removed_attributes(existing: dict, remove_ids: set) -> int:
             removed += 1
         except Exception:
             ptutil.log(f"{CMD_NAME}: could not delete attribute of wire {wire_id}.")
-    for attribute in existing["bad_attrs"]:
-        try:
-            attribute.deleteMe()
-        except Exception:
-            ptutil.log(f"{CMD_NAME}: could not delete a damaged attribute.")
     return removed
 
 
@@ -679,13 +708,15 @@ def _read_existing(design) -> dict:
 
     Returns:
         A dict with ``attr_objs`` (``{(wire_id, role): Attribute}``),
-        ``entity_map`` (``{(wire_id, role): entity or None}``), ``bad_attrs``
-        (live Attribute objects whose name/value failed to parse), and
-        ``state`` (the :func:`logic.group_attributes_into_wires` result).
+        ``entity_map`` (``{(wire_id, role): entity or None}``),
+        ``unknown_attrs`` (live Attribute objects whose NAME this build does
+        not recognize - reported but never deleted, since they may belong
+        to a future schema version), and ``state`` (the
+        :func:`logic.group_attributes_into_wires` result).
     """
     attr_objs: dict = {}
     entity_map: dict = {}
-    bad_attrs: list = []
+    unknown_attrs: list = []
     records: list = []
     cable_attr = None
     cable_entity = None
@@ -714,11 +745,11 @@ def _read_existing(design) -> dict:
             cable_attr = attribute
             cable_entity = parent
         elif name != logic.MANIFEST_NAME:
-            bad_attrs.append(attribute)
+            unknown_attrs.append(attribute)
     return {
         "attr_objs": attr_objs,
         "entity_map": entity_map,
-        "bad_attrs": bad_attrs,
+        "unknown_attrs": unknown_attrs,
         "cable_attr": cable_attr,
         "cable_entity": cable_entity,
         "state": logic.group_attributes_into_wires(records),
@@ -743,13 +774,11 @@ def _load_existing_wires(design, inputs, table):
                 except Exception:
                     ptutil.log(f"{CMD_NAME}: stored cable point not selectable.")
                     _cable_point["entity"] = None
-                    _cable_point["missing"] = True
                     missing_any = True
                 finally:
                     _loading_row = False
         else:
             # Cable point deleted outside the command - must be re-picked.
-            _cable_point["missing"] = True
             missing_any = True
 
     if not state["wires"]:
@@ -994,6 +1023,22 @@ def _entity_token(entity) -> str:
         return ""
 
 
+def _point_identity(entity) -> str:
+    """Validation identity token for a picked point source.
+
+    Sketch circles/arcs resolve to their CENTER sketch point at execute
+    time (see :func:`_resolve_point`), so validation compares that center -
+    picking a circle and its own center point IS the same point twice.
+    """
+    curve = adsk.fusion.SketchCircle.cast(entity) or adsk.fusion.SketchArc.cast(entity)
+    if curve is not None:
+        try:
+            return _entity_token(curve.centerSketchPoint)
+        except Exception:
+            return _entity_token(entity)
+    return _entity_token(entity)
+
+
 def _rid_from_input_id(input_id: str, prefix: str):
     """Parse the rid suffix from a per-row input id; None when malformed."""
     try:
@@ -1014,7 +1059,7 @@ def _reset_state():
     _deleted_wire_ids = set()
     _loading_row = False
     _row_counter = 0
-    _cable_point = {"entity": None, "missing": False}
+    _cable_point = {"entity": None}
 
 
 # ---------------------------------------------------------------------------

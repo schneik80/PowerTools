@@ -30,26 +30,32 @@ def choose_end_occurrence(candidates: list[dict], end: dict) -> tuple[int | None
     """Pick the candidate occurrence for one route end.
 
     Args:
-        candidates: One dict per occurrence, in order, with ``token`` (its
-            entity token) and ``connector_id`` (its component's connector
-            id, "" when it has none).
-        end: A route-payload end with ``occ_token`` and ``connector_id``.
+        candidates: One dict per occurrence, in order, with ``token_match``
+            (True when the stored occurrence token RESOLVED to this
+            occurrence) and ``connector_id`` (its component's connector id,
+            "" when it has none). The caller resolves tokens with Fusion's
+            ``Design.findEntityByToken`` - never by comparing token strings,
+            which the API documents as unstable (the same entity can return
+            different token strings over time).
+        end: A route-payload end with ``connector_id``.
 
-    Resolution ladder: an exact entity-token match wins (it survives
-    renames and disambiguates multiple instances of the same connector);
-    otherwise a UNIQUE connector-id match (the token died - document copied
-    or connector reinserted); otherwise unresolvable.
+    Resolution ladder: a UNIQUE token resolution wins (it survives renames
+    and disambiguates multiple instances of the same connector); otherwise
+    a UNIQUE connector-id match (the token died - document copied or
+    connector reinserted); otherwise unresolvable.
 
     Returns:
         ``(index, how)`` on success with how :data:`HOW_TOKEN` or
         :data:`HOW_CONNECTOR_ID`; ``(None, reason)`` with reason
         :data:`REASON_AMBIGUOUS` or :data:`REASON_NOT_FOUND`.
     """
-    token = end.get("occ_token") or ""
-    if token:
-        for index, candidate in enumerate(candidates):
-            if token == (candidate.get("token") or ""):
-                return index, HOW_TOKEN
+    token_matches = [
+        index
+        for index, candidate in enumerate(candidates)
+        if candidate.get("token_match")
+    ]
+    if len(token_matches) == 1:
+        return token_matches[0], HOW_TOKEN
     connector_id = end.get("connector_id") or ""
     if connector_id:
         matches = [

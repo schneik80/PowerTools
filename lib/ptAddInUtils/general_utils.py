@@ -21,33 +21,41 @@ import adsk.core
 app = adsk.core.Application.get()
 ui = app.userInterface
 
-# Attempt to read DEBUG and PERF_TRACE flags from parent config.
-# CAUTION: config.py imports ptAddInUtils BEFORE defining its flags, so when
-# config's import is what first triggers this module, the getattr calls below
-# run against a partially initialized config module and capture False/"" -
-# permanently disabling logging. _refresh_flags() re-reads them lazily at log
-# time, when config is guaranteed to be fully initialized.
+# Attempt to read DEBUG and PERF_TRACE flags from parent config. config.py
+# defers its own ptAddInUtils import into the two functions that need it, so
+# by the time this module is imported the flags below are normally final.
+# Should an import-order surprise still hand us a partially initialized
+# config, _refresh_flags() re-reads once at first use and then latches -
+# the hot path in log()/perf_timer() stays a single boolean test.
 try:
     from ... import config
 
     DEBUG = getattr(config, "DEBUG", False)
     PERF_TRACE = getattr(config, "PERF_TRACE", False)
     _CACHE_PATH = getattr(config, "CACHE_PATH", "")
+    _flags_final = hasattr(config, "CACHE_PATH")
 except Exception:
     DEBUG = False
     PERF_TRACE = False
     _CACHE_PATH = ""
+    _flags_final = False
 
 
 def _refresh_flags() -> None:
-    """Re-read DEBUG/PERF_TRACE/CACHE_PATH from the (now complete) config."""
-    global DEBUG, PERF_TRACE, _CACHE_PATH
+    """Re-read DEBUG/PERF_TRACE/CACHE_PATH from config (latches when complete).
+
+    ``_flags_final`` flips True once a fully initialized config (CACHE_PATH
+    is defined last of the three flags) has been observed; after that the
+    gates in :func:`log` and :func:`perf_timer` never re-import config.
+    """
+    global DEBUG, PERF_TRACE, _CACHE_PATH, _flags_final
     try:
         from ... import config
 
         DEBUG = bool(getattr(config, "DEBUG", DEBUG))
         PERF_TRACE = bool(getattr(config, "PERF_TRACE", PERF_TRACE))
         _CACHE_PATH = getattr(config, "CACHE_PATH", _CACHE_PATH)
+        _flags_final = hasattr(config, "CACHE_PATH")
     except Exception:
         pass  # keep whatever we had - the logger must never raise
 
@@ -57,6 +65,8 @@ def _refresh_flags() -> None:
 # error-level entries, so without this file there is nothing to inspect
 # after the fact.
 _DEBUG_LOG_MAX_BYTES = 5_000_000
+_debug_dir_for = ""  # directory already ensured, keyed by path
+_debug_log_bytes = -1  # tracked log size in bytes (-1 = not read yet)
 
 
 def debug_log_path() -> str:
@@ -78,20 +88,41 @@ def _level_tag(level) -> str:
 
 
 def _append_debug_file(message: str, level) -> None:
-    """Append one timestamped line to the debug log (size-capped)."""
+    """Append one timestamped line to the debug log (size-capped).
+
+    Kept cheap for log-in-loop callers on the UI thread: the directory is
+    ensured once per path and the file size is tracked in a counter, so a
+    line normally costs one open/write/close. Crossing the cap rotates the
+    file to a ``.old`` sidecar (one previous generation) instead of
+    truncating, so the run-up to a failure survives.
+    """
+    global _debug_dir_for, _debug_log_bytes
     path = debug_log_path()
     if not path:
         return
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    mode = "a"
-    try:
-        if os.path.getsize(path) > _DEBUG_LOG_MAX_BYTES:
-            mode = "w"  # start over rather than grow without bound
-    except OSError:
-        pass  # file does not exist yet
+    directory = os.path.dirname(path)
+    if directory != _debug_dir_for:
+        os.makedirs(directory, exist_ok=True)
+        _debug_dir_for = directory
+        _debug_log_bytes = -1
+    if _debug_log_bytes < 0:
+        try:
+            _debug_log_bytes = os.path.getsize(path)
+        except OSError:
+            _debug_log_bytes = 0  # file does not exist yet
+    if _debug_log_bytes > _DEBUG_LOG_MAX_BYTES:
+        try:
+            os.replace(path, path + ".old")
+        except OSError:
+            pass  # rotation is best-effort; appending below still works
+        _debug_log_bytes = 0
     stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(path, mode, encoding="utf-8") as handle:
-        handle.write(f"{stamp} [{_level_tag(level)}] {message}\n")
+    line = f"{stamp} [{_level_tag(level)}] {message}\n"
+    # newline="\n" writes LF verbatim (no platform CRLF translation), so the
+    # size counter above stays exact without re-stat'ing the file.
+    with open(path, "a", encoding="utf-8", newline="\n") as handle:
+        handle.write(line)
+    _debug_log_bytes += len(line.encode("utf-8"))
 
 
 def log(
@@ -113,8 +144,9 @@ def log(
     """
     # Every log destination below is gated on config.DEBUG. The flags may
     # have been captured from a partially initialized config at import time
-    # (see the module-top caution), so re-resolve them before deciding.
-    if not DEBUG or not _CACHE_PATH:
+    # (see the module-top caution); once a complete config has been seen the
+    # refresh latches off and this gate is a single boolean test.
+    if not _flags_final:
         _refresh_flags()
     if not DEBUG:
         return
@@ -225,6 +257,11 @@ def perf_timer(label: str, context: str = ""):
 
     Has zero runtime cost (no timing overhead, no log write) when PERF_TRACE is False.
     """
+    # Same partial-import guard as log(): without it, a perf_timer entered
+    # before the session's first log() call would gate on a stale latched
+    # PERF_TRACE=False and silently emit nothing.
+    if not _flags_final:
+        _refresh_flags()
     if not PERF_TRACE:
         yield
         return

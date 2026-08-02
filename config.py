@@ -24,7 +24,11 @@ import os.path
 
 import adsk.core
 
-from .lib import ptAddInUtils as ptutil
+# NOTE: lib/ptAddInUtils is deliberately NOT imported at module level.
+# general_utils captures DEBUG/PERF_TRACE/CACHE_PATH from this module at ITS
+# import time, and a top-level import here ran BEFORE those flags were
+# defined - handing the logger a partially initialized config (flags latched
+# False/""). The two settings functions below import it at call time instead.
 
 # ---------------------------------------------------------------------------
 # 1. Global flags / identity
@@ -172,11 +176,15 @@ SETTINGS_FILE = os.path.join(CACHE_DIR, "settings.json")
 
 
 def load_settings() -> dict:
+    from .lib import ptAddInUtils as ptutil
+
     data = ptutil.read_json(SETTINGS_FILE, {})
     return data if isinstance(data, dict) else {}
 
 
 def save_settings(settings: dict) -> None:
+    from .lib import ptAddInUtils as ptutil
+
     ptutil.write_json_atomic(SETTINGS_FILE, settings)
 
 

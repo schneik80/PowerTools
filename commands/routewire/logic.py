@@ -101,10 +101,23 @@ def cable_od_mm(
 
 def sort_pins(pins: Iterable[str]) -> list[str]:
     """Pins sorted numerically when possible, then lexically."""
-    return sorted(
-        pins,
-        key=lambda pin: (0, int(pin), "") if str(pin).isdigit() else (1, 0, str(pin)),
-    )
+    return sorted(pins, key=_pin_sort_key)
+
+
+def _pin_sort_key(pin: str) -> tuple:
+    """Numeric-first sort key for one pin name.
+
+    int() is the numeric arbiter: str.isdigit() alone is not enough because
+    it accepts unicode digits (superscripts, circled numbers) that int()
+    rejects with ValueError, and pins are free text.
+    """
+    text = str(pin)
+    if text.isdigit():
+        try:
+            return (0, int(text), "")
+        except ValueError:
+            pass  # unicode digit that int() rejects - sort lexically
+    return (1, 0, text)
 
 
 def awg_overlap_many(ranges: Iterable[tuple[int, int]]) -> list[int]:
@@ -185,6 +198,37 @@ def fanout_guide_points(
     direction = _unit(_sub(exit_pt, strip)) or direct
     guide = _add(exit_pt, _scale(direction, (span or 1.0) * fraction))
     return [tuple(exit_pt), guide, tuple(cable_pt)]
+
+
+def result_notes(result: dict) -> str:
+    """Builder-result notes for a summary message box ("" when clean).
+
+    Renders the ``spline_fallback`` / ``baked_points`` / ``dropped_tangents``
+    keys of a ``builder.build_wire`` / ``build_cable`` result dict. Lives
+    here (beside the builder that produces the dict) so Route Wire and
+    Update Wire report identical wording.
+    """
+    notes = ""
+    if result.get("spline_fallback"):
+        notes += (
+            "\n\nNote: tangency constraints could not be applied everywhere "
+            "- some splines were shaped with guide points instead (see the "
+            "debug log for the reason)."
+        )
+    if result.get("baked_points"):
+        notes += (
+            f"\n\nNote: {result['baked_points']} point(s) could not be "
+            "linked to the connector geometry and were baked at fixed "
+            "positions (those parts will not follow connector moves)."
+        )
+    if result.get("dropped_tangents"):
+        notes += (
+            f"\n\nNote: {result['dropped_tangents']} fan-out tangency "
+            "constraint(s) made their sketch unsolvable and were dropped - "
+            "those wires stay associative but are not exactly tangent at "
+            "the exit."
+        )
+    return notes
 
 
 def build_route_payload(fields: dict) -> str:

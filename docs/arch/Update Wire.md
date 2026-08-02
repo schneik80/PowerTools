@@ -23,10 +23,14 @@ redefined, or includes that fell back to baked positions.
    - Candidates: every occurrence in the design except the wire's own tree
      (filtered by `fullPathName` prefix).
    - Each stored end resolves by **entity token** first
-     (`Design`-persistent; disambiguates multiple instances of one
-     connector part), else by **unique connector id** (token died —
-     document copied or connector re-inserted). An ambiguous connector-id
-     match (several instances, dead token) is refused rather than guessed.
+     (disambiguates multiple instances of one connector part), else by
+     **unique connector id** (token died — document copied or connector
+     re-inserted). An ambiguous connector-id match (several instances, dead
+     token) is refused rather than guessed. Tokens are resolved through
+     `Design.findEntityByToken` and matched to candidates by occurrence
+     path — **never by comparing token strings**, which the API documents
+     as invalid (the same entity can return different token strings over
+     time).
    - The wire record on the resolved connector is found by **wire id**,
      falling back to **pin** (wire redefined by Define Wires). Cable ends
      resolve their whole stored wire list the same way in stored order
@@ -38,9 +42,12 @@ redefined, or includes that fell back to baked positions.
      cables); damaged payloads refuse to rebuild.
 3. **Delete** (`entry._delete_wire`) — the wire occurrence's
    `timelineObject.parentGroup` is deleted with contents
-   (`TimelineGroup.deleteMe(True)`); when the group is gone (user
-   ungrouped), the assembly occurrence itself is deleted. Nothing is
-   deleted unless resolution fully succeeded.
+   (`TimelineGroup.deleteMe(True)`) **only when its name still matches the
+   route's own `Wire <name>` / `Cable <name>` label** — build-time grouping
+   can fail silently, and a user's manual group containing the occurrence
+   plus unrelated features must never be destroyed wholesale. On a name
+   mismatch (or when the group is gone), only the assembly occurrence is
+   deleted. Nothing is deleted unless resolution fully succeeded.
 4. **Rebuild** — `commands/routewire/builder.build_wire` or `build_cable`
    with the resolved ends and stored parameters: same construction as
    Route Wire, including fresh associative includes and a fresh route
@@ -69,7 +76,10 @@ the same connector part it cannot say which instance a wire attached to.
 Route Wire therefore stamps each end with the occurrence's `entityToken`
 (schema v1, additive field `occ_token`). Tokens are persistent within the
 document lineage but die on copy/re-insert — hence the two-step ladder with
-the unique-connector-id fallback.
+the unique-connector-id fallback. The Autodesk docs warn that "the token
+string returned for a specific entity can be different over time", so a
+stored token is only ever *resolved* (`findEntityByToken`), never
+string-compared against a live token.
 
 ## Known limitations (accepted for the prove-out)
 

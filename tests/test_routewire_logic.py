@@ -174,6 +174,13 @@ def test_sort_pins_numeric_aware() -> None:
     assert logic.sort_pins([]) == []
 
 
+def test_sort_pins_unicode_digits_never_crash() -> None:
+    # Superscript/circled digits pass str.isdigit() but int() raises
+    # ValueError - they must sort lexically instead of crashing the dialog.
+    assert logic.sort_pins(["²", "2", "b"]) == ["2", "b", "²"]
+    assert logic.sort_pins(["②", "10", "1"]) == ["1", "10", "②"]
+
+
 @pytest.mark.parametrize(
     "ranges, expected",
     [
@@ -265,3 +272,28 @@ def test_route_payload_cable_kind() -> None:
     assert payload["kind"] == "cable"
     assert payload["cable_od_mm"] == pytest.approx(4.33)
     assert payload["ends"] == ends
+
+
+# ---------------------------------------------------------------------------
+# Build-result summary notes (shared by Route Wire and Update Wire)
+# ---------------------------------------------------------------------------
+def test_result_notes_clean_result_is_empty() -> None:
+    result = {"spline_fallback": False, "baked_points": 0, "dropped_tangents": 0}
+    assert logic.result_notes(result) == ""
+    assert logic.result_notes({}) == ""  # missing keys read as clean
+
+
+def test_result_notes_each_flag_appears() -> None:
+    notes = logic.result_notes(
+        {"spline_fallback": True, "baked_points": 2, "dropped_tangents": 1}
+    )
+    assert "guide points" in notes
+    assert "2 point(s)" in notes
+    assert "1 fan-out tangency" in notes
+
+
+def test_result_notes_single_flag_only_mentions_itself() -> None:
+    notes = logic.result_notes({"baked_points": 3})
+    assert "3 point(s)" in notes
+    assert "guide points" not in notes
+    assert "tangency" not in notes

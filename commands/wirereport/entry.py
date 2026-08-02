@@ -71,6 +71,7 @@ INIT_JS_PATH = os.path.join(_HTML_DIR, "init.js")
 
 local_handlers: list = []
 _palette_handlers: list = []  # live as long as the palette exists
+_last_state: dict | None = None  # last gathered report (htmlReady re-sends it)
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +120,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
 
 def command_execute(args: adsk.core.CommandEventArgs):
+    global _last_state
     try:
         design = adsk.fusion.Design.cast(app.activeProduct)
         if design is None:
@@ -127,6 +129,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
             )
             return
         state = _gather_state(design)
+        _last_state = state
         if not state["assemblies"] and not state["skipped"]:
             ui.messageBox(
                 "No routed wires or cables were found in this design.\n\n"
@@ -294,7 +297,7 @@ def _display_single(design, entry: dict) -> dict:
         "kind": "wire",
         "title": f"Wire {entry['name']}",
         "ends": _ends_line(entry["ends"]),
-        "spec": f"{entry['awg']} AWG, {entry['od_mm']:.2f} mm sheath",
+        "spec": f"{_awg_text(entry['awg'])} AWG, {_mm_text(entry['od_mm'])} mm sheath",
         "rows": [
             {
                 "label": "Bare conductor stubs",
@@ -325,9 +328,9 @@ def _display_cable(design, entry: dict) -> dict:
         {"label": "Jacket run", "value": _len_value(design, entry["jacket_cm"])}
     )
     cable_od = entry.get("cable_od_mm")
-    spec = f"{entry['awg']} AWG, {entry['od_mm']:.2f} mm wires"
+    spec = f"{_awg_text(entry['awg'])} AWG, {_mm_text(entry['od_mm'])} mm wires"
     if cable_od:
-        spec += f", {cable_od:.2f} mm jacket"
+        spec += f", {_mm_text(cable_od)} mm jacket"
     return {
         "kind": "cable",
         "title": f"Cable {entry['name']}",
@@ -353,6 +356,25 @@ def _ends_line(ends: list) -> str:
         for end in ends
     ]
     return "  <->  ".join(parts) if parts else ""
+
+
+def _mm_text(value) -> str:
+    """A stored millimeter value formatted to 2 decimals ("?" when damaged).
+
+    Route payloads are parsed tolerantly (only the schema version is
+    checked), so a missing or non-numeric diameter must degrade to "?" in
+    that one route's spec line instead of aborting the whole report with a
+    format TypeError.
+    """
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return "?"
+
+
+def _awg_text(value) -> str:
+    """A stored gauge for display ("?" when absent)."""
+    return "?" if value is None else str(value)
 
 
 def _len_value(design, cm: float) -> dict:
@@ -423,13 +445,23 @@ def _write_init_js(state: dict):
 
 
 def _palette_incoming(html_args: adsk.core.HTMLEventArgs):
+    global _last_state
     try:
         action = html_args.action
         palette = ui.palettes.itemById(PALETTE_ID)
         if action in ("htmlReady", "refresh") and palette is not None:
-            design = adsk.fusion.Design.cast(app.activeProduct)
-            if design is not None:
-                palette.sendInfoToHTML("setState", json.dumps(_gather_state(design)))
+            # htmlReady re-sends the state already gathered for this
+            # invocation (the init.js sidecar may be stale - Windows CEF
+            # caches it by URL) WITHOUT re-measuring the whole design;
+            # refresh re-gathers when a design is active and otherwise
+            # re-sends the last report (unchanged timestamp) rather than
+            # silently leaving stale data that looks refreshed.
+            if action == "refresh" or _last_state is None:
+                design = adsk.fusion.Design.cast(app.activeProduct)
+                if design is not None:
+                    _last_state = _gather_state(design)
+            if _last_state is not None:
+                palette.sendInfoToHTML("setState", json.dumps(_last_state))
         html_args.returnData = "OK"
     except Exception:
         ptutil.handle_error(f"{CMD_NAME} palette event")
