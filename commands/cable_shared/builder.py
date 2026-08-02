@@ -172,6 +172,22 @@ def _route_payload_of(comp):
         return None  # tolerant read - not a routed assembly
 
 
+def _stamp_member(comp, role: str, pin: str | None = None):
+    """Stamp a member attribute so reports can identify this child by data.
+
+    Best-effort: a stamp failure must never fail the build - the Wire
+    Report falls back to display-name matching for unstamped children.
+    """
+    try:
+        comp.attributes.add(
+            schema.ATTR_GROUP,
+            schema.MEMBER_NAME,
+            schema.build_member_payload(role, pin),
+        )
+    except Exception:
+        ptutil.log(f"{_LOG_NAME}: could not stamp the {role} member attribute.")
+
+
 def component_connector_id(comp) -> str:
     """The component's connector id from its manifest attribute ("" if none)."""
     try:
@@ -284,8 +300,10 @@ def build_wire(design, ends, params) -> dict:
     asm_comp.name = f"Wire {job['name']}"
     conductor_occ = asm_comp.occurrences.addNewComponent(identity)
     conductor_occ.component.name = "Conductor"
+    _stamp_member(conductor_occ.component, schema.MEMBER_CONDUCTOR)
     sheath_occ = asm_comp.occurrences.addNewComponent(identity)
     sheath_occ.component.name = "Sheath"
+    _stamp_member(sheath_occ.component, schema.MEMBER_SHEATH)
 
     _build_conductor_bodies(
         conductor_occ.component,
@@ -362,6 +380,7 @@ def build_cable(design, ends, params) -> dict:
     for wire_a, wire_b in zip(wires_a, wires_b, strict=True):
         wire_occ = cable_comp.occurrences.addNewComponent(identity)
         wire_occ.component.name = f"Wire {wire_a['pin']}"
+        _stamp_member(wire_occ.component, schema.MEMBER_WIRE, wire_a["pin"])
         _build_cable_wire(
             wire_occ.component,
             _root_context_occurrence(wire_occ, cable_occ),

@@ -31,6 +31,7 @@ from collections.abc import Iterable
 ATTR_GROUP = "PowerTools.Cable"
 MANIFEST_NAME = "connector"
 CABLE_POINT_NAME = "cablepoint"
+MEMBER_NAME = "member"
 POINT_NAME_PREFIX = "point"
 SCHEMA_VERSION = 1
 ROLE_CABLE = "cable"
@@ -39,6 +40,12 @@ ROLE_START = "start"
 ROLE_STRIP = "strip"
 ROLE_EXIT = "exit"
 ROLES = (ROLE_START, ROLE_STRIP, ROLE_EXIT)
+
+# Member roles stamped on the components a route build creates, so the
+# Wire Report can identify children by data instead of display names.
+MEMBER_CONDUCTOR = "conductor"
+MEMBER_SHEATH = "sheath"
+MEMBER_WIRE = "wire"
 
 AWG_LOWER_BOUND = 0
 AWG_UPPER_BOUND = 40
@@ -173,6 +180,25 @@ def build_cable_point_payload(connector_id: str) -> str:
             "role": ROLE_CABLE,
         }
     )
+
+
+def build_member_payload(role: str, pin: str | None = None) -> str:
+    """Serialize the member attribute stamped on a built child component.
+
+    The builder stamps every component it creates inside a wire or cable
+    assembly (:data:`MEMBER_CONDUCTOR`, :data:`MEMBER_SHEATH`,
+    :data:`MEMBER_WIRE`) under the name :data:`MEMBER_NAME`, so the Wire
+    Report can find and label children by data instead of display names -
+    which users can rename and Fusion suffixes for uniqueness.
+
+    Args:
+        role: One of the member role constants.
+        pin: The wire's pin, for :data:`MEMBER_WIRE` members.
+    """
+    payload: dict = {"schema": SCHEMA_VERSION, "role": role}
+    if pin is not None:
+        payload["pin"] = pin
+    return json.dumps(payload)
 
 
 def next_pin(pins: Iterable[str]) -> str:

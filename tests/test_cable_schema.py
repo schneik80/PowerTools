@@ -192,6 +192,31 @@ def test_cable_point_payload_round_trip() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Member payloads (stamped on built child components)
+# ---------------------------------------------------------------------------
+def test_member_payload_round_trip_without_pin() -> None:
+    payload = logic.parse_payload(logic.build_member_payload(logic.MEMBER_SHEATH))
+    assert payload is not None
+    assert payload["schema"] == 1
+    assert payload["role"] == "sheath"
+    assert "pin" not in payload
+
+
+def test_member_payload_round_trip_with_pin() -> None:
+    payload = logic.parse_payload(
+        logic.build_member_payload(logic.MEMBER_WIRE, pin="4")
+    )
+    assert payload is not None
+    assert payload["role"] == "wire"
+    assert payload["pin"] == "4"
+
+
+def test_member_roles_are_distinct() -> None:
+    roles = {logic.MEMBER_CONDUCTOR, logic.MEMBER_SHEATH, logic.MEMBER_WIRE}
+    assert len(roles) == 3
+
+
+# ---------------------------------------------------------------------------
 # Pin defaults
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize(

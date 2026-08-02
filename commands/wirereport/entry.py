@@ -42,7 +42,7 @@ import adsk.fusion
 from ... import config
 from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
-from ..cable_shared import builder
+from ..cable_shared import builder, schema
 from ..cable_shared import routing as route_logic
 from . import logic
 
@@ -175,8 +175,12 @@ def _measure_route(design, route) -> dict:
         "ends": [_end_info(design, end, kind) for end in payload.get("ends") or []],
     }
     if kind == route_logic.KIND_SINGLE:
-        entry["conductor_cm"] = _child_curve_length_cm(comp, "Conductor")
-        entry["sheath_cm"] = _child_curve_length_cm(comp, "Sheath")
+        entry["conductor_cm"] = _child_curve_length_cm(
+            comp, schema.MEMBER_CONDUCTOR, "Conductor"
+        )
+        entry["sheath_cm"] = _child_curve_length_cm(
+            comp, schema.MEMBER_SHEATH, "Sheath"
+        )
     elif kind == route_logic.KIND_CABLE:
         entry["jacket_cm"] = _own_curve_length_cm(comp)
         entry["wires"] = _measure_cable_wires(comp, payload)
@@ -184,28 +188,44 @@ def _measure_route(design, route) -> dict:
 
 
 def _measure_cable_wires(comp, payload) -> list:
-    """Per-wire out-of-jacket lengths, labeled with the payload's pins.
+    """Per-wire out-of-jacket lengths, labeled with the most reliable pin.
 
-    Child components are matched to pins by creation order (build order =
-    paired pin order); component-name parsing is only the fallback when
-    the counts disagree (e.g. the user deleted a wire component).
+    Children are found by their stamped member attribute (role "wire",
+    which also carries the pin - immune to renames and Fusion's uniqueness
+    suffixes). For assemblies built before members were stamped, the
+    fallbacks are the old ladder: name-prefix discovery, pins by creation
+    order against the payload (build order = paired pin order), then
+    component-name parsing when the counts disagree.
     """
-    children = []
+    children = []  # (component, stamped pin or None)
     try:
         for index in range(comp.occurrences.count):
             child = comp.occurrences.item(index)
+            member = _member_payload(child.component)
+            if member is not None:
+                if member.get("role") == schema.MEMBER_WIRE:
+                    pin = str(member.get("pin") or "")
+                    children.append((child.component, pin or None))
+                continue
             if child.component.name.startswith("Wire "):
-                children.append(child.component)
+                children.append((child.component, None))
     except Exception:
         ptutil.log(f"{CMD_NAME}: cable child scan failed on {comp.name}.")
-    pins = []
+    payload_pins = []
     ends = payload.get("ends") or []
     if ends and isinstance(ends[0], dict):
-        pins = [str(pin) for pin in ends[0].get("pins") or []]
-    if len(pins) != len(children):
-        pins = [child.name[len("Wire ") :] for child in children]
+        payload_pins = [str(pin) for pin in ends[0].get("pins") or []]
+    use_payload = len(payload_pins) == len(children)
     wires = []
-    for pin, child in zip(pins, children, strict=True):
+    for index, (child, stamped_pin) in enumerate(children):
+        if stamped_pin:
+            pin = stamped_pin
+        elif use_payload:
+            pin = payload_pins[index]
+        elif child.name.startswith("Wire "):
+            pin = child.name[len("Wire ") :]
+        else:
+            pin = child.name
         wires.append({"pin": pin, "extra_cm": _own_curve_length_cm(child)})
     return wires
 
@@ -230,20 +250,41 @@ def _own_curve_length_cm(comp) -> float:
     return total
 
 
-def _child_curve_length_cm(comp, name_prefix: str) -> float:
-    """Curve length of the first child component named *name_prefix*...
+def _child_curve_length_cm(comp, role: str, name_prefix: str) -> float:
+    """Curve length of the child component with member role *role*.
 
-    Matched by prefix because Fusion suffixes duplicate component names
-    across the document ("Conductor (1)").
+    Members match by their stamped member attribute first (immune to
+    renames); the display-name prefix is only the fallback for assemblies
+    built before members were stamped (prefix, because Fusion suffixes
+    duplicate component names - "Conductor (1)"). A total miss is logged
+    instead of silently reporting a zero length as fact.
     """
+    fallback = None
     try:
         for index in range(comp.occurrences.count):
             child = comp.occurrences.item(index)
-            if child.component.name.startswith(name_prefix):
-                return _own_curve_length_cm(child.component)
+            member = _member_payload(child.component)
+            if member is not None:
+                if member.get("role") == role:
+                    return _own_curve_length_cm(child.component)
+                continue
+            if fallback is None and child.component.name.startswith(name_prefix):
+                fallback = child.component
     except Exception:
         ptutil.log(f"{CMD_NAME}: child lookup failed on {comp.name}.")
+    if fallback is not None:
+        return _own_curve_length_cm(fallback)
+    ptutil.log(f"{CMD_NAME}: no {role} member found on {comp.name} - length 0.")
     return 0.0
+
+
+def _member_payload(comp) -> dict | None:
+    """The component's parsed member attribute payload, or None."""
+    try:
+        attr = comp.attributes.itemByName(schema.ATTR_GROUP, schema.MEMBER_NAME)
+        return schema.parse_payload(attr.value if attr else "")
+    except Exception:
+        return None  # tolerant read - not a stamped member
 
 
 def _end_info(design, end: dict, kind: str) -> dict:

@@ -23,8 +23,15 @@ jacket's tangency direction lines — is excluded.
   jacket; the **cable length = max over wires** (`logic.summarize_cable`
   in `commands/wirereport/logic.py`, unit-tested) — every wire in a
   manufactured cable is cut to the same length, so the longest path
-  governs. Child components map to pins by creation order (build order =
-  paired pin order), with name parsing as the fallback.
+  governs.
+
+Children are identified by the builder's stamped **member attributes**
+(`PowerTools.Cable` / `member`: role conductor/sheath/wire, wire members
+carrying their pin) — immune to renames and Fusion's uniqueness suffixes.
+For assemblies built before the stamps existed, the fallbacks are the old
+ladder: name-prefix discovery, pins by creation order against the route
+payload, then component-name parsing; a total miss is logged instead of
+silently reporting a zero length.
 
 Connector display names resolve from the route ends' occurrence tokens
 (`design.findEntityByToken`), falling back to the stored connector id.

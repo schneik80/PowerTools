@@ -172,6 +172,15 @@ Root
                   and "... sheath 1|2"
 ```
 
+Every child component the builder creates is additionally stamped with a
+**member** attribute (`PowerTools.Cable` / `member`, JSON
+`{"schema": 1, "role": "conductor"|"sheath"|"wire", "pin": ...}` — pin on
+wire members only, built by `schema.build_member_payload`). The Wire
+Report identifies and labels children by these stamps instead of display
+names, which users can rename and Fusion suffixes for uniqueness; name
+matching survives only as its fallback for assemblies built before the
+stamps existed.
+
 `design.timeline.markerPosition` is captured before any creation; afterwards
 everything from that index on is grouped via `timelineGroups.add` and the
 group is named `Wire <name>` / `Cable <name>`. (True `CustomFeature` API
