@@ -209,6 +209,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
         ptutil.add_handler(cmd.execute, command_execute, local_handlers=local_handlers)
         ptutil.add_handler(
+            cmd.executePreview, command_execute_preview, local_handlers=local_handlers
+        )
+        ptutil.add_handler(
             cmd.inputChanged, command_input_changed, local_handlers=local_handlers
         )
         ptutil.add_handler(
@@ -218,6 +221,26 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
     except Exception:
         ui.messageBox(f"{CMD_NAME}: Setup failed.\n{traceback.format_exc()}", CMD_NAME)
+
+
+# ---------------------------------------------------------------------------
+# Execute preview - keep the exit-to-exit line alive once OK is enabled
+# ---------------------------------------------------------------------------
+def command_execute_preview(args: adsk.core.CommandEventArgs):
+    # Custom graphics drawn during a command live inside its transaction.
+    # While inputs are invalid this event never fires and the line drawn
+    # from inputChanged persists; once validateInputs turns true, Fusion
+    # runs a preview cycle after every input change, and each cycle FIRST
+    # rolls the document back - wiping graphics drawn earlier (the line
+    # vanished the moment the wire name enabled OK). Redrawing here keeps
+    # it alive through every cycle.
+    try:
+        _update_preview()
+        # Graphics-only preview: never claim a valid result, so the real
+        # command_execute still runs on OK (a True here would skip it).
+        args.isValidResult = False
+    except Exception:
+        ptutil.handle_error(f"{CMD_NAME} executePreview")
 
 
 # ---------------------------------------------------------------------------
