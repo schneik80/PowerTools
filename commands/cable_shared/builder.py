@@ -566,55 +566,80 @@ def _build_sheath_body(comp, ctx_occ, wires, job):
     _add_pipe(comp, path, job["sheath_dia_cm"], f"Wire {name} sheath")
 
 
+def _constrained_spline(sketch, start_point, end_point, tangent_lines, label):
+    """Fitted spline start-to-end, merged onto its anchors and made tangent.
+
+    The anchor points must already terminate real curves (line endpoints -
+    merging into a BARE included point raises InternalValidationError, see
+    docs/arch/Route Wire.md), so `SketchPoint.merge` joins the spline's
+    ends onto them and the two tangent constraints deterministically bend
+    only the spline - including on recompute when connectors move.
+
+    Returns the spline, or None when a step refuses (the attempt is
+    deleted; the caller builds its guide-point fallback).
+    """
+    fit = adsk.core.ObjectCollection.create()
+    fit.add(start_point.geometry)
+    fit.add(end_point.geometry)
+    spline = sketch.sketchCurves.sketchFittedSplines.add(fit)
+    try:
+        if not start_point.merge(spline.startSketchPoint):
+            raise ValueError(f"merge of {label} spline start failed")
+        if not end_point.merge(spline.endSketchPoint):
+            raise ValueError(f"merge of {label} spline end failed")
+        constraints = sketch.geometricConstraints
+        line_a, line_b = tangent_lines
+        if constraints.addTangent(line_a, spline) is None:
+            raise ValueError(f"addTangent({label} line A, spline) returned null")
+        if constraints.addTangent(spline, line_b) is None:
+            raise ValueError(f"addTangent(spline, {label} line B) returned null")
+        return spline
+    except Exception:
+        ptutil.log(
+            f"{_LOG_NAME}: constrained {label} spline failed, using "
+            f"guide points.\n{traceback.format_exc()}"
+        )
+    try:
+        spline.deleteMe()
+    except Exception:
+        ptutil.log(f"{_LOG_NAME}: could not delete the {label} spline attempt.")
+    return None
+
+
+def _guide_spline(sketch, guides, job):
+    """Baked guide-point fallback spline, flagged in the build result."""
+    fit = adsk.core.ObjectCollection.create()
+    for xyz in guides:
+        fit.add(sketch.modelToSketchSpace(adsk.core.Point3D.create(*xyz)))
+    job["result"]["spline_fallback"] = True
+    return sketch.sketchCurves.sketchFittedSplines.add(fit)
+
+
 def _add_exit_spline(sketch, exit_lines, wires, job):
     """Create the exit-to-exit spline, tangent to both exit lines.
 
     The exit lines are fully DEFINED by their endpoints (included connector
     points, or fixed baked points), so the solver has no freedom on the
-    lines: merging the spline's endpoints into the lines' exit endpoints
-    (SketchPoint.merge - point-to-point coincident constraints are not
-    supported by the API) and adding tangent constraints deterministically
-    bends only the spline, and keeps doing so when connectors move. Only if
-    a step refuses does this fall back to an unconstrained spline shaped by
-    directional guide points, flagged in the build result.
+    lines - see :func:`_constrained_spline`. (`SketchPoint.merge` predates
+    the finding that `addCoincident` documents point-to-point support; the
+    merge recipe demonstrably survives connector moves here, so it stays.)
+    Falls back to an unconstrained spline shaped by directional guide
+    points, flagged in the build result.
     """
     wire_a, wire_b = wires
     line_a, line_b = exit_lines
-    fit = adsk.core.ObjectCollection.create()
-    fit.add(line_a.endSketchPoint.geometry)
-    fit.add(line_b.endSketchPoint.geometry)
-    spline = sketch.sketchCurves.sketchFittedSplines.add(fit)
-    try:
-        if not line_a.endSketchPoint.merge(spline.startSketchPoint):
-            raise ValueError("merge of spline start into exit line A failed")
-        if not line_b.endSketchPoint.merge(spline.endSketchPoint):
-            raise ValueError("merge of spline end into exit line B failed")
-        constraints = sketch.geometricConstraints
-        if constraints.addTangent(line_a, spline) is None:
-            raise ValueError("addTangent(line_a, spline) returned null")
-        if constraints.addTangent(spline, line_b) is None:
-            raise ValueError("addTangent(spline, line_b) returned null")
+    spline = _constrained_spline(
+        sketch, line_a.endSketchPoint, line_b.endSketchPoint, exit_lines, "exit"
+    )
+    if spline is not None:
         return spline
-    except Exception:
-        ptutil.log(
-            f"{_LOG_NAME}: constrained spline construction failed, using "
-            f"guide-point spline.\n{traceback.format_exc()}"
-        )
-    try:
-        spline.deleteMe()
-    except Exception:
-        ptutil.log(f"{_LOG_NAME}: could not delete the constrained spline attempt.")
     guides = logic.spline_guide_points(
         _as_tuple(wire_a["world"][schema.ROLE_STRIP]),
         _as_tuple(wire_a["world"][schema.ROLE_EXIT]),
         _as_tuple(wire_b["world"][schema.ROLE_STRIP]),
         _as_tuple(wire_b["world"][schema.ROLE_EXIT]),
     )
-    fallback_fit = adsk.core.ObjectCollection.create()
-    for xyz in guides:
-        fallback_fit.add(sketch.modelToSketchSpace(adsk.core.Point3D.create(*xyz)))
-    job["result"]["spline_fallback"] = True
-    return sketch.sketchCurves.sketchFittedSplines.add(fallback_fit)
+    return _guide_spline(sketch, guides, job)
 
 
 def _build_jacket(comp, ctx_occ, ends, job):
@@ -650,40 +675,17 @@ def _build_jacket(comp, ctx_occ, ends, job):
     except Exception:
         ptutil.log(f"{_LOG_NAME}: could not mark jacket direction lines.")
 
-    fit = adsk.core.ObjectCollection.create()
-    fit.add(cable_a.geometry)
-    fit.add(cable_b.geometry)
-    spline = sketch.sketchCurves.sketchFittedSplines.add(fit)
-    try:
-        if not cable_a.merge(spline.startSketchPoint):
-            raise ValueError("merge of jacket spline start failed")
-        if not cable_b.merge(spline.endSketchPoint):
-            raise ValueError("merge of jacket spline end failed")
-        constraints = sketch.geometricConstraints
-        if constraints.addTangent(direction_a, spline) is None:
-            raise ValueError("addTangent(direction_a, spline) returned null")
-        if constraints.addTangent(spline, direction_b) is None:
-            raise ValueError("addTangent(spline, direction_b) returned null")
-    except Exception:
-        ptutil.log(
-            f"{_LOG_NAME}: constrained jacket spline failed, using baked "
-            f"guide points.\n{traceback.format_exc()}"
-        )
-        try:
-            spline.deleteMe()
-        except Exception:
-            ptutil.log(f"{_LOG_NAME}: could not delete the jacket spline attempt.")
+    spline = _constrained_spline(
+        sketch, cable_a, cable_b, (direction_a, direction_b), "jacket"
+    )
+    if spline is None:
         guides = logic.spline_guide_points(
             _as_tuple(_centroid([w["world"][schema.ROLE_EXIT] for w in wires_a])),
             _as_tuple(side_a["cable"]["world"]),
             _as_tuple(_centroid([w["world"][schema.ROLE_EXIT] for w in wires_b])),
             _as_tuple(side_b["cable"]["world"]),
         )
-        fallback_fit = adsk.core.ObjectCollection.create()
-        for xyz in guides:
-            fallback_fit.add(sketch.modelToSketchSpace(adsk.core.Point3D.create(*xyz)))
-        spline = sketch.sketchCurves.sketchFittedSplines.add(fallback_fit)
-        job["result"]["spline_fallback"] = True
+        spline = _guide_spline(sketch, guides, job)
     path = comp.features.createPath(spline, False)
     _add_pipe(comp, path, job["cable_dia_cm"], f"Cable {name} jacket")
 
