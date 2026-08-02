@@ -32,6 +32,7 @@ ATTR_GROUP = "PowerTools.Cable"
 MANIFEST_NAME = "connector"
 CABLE_POINT_NAME = "cablepoint"
 MEMBER_NAME = "member"
+DESIGNATOR_NAME = "designator"
 POINT_NAME_PREFIX = "point"
 SCHEMA_VERSION = 1
 ROLE_CABLE = "cable"
@@ -180,6 +181,16 @@ def build_cable_point_payload(connector_id: str) -> str:
             "role": ROLE_CABLE,
         }
     )
+
+
+def build_designator_payload(designator: str) -> str:
+    """Serialize a connector's reference-designator attribute value.
+
+    Stored on the connector OCCURRENCE (never the component): designators
+    are per instance - two instances of one connector part carry J1 and J2
+    - and belong to the assembly document, not the referenced part.
+    """
+    return json.dumps({"schema": SCHEMA_VERSION, "designator": designator})
 
 
 def build_member_payload(role: str, pin: str | None = None) -> str:

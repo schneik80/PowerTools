@@ -26,7 +26,11 @@ flowchart LR
 All attributes live in group **`PowerTools.Cable`** (constants in
 `commands/cable_shared/schema.py` — treat that module as the schema's
 single source of truth; it is pure Python with unit tests in
-`tests/test_cable_schema.py`).
+`tests/test_cable_schema.py`). Define Wires authors the manifest, point,
+and cablepoint attributes below; the group's other members are owned
+elsewhere: `route` and `member` by the Route Wire builder (see
+[Route Wire](./Route%20Wire.md)) and `designator` — stored on connector
+**occurrences** — by [Assign Designators](./Assign%20Designators.md).
 
 ### Root component — one manifest attribute
 

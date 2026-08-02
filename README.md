@@ -59,14 +59,17 @@ Most commands appear in **Design › Tools › Power Tools**. Some appear in oth
 
 ### Cable (Beta)
 
-Prove-out family for wire and cable routing; all four commands require **Beta mode** (PowerTools Preferences).
+Prove-out family for wire and cable routing; all commands require **Beta mode** (PowerTools Preferences).
 
 | Command | Location | Description |
 | --- | --- | --- |
 | [Define Wires](./docs/Define%20Wires.md) | Design › Tools › Power Tools | Author wire points, pins, gauges, and the cable breakout point on a connector part. |
+| [Assign Designators](./docs/Assign%20Designators.md) | Design › Tools › Power Tools | Assign unique reference designators (J1, J2, …) to the assembly's connectors. |
 | [Route Wire](./docs/Route%20Wire.md) | Design › Tools › Power Tools | Build a single wire or a multi-conductor cable between two connectors, associatively. |
 | [Update Wire](./docs/Update%20Wire.md) | Design › Tools › Power Tools | Rebuild a routed wire from its stored route data after connector changes break the links. |
 | [Wire Report](./docs/Wire%20Report.md) | Design › Tools › Power Tools | Report connectors, pins, and computed wire/cable lengths in a theme-aware panel. |
+| [Export Connectivity](./docs/Export%20Connectivity.md) | Design › Tools › Power Tools | Write the assembly's connectivity as an editable CSV wire list. |
+| [Import Connectivity](./docs/Import%20Connectivity.md) | Design › Tools › Power Tools | Build every wire and cable defined in an edited connectivity wire list. |
 
 ### Document Tools
 
