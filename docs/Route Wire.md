@@ -34,8 +34,8 @@ Root of the design
                         cable point, at the cable diameter)
     Wire <pin>         one component per pair, 4 bodies each:
                        2 bare-conductor stubs (start-to-strip, AWG diameter)
-                       2 sheathed end segments (strip-to-exit, then a smooth
-                        fan-out spline to the cable point, wire diameter)
+                       2 sheathed end segments (strip-to-exit, then straight
+                        to the cable point, wire diameter)
 ```
 
 One gauge governs the whole cable (the AWG list is the intersection across every paired wire). The **cable diameter** defaults to the standard cable-design recommendation — packed wire bundle (per-count packing factor), a lay allowance, plus jacket walls — and stays editable.

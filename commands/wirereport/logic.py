@@ -53,7 +53,7 @@ def summarize_cable(route: dict) -> dict:
         route: ``{"name", "awg", "od_mm", "cable_od_mm", "ends",
             "jacket_cm", "wires": [{"pin", "extra_cm"}]}`` - ``extra_cm``
             is a wire's measured length OUTSIDE the jacket (both ends'
-            conductor stubs, exit lines, and fan-out splines).
+            conductor stubs, exit lines, and fan-out segments).
 
     Returns:
         The route fields plus per-wire ``path_cm`` (extra + jacket),

@@ -692,9 +692,15 @@ def _build_cable_wire(comp, ctx_occ, pair, job):
     """One paired wire of a cable: 4 bodies in its own component.
 
     Per end: a bare conductor stub (start to strip, AWG diameter) and a
-    sheathed segment strip -> exit -> cable point (line plus fan-out spline,
-    wire OD). The mid-run between the cable points is represented by the
-    jacket only.
+    sheathed segment strip -> exit -> cable point built from TWO STRAIGHT
+    LINES at the wire OD. Lines between included points are the one
+    construction that reliably follows connector moves: every
+    constraint-correct fan-out SPLINE recipe (merged ends; coincident
+    ends + addTangent; the UI-ideal tangent-handle + collinear) built
+    without error, yet a Fusion recompute defect left most splines behind
+    when a connector actually moved - see docs/arch/Route Wire.md and git
+    history for the full chain. The mid-run between the cable points is
+    represented by the jacket only.
     """
     (side_a, wire_a), (side_b, wire_b) = pair
     label = f"Cable {job['name']} wire {wire_a['pin']}"
@@ -720,84 +726,12 @@ def _build_cable_wire(comp, ctx_occ, pair, job):
         )
 
         exit_line = lines.addByTwoPoints(strip_point, exit_point)
-        spline = _add_fanout_spline(sketch, exit_line, cable_point, (wire, job))
+        fan_line = lines.addByTwoPoints(exit_point, cable_point)
         curves = adsk.core.ObjectCollection.create()
         curves.add(exit_line)
-        curves.add(spline)
+        curves.add(fan_line)
         sheath_path = comp.features.createPath(curves, False)
         _add_pipe(comp, sheath_path, job["sheath_dia_cm"], f"{label} sheath {suffix}")
-
-
-def _add_fanout_spline(sketch, exit_line, cable_point, refs):
-    """Spline from a wire's exit to the cable point, tangent at the exit.
-
-    Built the way the UI builds it: the lines already connect the included
-    connector points, the spline is drawn between the exit and cable
-    positions, and its endpoints get explicit point-to-point COINCIDENT
-    constraints onto the included points. One-sided tangency at the exit
-    via addTangent (the wires converge direction-free into the jacket),
-    with a sketch-health check: an unsatisfiable tangency is deleted again
-    and counted. Falls back to a baked guide-point spline when a step
-    refuses, flagged as spline_fallback.
-
-    NOTE: the geometrically IDEAL construction is the tangent-HANDLE
-    recipe - activateTangentHandle(fitPoint) returns the handle as a real
-    SketchLine and a collinear constraint pins it along the exit line
-    (see git history) - but a Fusion defect prevents the constrained
-    splines from updating cleanly when connectors move, so it was
-    reverted. Revisit when Autodesk fixes spline-constraint recompute.
-    """
-    wire, job = refs
-    fit = adsk.core.ObjectCollection.create()
-    fit.add(exit_line.endSketchPoint.geometry)
-    fit.add(cable_point.geometry)
-    spline = sketch.sketchCurves.sketchFittedSplines.add(fit)
-    try:
-        constraints = sketch.geometricConstraints
-        start_bond = constraints.addCoincident(
-            spline.startSketchPoint, exit_line.endSketchPoint
-        )
-        if start_bond is None:
-            raise ValueError("addCoincident(spline start, exit point) returned null")
-        end_bond = constraints.addCoincident(spline.endSketchPoint, cable_point)
-        if end_bond is None:
-            raise ValueError("addCoincident(spline end, cable point) returned null")
-        tangent = constraints.addTangent(exit_line, spline)
-        if tangent is None:
-            raise ValueError("addTangent(exit_line, spline) returned null")
-        if _sketch_is_sick(sketch):
-            # A tangency the solver cannot satisfy leaves the whole sketch
-            # sick; the coincident-bound spline WITHOUT it is still fully
-            # associative, just not exactly tangent at the exit. Prefer a
-            # healthy sketch.
-            try:
-                tangent.deleteMe()
-            except Exception:
-                ptutil.log(f"{_LOG_NAME}: sick fan-out tangent not deleted.")
-            job["result"]["dropped_tangents"] = (
-                job["result"].get("dropped_tangents", 0) + 1
-            )
-            ptutil.log(f"{_LOG_NAME}: fan-out tangency dropped (sketch sick).")
-        return spline
-    except Exception:
-        ptutil.log(
-            f"{_LOG_NAME}: constrained fan-out spline failed, using "
-            f"guide points.\n{traceback.format_exc()}"
-        )
-    try:
-        spline.deleteMe()
-    except Exception:
-        ptutil.log(f"{_LOG_NAME}: could not delete the fan-out spline attempt.")
-    guides = logic.fanout_guide_points(
-        _as_tuple(wire["world"][schema.ROLE_STRIP]),
-        _as_tuple(wire["world"][schema.ROLE_EXIT]),
-        _as_tuple(sketch.sketchToModelSpace(cable_point.geometry)),
-    )
-    fallback_fit = adsk.core.ObjectCollection.create()
-    for xyz in guides:
-        fallback_fit.add(sketch.modelToSketchSpace(adsk.core.Point3D.create(*xyz)))
-    job["result"]["spline_fallback"] = True
-    return sketch.sketchCurves.sketchFittedSplines.add(fallback_fit)
 
 
 def _sketch_is_sick(sketch) -> bool:

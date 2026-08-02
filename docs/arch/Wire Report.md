@@ -19,7 +19,7 @@ jacket's tangency direction lines — is excluded.
   `Sheath` child component (line + spline + line) = **total wire length**.
 - Cable: the `Cable <name>` component's own sketch = jacket run; each
   `Wire <pin>` child = that wire's out-of-jacket length (stubs, exit
-  lines, fan-out splines). A wire's full path = its own length + the
+  lines, fan-out lines). A wire's full path = its own length + the
   jacket; the **cable length = max over wires** (`logic.summarize_cable`
   in `commands/wirereport/logic.py`, unit-tested) — every wire in a
   manufactured cable is cut to the same length, so the longest path

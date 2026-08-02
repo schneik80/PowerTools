@@ -185,10 +185,16 @@ def fanout_guide_points(
 ) -> list[Vec]:
     """Fit points for a wire's exit-to-cable spline without a tangent.
 
-    One-sided fallback for the cable fan-out: a single interior guide point
-    continues the strip-to-exit direction past the exit by *fraction* of the
-    exit-to-cable distance, then the spline runs on to the cable point.
-    A degenerate strip-to-exit segment falls back to the direct direction.
+    One-sided fallback for a SPLINE cable fan-out: a single interior guide
+    point continues the strip-to-exit direction past the exit by *fraction*
+    of the exit-to-cable distance, then the spline runs on to the cable
+    point. A degenerate strip-to-exit segment falls back to the direct
+    direction.
+
+    Currently unused: the cable fan-out is built from straight lines while
+    a Fusion recompute defect leaves constrained fan-out splines behind on
+    connector moves (see docs/arch/Route Wire.md). Kept, with its tests,
+    for the spline recipe's return.
 
     Returns:
         ``[exit_pt, guide, cable_pt]`` as xyz tuples.
