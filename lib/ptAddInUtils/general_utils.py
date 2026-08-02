@@ -22,6 +22,11 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 # Attempt to read DEBUG and PERF_TRACE flags from parent config.
+# CAUTION: config.py imports ptAddInUtils BEFORE defining its flags, so when
+# config's import is what first triggers this module, the getattr calls below
+# run against a partially initialized config module and capture False/"" -
+# permanently disabling logging. _refresh_flags() re-reads them lazily at log
+# time, when config is guaranteed to be fully initialized.
 try:
     from ... import config
 
@@ -32,6 +37,20 @@ except Exception:
     DEBUG = False
     PERF_TRACE = False
     _CACHE_PATH = ""
+
+
+def _refresh_flags() -> None:
+    """Re-read DEBUG/PERF_TRACE/CACHE_PATH from the (now complete) config."""
+    global DEBUG, PERF_TRACE, _CACHE_PATH
+    try:
+        from ... import config
+
+        DEBUG = bool(getattr(config, "DEBUG", DEBUG))
+        PERF_TRACE = bool(getattr(config, "PERF_TRACE", PERF_TRACE))
+        _CACHE_PATH = getattr(config, "CACHE_PATH", _CACHE_PATH)
+    except Exception:
+        pass  # keep whatever we had - the logger must never raise
+
 
 # Persistent debug log (only written when DEBUG is on). The Text Commands
 # window is not saved to disk and Fusion's own app log only receives our
@@ -92,7 +111,11 @@ def log(
     force_console -- Retained for backward compatibility. It no longer
                      overrides the config.DEBUG gate.
     """
-    # Every log destination below is gated on config.DEBUG.
+    # Every log destination below is gated on config.DEBUG. The flags may
+    # have been captured from a partially initialized config at import time
+    # (see the module-top caution), so re-resolve them before deciding.
+    if not DEBUG or not _CACHE_PATH:
+        _refresh_flags()
     if not DEBUG:
         return
 
