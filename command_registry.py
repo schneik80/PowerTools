@@ -53,6 +53,7 @@ GROUPS = [
         # Cable-routing prove-out; future routing commands join this group.
         "commands": [
             _cmd("definewires", "Define Wires.md", beta=True),
+            _cmd("routewire", "Route Wire.md", beta=True),
         ],
     },
     {
