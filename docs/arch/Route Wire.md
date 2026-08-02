@@ -107,12 +107,17 @@ jacket body) with one nested `Wire <pin>` component per paired wire:
   diameter) and a sheathed end segment: strip-to-exit line plus a fan-out
   spline to the cable point, merged at both ends and tangent at the exit
   only (the wires converge direction-free into the jacket;
-  `logic.fanout_guide_points` is the constraint fallback). An anchor
-  CONSTRUCTION line is drawn into the included cable point before the
-  merge: `SketchPoint.merge` into a *bare* included point raises
-  `InternalValidationError`, while merging into an included point that
-  already terminates a curve succeeds (the jacket's direction lines and
-  the single wire's exit lines are why those merges never hit this).
+  `logic.fanout_guide_points` is the constraint fallback). A TEMPORARY
+  anchor line is drawn into the included cable point before the merge and
+  deleted right after: `SketchPoint.merge` into a *bare* included point
+  raises `InternalValidationError`, while merging into an included point
+  that already terminates a curve succeeds (the jacket's direction lines
+  and the single wire's exit lines are why those merges never hit this) —
+  and leaving the anchor in place formed a two-curve loop with the spline
+  that made the tangency unsolvable. After applying the tangent the
+  sketch's `timelineObject.healthState` is checked; a tangency the solver
+  cannot satisfy is deleted again (the merged spline stays fully
+  associative, just not exactly tangent) and reported in the summary.
   Swept as Pipes at the wire diameter — 4 bodies per wire, grouped in
   that wire's component. The mid-run between cable points is represented
   by the jacket only.

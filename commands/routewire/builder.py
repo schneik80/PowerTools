@@ -271,7 +271,7 @@ def build_wire(design, ends, params) -> dict:
         "name": params["name"],
         "conductor_dia_cm": logic.conductor_diameter_mm(params["awg"]) / 10.0,
         "sheath_dia_cm": params["od_mm"] / 10.0,
-        "result": {"spline_fallback": False, "baked_points": 0},
+        "result": {"spline_fallback": False, "baked_points": 0, "dropped_tangents": 0},
     }
     wires = (ends[0][1], ends[1][1])
 
@@ -342,7 +342,7 @@ def build_cable(design, ends, params) -> dict:
         "conductor_dia_cm": logic.conductor_diameter_mm(params["awg"]) / 10.0,
         "sheath_dia_cm": params["od_mm"] / 10.0,
         "cable_dia_cm": params["cable_od_mm"] / 10.0,
-        "result": {"spline_fallback": False, "baked_points": 0},
+        "result": {"spline_fallback": False, "baked_points": 0, "dropped_tangents": 0},
     }
     (side_a, wires_a), (side_b, wires_b) = ends
 
@@ -748,21 +748,39 @@ def _add_fanout_spline(sketch, exit_line, cable_point, refs):
     fit.add(cable_point.geometry)
     spline = sketch.sketchCurves.sketchFittedSplines.add(fit)
     try:
+        # Merging into a BARE included point raises InternalValidationError,
+        # so a TEMPORARY anchor line gives the cable point a terminating
+        # curve for the merge. It is deleted right after: the spline then
+        # terminates the point (keeping the merge valid), and leaving the
+        # anchor in place formed a two-curve loop with the spline (both
+        # endpoints shared) that made the tangency unsolvable.
         anchor = sketch.sketchCurves.sketchLines.addByTwoPoints(
             exit_line.endSketchPoint, cable_point
         )
-        try:
-            # Construction so the anchor is excluded from paths and from
-            # the Wire Report's length measurement.
-            anchor.isConstruction = True
-        except Exception:
-            ptutil.log(f"{_LOG_NAME}: could not mark the fan-out anchor line.")
         if not exit_line.endSketchPoint.merge(spline.startSketchPoint):
             raise ValueError("merge of fan-out spline start failed")
         if not cable_point.merge(spline.endSketchPoint):
             raise ValueError("merge of fan-out spline end failed")
-        if sketch.geometricConstraints.addTangent(exit_line, spline) is None:
+        try:
+            anchor.deleteMe()
+        except Exception:
+            ptutil.log(f"{_LOG_NAME}: fan-out anchor line not deleted.")
+        tangent = sketch.geometricConstraints.addTangent(exit_line, spline)
+        if tangent is None:
             raise ValueError("addTangent(exit_line, spline) returned null")
+        if _sketch_is_sick(sketch):
+            # A tangency the solver cannot satisfy leaves the whole sketch
+            # sick; the merged spline WITHOUT it is still fully associative
+            # (both ends driven by included points), just not exactly
+            # tangent at the exit. Prefer a healthy sketch.
+            try:
+                tangent.deleteMe()
+            except Exception:
+                ptutil.log(f"{_LOG_NAME}: sick fan-out tangent not deleted.")
+            job["result"]["dropped_tangents"] = (
+                job["result"].get("dropped_tangents", 0) + 1
+            )
+            ptutil.log(f"{_LOG_NAME}: fan-out tangency dropped (sketch sick).")
         return spline
     except Exception:
         ptutil.log(
@@ -783,6 +801,19 @@ def _add_fanout_spline(sketch, exit_line, cable_point, refs):
         fallback_fit.add(sketch.modelToSketchSpace(adsk.core.Point3D.create(*xyz)))
     job["result"]["spline_fallback"] = True
     return sketch.sketchCurves.sketchFittedSplines.add(fallback_fit)
+
+
+def _sketch_is_sick(sketch) -> bool:
+    """True when the sketch's timeline item reports a compute problem."""
+    try:
+        states = adsk.fusion.FeatureHealthStates
+        health = sketch.timelineObject.healthState
+        return health in (
+            states.ErrorFeatureHealthState,
+            states.WarningFeatureHealthState,
+        )
+    except Exception:
+        return False  # health unreadable - assume fine
 
 
 def _centroid(points) -> adsk.core.Point3D:

@@ -583,6 +583,13 @@ def _result_notes(result: dict) -> str:
             "linked to the connector geometry and were baked at fixed "
             "positions (those parts will not follow connector moves)."
         )
+    if result.get("dropped_tangents"):
+        notes += (
+            f"\n\nNote: {result['dropped_tangents']} fan-out tangency "
+            "constraint(s) made their sketch unsolvable and were dropped - "
+            "those wires stay associative but are not exactly tangent at "
+            "the exit."
+        )
     return notes
 
 
