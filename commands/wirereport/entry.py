@@ -282,7 +282,7 @@ def _display_state(design, report: dict) -> dict:
         "totals": {
             "wires": totals["wire_count"],
             "cables": totals["cable_count"],
-            "conductor": _fmt_len(design, totals["conductor_cm"]),
+            "conductor": _len_value(design, totals["conductor_cm"]),
         },
         "skipped": report["skipped"],
         "assemblies": assemblies,
@@ -298,13 +298,16 @@ def _display_single(design, entry: dict) -> dict:
         "rows": [
             {
                 "label": "Bare conductor stubs",
-                "value": _fmt_len(design, entry["conductor_cm"]),
+                "value": _len_value(design, entry["conductor_cm"]),
             },
-            {"label": "Sheathed run", "value": _fmt_len(design, entry["sheath_cm"])},
+            {
+                "label": "Sheathed run",
+                "value": _len_value(design, entry["sheath_cm"]),
+            },
         ],
         "total": {
             "label": "Total wire length",
-            "value": _fmt_len(design, entry["total_cm"]),
+            "value": _len_value(design, entry["total_cm"]),
         },
     }
 
@@ -313,12 +316,14 @@ def _display_cable(design, entry: dict) -> dict:
     rows = [
         {
             "label": f"Wire {wire['pin']} path",
-            "value": _fmt_len(design, wire["path_cm"]),
+            "value": _len_value(design, wire["path_cm"]),
             "highlight": wire["pin"] == entry["longest_pin"],
         }
         for wire in entry["wires"]
     ]
-    rows.append({"label": "Jacket run", "value": _fmt_len(design, entry["jacket_cm"])})
+    rows.append(
+        {"label": "Jacket run", "value": _len_value(design, entry["jacket_cm"])}
+    )
     cable_od = entry.get("cable_od_mm")
     spec = f"{entry['awg']} AWG, {entry['od_mm']:.2f} mm wires"
     if cable_od:
@@ -335,7 +340,7 @@ def _display_cable(design, entry: dict) -> dict:
                 if entry["longest_pin"]
                 else "Cable length"
             ),
-            "value": _fmt_len(design, entry["cable_cm"]),
+            "value": _len_value(design, entry["cable_cm"]),
         },
     }
 
@@ -350,13 +355,20 @@ def _ends_line(ends: list) -> str:
     return "  <->  ".join(parts) if parts else ""
 
 
-def _fmt_len(design, cm: float) -> str:
-    """Length in the document's display units (falls back to mm)."""
+def _len_value(design, cm: float) -> dict:
+    """A length as raw cm plus a document-units formatted string.
+
+    The page formats from the raw value using the rounding control
+    (default .00 mm) and only uses the pre-formatted string for its
+    "Document units" option - so changing the rounding never needs a
+    round-trip to Fusion.
+    """
     try:
         units_mgr = design.unitsManager
-        return units_mgr.formatInternalValue(cm, units_mgr.defaultLengthUnits, True)
+        doc = units_mgr.formatInternalValue(cm, units_mgr.defaultLengthUnits, True)
     except Exception:
-        return f"{cm * 10.0:.1f} mm"
+        doc = f"{cm * 10.0:.2f} mm"
+    return {"cm": cm, "doc": doc}
 
 
 # ---------------------------------------------------------------------------

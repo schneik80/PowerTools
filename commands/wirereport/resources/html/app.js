@@ -22,6 +22,25 @@ function el(tag, className, text) {
     return node;
 }
 
+/* Lengths arrive as {cm: <raw>, doc: "<document-units string>"} so the
+   rounding control re-renders instantly without a Fusion round-trip. */
+var lastState = null;
+
+function roundingMode() {
+    var sel = document.getElementById('roundingSel');
+    return sel ? sel.value : '2';
+}
+
+function formatLength(value) {
+    if (value === null || value === undefined) { return ''; }
+    if (typeof value === 'string') { return value; }
+    var mode = roundingMode();
+    if (mode === 'doc') { return value.doc || ''; }
+    var decimals = parseInt(mode, 10);
+    if (isNaN(decimals)) { decimals = 2; }
+    return (value.cm * 10).toFixed(decimals) + ' mm';
+}
+
 function renderTotals(totals, skipped) {
     var host = document.getElementById('totals');
     host.textContent = '';
@@ -29,7 +48,7 @@ function renderTotals(totals, skipped) {
     var stats = [
         [String(totals.wires), 'wires'],
         [String(totals.cables), 'cables'],
-        [totals.conductor, 'total conductor']
+        [formatLength(totals.conductor), 'total conductor']
     ];
     if (skipped) { stats.push([String(skipped), 'unsupported routes']); }
     stats.forEach(function (pair) {
@@ -53,14 +72,14 @@ function renderAssembly(assembly) {
         var tr = document.createElement('tr');
         if (row.highlight) { tr.className = 'highlight'; }
         tr.appendChild(el('td', null, row.label));
-        tr.appendChild(el('td', null, row.value));
+        tr.appendChild(el('td', null, formatLength(row.value)));
         table.appendChild(tr);
     });
     if (assembly.total) {
         var totalRow = document.createElement('tr');
         totalRow.className = 'total';
         totalRow.appendChild(el('td', null, assembly.total.label));
-        totalRow.appendChild(el('td', null, assembly.total.value));
+        totalRow.appendChild(el('td', null, formatLength(assembly.total.value)));
         table.appendChild(totalRow);
     }
     card.appendChild(table);
@@ -69,6 +88,7 @@ function renderAssembly(assembly) {
 
 function renderState(state) {
     if (!state) { return; }
+    lastState = state;
     if (state.theme) { applyTheme(state.theme); }
     document.getElementById('docName').textContent = state.docName || '';
     document.getElementById('generated').textContent =
@@ -103,6 +123,10 @@ window.fusionJavaScriptHandler = {
 
 document.getElementById('refreshBtn').addEventListener('click', function () {
     send('refresh', {});
+});
+
+document.getElementById('roundingSel').addEventListener('change', function () {
+    if (lastState) { renderState(lastState); }
 });
 
 /* First paint from the init.js sidecar (trusted for theme/initial data),

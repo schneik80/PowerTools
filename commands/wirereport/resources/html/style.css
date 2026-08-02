@@ -39,6 +39,17 @@ body {
   font-size: 13px;
 }
 
+/* Theme-aware scrollbars (the palette browser is Chromium-based). */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--bg-primary); }
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 5px;
+  border: 2px solid var(--bg-primary);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+::-webkit-scrollbar-corner { background: var(--bg-primary); }
+
 .report-header {
   display: flex;
   justify-content: space-between;
@@ -51,6 +62,24 @@ h1 { font-size: 16px; margin: 0 0 2px; }
 .muted { color: var(--text-muted); margin: 0; }
 .empty { margin-top: 24px; text-align: center; }
 .footer { margin-top: 16px; font-size: 11px; }
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+#roundingSel {
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 6px;
+  font: inherit;
+  cursor: pointer;
+}
+#roundingSel:focus { outline: 1px solid var(--accent); }
 
 #refreshBtn {
   background: var(--accent);
