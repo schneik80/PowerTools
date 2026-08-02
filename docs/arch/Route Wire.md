@@ -75,10 +75,14 @@ the include links is accepted — Update Wire is the recovery path.
 jacket body) with one nested `Wire <pin>` component per paired wire:
 
 - **Jacket** — a fitted spline between the two included cable points
-  (`cablepoint` attribute from Define Wires); end fit points merged into
-  the included points (associative ends), two interior guide points from
-  the exit-centroid-to-cable-point directions (baked — they only shape the
-  slack). Swept as a Pipe at the cable diameter.
+  (`cablepoint` attribute from Define Wires), fully associative: per side
+  a CONSTRUCTION direction line runs from the first paired wire's included
+  exit point to the included cable point, and the spline (ends merged into
+  the cable points) is tangent to those lines — the same recipe as the
+  single-wire exit spline, so it re-solves when connectors move. (An
+  earlier baked-guide-point shape kinked and failed the pipe recompute
+  after moves; baked guides remain only as the constraint fallback,
+  flagged in the summary.) Swept as a Pipe at the cable diameter.
 - **Per wire, per end** — a conductor stub (start-to-strip line, AWG
   diameter) and a sheathed end segment: strip-to-exit line plus a fan-out
   spline to the cable point, merged at both ends and tangent at the exit

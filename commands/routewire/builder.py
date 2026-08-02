@@ -555,10 +555,19 @@ def _add_exit_spline(sketch, exit_lines, wires, job):
 def _build_jacket(comp, ctx_occ, ends, job):
     """The cable jacket body: cable point to cable point, at the cable OD.
 
-    A fitted spline whose END fit points are merged into the included cable
-    points (associative ends); its two interior guide points continue each
-    side's exit-centroid-to-cable-point direction (baked positions -
-    accepted, they only shape the slack of the run).
+    Fully associative, using the same proven recipe as the single-wire exit
+    spline: per side, a CONSTRUCTION direction line from the first paired
+    wire's included exit point to the included cable point (fully defined
+    by connector geometry), with the jacket spline's ends merged into the
+    cable points and made tangent to those lines. Everything re-solves
+    when a connector moves.
+
+    (An earlier build shaped the jacket with two BAKED interior guide
+    points instead. Those are free sketch points at fixed coordinates:
+    after a connector moved, the spline's ends followed but the curve still
+    had to pass through the stale guides, kinking the path and failing the
+    jacket pipe's recompute. Baked guides remain only as the constraint
+    fallback, which is flagged in the build result.)
     """
     (side_a, wires_a), (side_b, wires_b) = ends
     name = job["name"]
@@ -569,16 +578,29 @@ def _build_jacket(comp, ctx_occ, ends, job):
     cable_b = _sketch_point_for(
         sketch, side_b["cable"]["proxy"], side_b["cable"]["world"], job
     )
-    guides = logic.spline_guide_points(
-        _as_tuple(_centroid([w["world"][schema.ROLE_EXIT] for w in wires_a])),
-        _as_tuple(side_a["cable"]["world"]),
-        _as_tuple(_centroid([w["world"][schema.ROLE_EXIT] for w in wires_b])),
-        _as_tuple(side_b["cable"]["world"]),
+    exit_a = _sketch_point_for(
+        sketch,
+        wires_a[0]["proxies"].get(schema.ROLE_EXIT),
+        wires_a[0]["world"][schema.ROLE_EXIT],
+        job,
     )
+    exit_b = _sketch_point_for(
+        sketch,
+        wires_b[0]["proxies"].get(schema.ROLE_EXIT),
+        wires_b[0]["world"][schema.ROLE_EXIT],
+        job,
+    )
+    lines = sketch.sketchCurves.sketchLines
+    direction_a = lines.addByTwoPoints(exit_a, cable_a)
+    direction_b = lines.addByTwoPoints(exit_b, cable_b)
+    try:
+        direction_a.isConstruction = True
+        direction_b.isConstruction = True
+    except Exception:
+        ptutil.log(f"{_LOG_NAME}: could not mark jacket direction lines.")
+
     fit = adsk.core.ObjectCollection.create()
     fit.add(cable_a.geometry)
-    fit.add(sketch.modelToSketchSpace(adsk.core.Point3D.create(*guides[1])))
-    fit.add(sketch.modelToSketchSpace(adsk.core.Point3D.create(*guides[2])))
     fit.add(cable_b.geometry)
     spline = sketch.sketchCurves.sketchFittedSplines.add(fit)
     try:
@@ -586,11 +608,31 @@ def _build_jacket(comp, ctx_occ, ends, job):
             raise ValueError("merge of jacket spline start failed")
         if not cable_b.merge(spline.endSketchPoint):
             raise ValueError("merge of jacket spline end failed")
+        constraints = sketch.geometricConstraints
+        if constraints.addTangent(direction_a, spline) is None:
+            raise ValueError("addTangent(direction_a, spline) returned null")
+        if constraints.addTangent(spline, direction_b) is None:
+            raise ValueError("addTangent(spline, direction_b) returned null")
     except Exception:
-        # Ends stay baked at the current positions; the jacket still builds.
         ptutil.log(
-            f"{_LOG_NAME}: jacket spline ends not linked:\n{traceback.format_exc()}"
+            f"{_LOG_NAME}: constrained jacket spline failed, using baked "
+            f"guide points.\n{traceback.format_exc()}"
         )
+        try:
+            spline.deleteMe()
+        except Exception:
+            ptutil.log(f"{_LOG_NAME}: could not delete the jacket spline attempt.")
+        guides = logic.spline_guide_points(
+            _as_tuple(_centroid([w["world"][schema.ROLE_EXIT] for w in wires_a])),
+            _as_tuple(side_a["cable"]["world"]),
+            _as_tuple(_centroid([w["world"][schema.ROLE_EXIT] for w in wires_b])),
+            _as_tuple(side_b["cable"]["world"]),
+        )
+        fallback_fit = adsk.core.ObjectCollection.create()
+        for xyz in guides:
+            fallback_fit.add(sketch.modelToSketchSpace(adsk.core.Point3D.create(*xyz)))
+        spline = sketch.sketchCurves.sketchFittedSplines.add(fallback_fit)
+        job["result"]["spline_fallback"] = True
     path = comp.features.createPath(spline, False)
     _add_pipe(comp, path, job["cable_dia_cm"], f"Cable {name} jacket")
 
