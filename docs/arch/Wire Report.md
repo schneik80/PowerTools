@@ -28,8 +28,32 @@ jacket's tangency direction lines — is excluded.
 
 Connector display names resolve from the route ends' occurrence tokens
 (`design.findEntityByToken`), falling back to the stored connector id.
-Formatting uses `UnitsManager.formatInternalValue` in the document's
-display units (mm fallback).
+
+Each length travels to the page as **raw cm plus a pre-formatted
+document-units string** (`UnitsManager.formatInternalValue`, mm fallback).
+The page formats from the raw value using the **Round** control — 1 / 0.1 /
+0.00 (default) / 0.000 mm — so changing the rounding re-renders instantly
+from cached state with no Fusion round-trip; the "Doc units" option swaps
+in the pre-formatted string.
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant E as entry.py
+    participant F as Fusion design
+    participant P as Palette page
+    U->>E: Wire Report (execute)
+    E->>F: collect_routes + measure sketches
+    E->>P: init.js sidecar + palettes.add
+    P->>E: htmlReady
+    E->>F: re-gather fresh state
+    E->>P: setState (raw cm + doc strings)
+    P->>P: render at chosen rounding
+    U->>P: change Round
+    P->>P: re-render from cached state
+    U->>P: Refresh
+    P->>E: refresh action (re-measure)
+```
 
 ## Palette
 
@@ -40,9 +64,10 @@ on demand, and external links forced out of the palette. Theme is resolved
 Python-side (Fusion preference; OS setting for "device" mode) and applied
 as a body class over CSS custom properties (`:root` dark, `body.light`) —
 the same variable values the other PowerTools palettes use to mirror
-Fusion's UI colors. The page renders exclusively from a single `setState`
-JSON payload; all strings are inserted via `textContent` (no HTML
-injection from model-derived names).
+Fusion's UI colors; scrollbars are styled through `::-webkit-scrollbar`
+over the same variables (the palette browser is Chromium-based). The page
+renders exclusively from a single `setState` JSON payload; all strings are
+inserted via `textContent` (no HTML injection from model-derived names).
 
 ## Known limitations (accepted for the prove-out)
 

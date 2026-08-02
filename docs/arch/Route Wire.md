@@ -3,13 +3,28 @@
 
 ## Purpose
 
-Second half of the cable prove-out: consume the `PowerTools.Cable` attributes
-written by [Define Wires](./Define%20Wires.md) from *assembly* context, and
-build real wire geometry from them. The schema module
-`commands/definewires/logic.py` stays the single source of truth; this
-command imports it as `schema`. Route-specific pure logic (AWG math, gauge
-intersection, spline guide points, route payload) lives in
-`commands/routewire/logic.py` with tests in `tests/test_routewire_logic.py`.
+The build half of the cable family: consume the `PowerTools.Cable`
+attributes written by [Define Wires](./Define%20Wires.md) from *assembly*
+context and build real wire and cable geometry from them ([Update
+Wire](./Update%20Wire.md) rebuilds it; [Wire Report](./Wire%20Report.md)
+reports it). The schema module `commands/definewires/logic.py` stays the
+single source of truth; this command imports it as `schema`. Route-specific
+pure logic (AWG math, gauge intersection and packing factors, spline guide
+points, route payloads) lives in `commands/routewire/logic.py` with tests
+in `tests/test_routewire_logic.py`.
+
+```mermaid
+flowchart TD
+    E["entry.py<br/>dialog, route type, validation, preview"] --> RC["builder.read_connector<br/>attribute scan, point proxies + world positions"]
+    E --> B["builder.build_wire / build_cable"]
+    B --> S["in-context 3D sketches<br/>Sketches.add + occurrenceForCreation"]
+    S --> I["Sketch.include of connector point proxies<br/>(associative links)"]
+    I --> C["lines between included points;<br/>splines merged (SketchPoint.merge) + tangent"]
+    C --> P["Paths swept as Pipe features<br/>(solid circular sections)"]
+    P --> T["timeline group + route attribute"]
+    L["logic.py (pure, unit-tested)<br/>AWG formula, bundle factors,<br/>guide points, payloads"] -.-> E
+    L -.-> B
+```
 
 ## How connector data is read (and why not findAttributes)
 
@@ -115,11 +130,18 @@ Root
   Wire <name>     component, stamped with the route attribute
     Conductor     bodies "Wire <name> conductor 1|2"
     Sheath        body  "Wire <name> sheath"
+
+Root
+  Cable <name>    component, stamped with the route attribute; owns the
+                  jacket body "Cable <name> jacket"
+    Wire <pin>    per pair: bodies "Cable <name> wire <pin> conductor 1|2"
+                  and "... sheath 1|2"
 ```
 
 `design.timeline.markerPosition` is captured before any creation; afterwards
 everything from that index on is grouped via `timelineGroups.add` and the
-group is named `Wire <name>`. (True `CustomFeature` API packaging —
+group is named `Wire <name>` / `Cable <name>`. (True `CustomFeature` API
+packaging —
 definition registration plus compute handlers — was judged out of scope for a
 prove-out; the timeline group delivers the "one named unit in the timeline"
 behavior.) Grouping requires a parametric design, which command_created
@@ -164,7 +186,10 @@ field parse as single.)
   path is [Update Wire](./Update%20Wire.md), which rebuilds from the route
   attribute.
 - Pins already consumed by an existing route are still offered.
-- The preview is a straight exit-to-exit line, not the final spline shape.
+- The preview is a straight line (exit-to-exit for single wires,
+  cable-point-to-cable-point for cables), not the final spline shape.
+- Cable fan-out pipes overlap the jacket where they converge (no trim), and
+  one gauge governs every wire in a cable.
 - Icons are placeholders copied from `roundsketchdimensions`.
 
 ---

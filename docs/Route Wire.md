@@ -11,8 +11,8 @@ The Route Wire command connects two connectors that carry [Define Wires](./Defin
 - Pick two **connector occurrences**; each is scanned for Define Wires points and its available **pins** are listed.
 - Choose a **gauge** from the AWG sizes allowed by *both* selected wires (the intersection of their min/max ranges).
 - Get a **recommended wire diameter** (bare conductor for the chosen AWG plus insulation walls) that you can edit before building.
-- See a **preview line** between the two connector exit points as soon as both pins are chosen.
-- Name the wire; everything created is labeled with it.
+- See a **preview line** as soon as the route is defined — between the two exit points (single wire) or the two cable points (cable).
+- Name the route; everything created is labeled with it.
 
 ## What gets built on OK
 
@@ -40,7 +40,7 @@ Root of the design
 
 One gauge governs the whole cable (the AWG list is the intersection across every paired wire). The **cable diameter** defaults to the standard cable-design recommendation — packed wire bundle (per-count packing factor), a lay allowance, plus jacket walls — and stays editable.
 
-Each body is a solid circular **Pipe** feature along a 3D-sketch path whose points are **linked to the connector geometry** (Include 3D Geometry), so the wire is **associative** — it follows when connectors move. The exit-to-exit spline is made tangent to both exit segments (falling back to direction-guided fit points where 3D tangency is unavailable). All timeline items are grouped as **Wire \<name\>**, and the sketches, features, and bodies carry `Wire <name> ...` names. The wire assembly component is stamped with a `PowerTools.Cable` / `route` attribute recording both ends (connector ids, wire ids, pins, occurrence tokens), the gauge, and the diameter.
+Each body is a solid circular **Pipe** feature along a 3D-sketch path whose points are **linked to the connector geometry** (Include 3D Geometry), so wires and cables are **associative** — they follow when connectors move. Splines are made tangent to their neighboring segments (falling back to direction-guided fit points where 3D tangency is unavailable, reported in the summary). All timeline items are grouped as **Wire \<name\>** or **Cable \<name\>**, with matching sketch, feature, and body names. The built assembly component is stamped with a `PowerTools.Cable` / `route` attribute recording both ends (connector ids, wire ids, pins, occurrence tokens), the gauge, and the diameters.
 
 ## Prerequisites
 
@@ -57,7 +57,7 @@ Each body is a solid circular **Pipe** feature along a 3D-sketch path whose poin
 5. Choose the **Gauge (AWG)** — only sizes the wires allow are offered. The **Wire diameter** (and for cables the **Cable diameter**) updates to the recommendation; edit if needed.
 6. Enter a name and click **OK**. The command reports the pins, gauge, and diameters it built.
 
-> **Note:** the wire follows ordinary connector moves on its own. **Swapping or re-inserting** a connector, or redefining its wire points, breaks the links — run [Update Wire](./Update%20Wire.md) to rebuild the wire from its stored route data.
+> **Note:** wires and cables follow ordinary connector moves on their own. **Swapping or re-inserting** a connector, or redefining its wire points, breaks the links — run [Update Wire](./Update%20Wire.md) to rebuild a single wire from its stored route data (cables cannot be rebuilt automatically yet: delete the cable's timeline group and route it again).
 
 ## Access
 

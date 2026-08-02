@@ -12,8 +12,10 @@ includes that fell back to baked positions.
 ## How it works
 
 1. **Collection** — top-level occurrences whose component carries the
-   `PowerTools.Cable` / `route` attribute (`entry._collect_routes`). The
-   payload format is defined in `commands/routewire/logic.py`.
+   `PowerTools.Cable` / `route` attribute (`builder.collect_routes`, shared
+   with Wire Report; `entry._collect_routes` adds the dropdown labels). The
+   payload format is defined in `commands/routewire/logic.py`. Payloads
+   whose `kind` is not `single` (cables) are listed but refuse to rebuild.
 2. **Resolution** (`entry._resolve_route` + pure ladder in
    `commands/updatewire/logic.py`, tested in
    `tests/test_updatewire_logic.py`):
@@ -38,6 +40,22 @@ includes that fell back to baked positions.
    fresh associative includes and a fresh route attribute with new
    occurrence tokens.
 
+```mermaid
+flowchart TD
+    A["route end:<br/>occ_token + connector_id"] --> B{"token matches a live<br/>occurrence?"}
+    B -->|yes| OK1["resolved by token"]
+    B -->|no| C{"connector_id matches<br/>exactly one occurrence?"}
+    C -->|yes| OK2["resolved by connector id"]
+    C -->|several| AMB["ambiguous - refused"]
+    C -->|none| NF["not found - refused"]
+    OK1 --> W{"wire_id found on the<br/>resolved connector?"}
+    OK2 --> W
+    W -->|yes| DONE["end ready to rebuild"]
+    W -->|no| PIN{"stored pin found?"}
+    PIN -->|yes| DONE
+    PIN -->|no| GONE["wire gone - refused"]
+```
+
 ## Why occurrence tokens are in the route payload
 
 `connector_id` identifies the connector *component*; with two instances of
@@ -49,6 +67,9 @@ the unique-connector-id fallback.
 
 ## Known limitations (accepted for the prove-out)
 
+- **Cable routes cannot be rebuilt yet** — they are recognized (by the
+  payload's `kind`) and refused with guidance to delete the cable's
+  timeline group and re-route.
 - Deleting the timeline group removes everything the user may have manually
   added into it (documented in the user guide).
 - A wire whose both plausible connectors are ambiguous cannot be rebuilt —

@@ -12,7 +12,7 @@ The Wire Report command presents every routed wire and cable in the design in on
 - **Per single wire** — both connectors and pins, gauge and sheath diameter, the bare conductor stubs, the sheathed run, and the **total wire length** (the cut length).
 - **Per cable** — both connectors and pin sets, gauge, wire and jacket diameters, every wire's full path length, the jacket run, and the **cable length — set by the longest wire path** (highlighted, with the governing pin named). All wires in a manufactured cable are cut to the same length, so the longest run governs the cut.
 
-Lengths are measured from the routing sketches the wires were built from (construction geometry excluded) and shown in the document's display units. The **Refresh** button re-measures — use it after moving connectors or adding routes.
+Lengths are measured from the routing sketches the wires were built from (construction geometry excluded). The **Round** dropdown sets the displayed rounding — 1 mm, 0.1 mm, **0.00 mm** (default), 0.000 mm, or **Doc units** (the document's own display formatting) — and re-renders instantly. The **Refresh** button re-measures — use it after moving connectors or adding routes.
 
 ## Prerequisites
 
@@ -23,7 +23,8 @@ Lengths are measured from the routing sketches the wires were built from (constr
 
 1. On the **Utilities** tab, open the **Power Tools** panel and click **Wire Report**.
 2. The report opens as a docked panel, matching Fusion's light or dark theme.
-3. Click **Refresh** after changing the routing.
+3. Pick the length rounding from the **Round** dropdown (defaults to 0.00 mm).
+4. Click **Refresh** after changing the routing.
 
 ## Access
 

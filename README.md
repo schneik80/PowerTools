@@ -57,6 +57,17 @@ Most commands appear in **Design › Tools › Power Tools**. Some appear in oth
 | [Document References](./docs/Document%20References.md) | Design › Tools › Power Tools | List all documents related to the active design. |
 | [Document Refresh](./docs/Document%20Refresh.md) | Design › Tools › Power Tools | Refresh out-of-date references in the active design. |
 
+### Cable (Beta)
+
+Prove-out family for wire and cable routing; all four commands require **Beta mode** (PowerTools Preferences).
+
+| Command | Location | Description |
+| --- | --- | --- |
+| [Define Wires](./docs/Define%20Wires.md) | Design › Tools › Power Tools | Author wire points, pins, gauges, and the cable breakout point on a connector part. |
+| [Route Wire](./docs/Route%20Wire.md) | Design › Tools › Power Tools | Build a single wire or a multi-conductor cable between two connectors, associatively. |
+| [Update Wire](./docs/Update%20Wire.md) | Design › Tools › Power Tools | Rebuild a routed wire from its stored route data after connector changes break the links. |
+| [Wire Report](./docs/Wire%20Report.md) | Design › Tools › Power Tools | Report connectors, pins, and computed wire/cable lengths in a theme-aware panel. |
+
 ### Document Tools
 
 | Command | Location | Description |

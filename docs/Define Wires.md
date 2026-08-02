@@ -2,7 +2,7 @@
 
 [Back to PowerTools](../README.md)
 
-The Define Wires command turns a single-component part into a cable **connector**: for each wire you pick three points on the model — **conductor start**, **strip length**, and **connector exit** — assign a **pin** and an **AWG gauge range**, and the command stores the whole set as durable attributes on those points. Re-running the command on the same part recalls everything for editing. A future PowerTools command will use these attributes to route wires between connectors across an assembly.
+The Define Wires command turns a single-component part into a cable **connector**: for each wire you pick three points on the model — **conductor start**, **strip length**, and **connector exit** — assign a **pin** and an **AWG gauge range**, and the command stores the whole set as durable attributes on those points. Re-running the command on the same part recalls everything for editing. [Route Wire](./Route%20Wire.md) consumes these attributes to build single wires and multi-conductor cables between connectors across an assembly, and [Wire Report](./Wire%20Report.md) reports the results.
 
 > **Prove-out status:** this is a beta test command whose purpose is to validate the attribute scheme. Its behavior and stored format may change.
 

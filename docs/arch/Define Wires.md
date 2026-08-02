@@ -3,10 +3,23 @@
 
 ## Purpose
 
-Prove out the attribute scheme that future cable-routing commands will consume:
-durable, recallable metadata on part geometry identifying each wire of a
-connector and its three anchor points. The command itself (table dialog,
-point resolution, recall/rebuild) is a vehicle for validating this contract.
+Author the attribute scheme the cable family consumes: durable, recallable
+metadata on part geometry identifying each wire of a connector, its three
+anchor points, and the connector's cable breakout point. The command itself
+(table dialog, point resolution, recall/rebuild) is the authoring vehicle;
+[Route Wire](./Route%20Wire.md) builds geometry from the attributes,
+[Update Wire](./Update%20Wire.md) rebuilds it, and
+[Wire Report](./Wire%20Report.md) reports it.
+
+```mermaid
+flowchart LR
+    DW["Define Wires<br/>(connector part)"] -->|"writes PowerTools.Cable<br/>attributes"| PART[("Connector part:<br/>manifest, point.*, cablepoint")]
+    PART -->|"per-component scan<br/>builder.read_connector"| RW["Route Wire<br/>(assembly)"]
+    RW -->|"builds geometry, stamps<br/>route attribute"| ASM[("Wire / Cable assembly:<br/>route attribute")]
+    ASM --> UW["Update Wire<br/>(delete + rebuild)"]
+    ASM --> WR["Wire Report<br/>(palette)"]
+    UW -->|"builder.build_wire"| ASM
+```
 
 ## The attribute schema contract (v1)
 
@@ -69,7 +82,12 @@ NOT under `"bad"`, whose entries the command's execute deletes as garbage.
 Define Wires requires it whenever the connector has more than one wire;
 Route Wire's cable mode requires it on both connectors.
 
-### Query story for the future routing command
+### Query story for consumers
+
+The shipped consumers scan narrowly: Route Wire reads the two *selected*
+components (`builder.read_connector`), Update Wire and Wire Report walk the
+root occurrences for `route` attributes (`builder.collect_routes`). The
+design-wide wildcard queries below remain the intent for future tooling:
 
 - `design.findAttributes("PowerTools.Cable", "connector")` — enumerate every
   connector in scope.
@@ -109,6 +127,16 @@ Route Wire's cable mode requires it on both connectors.
   row-selection does not reliably fire inputChanged). Editor edits write
   straight into the wire record — no commit step, so switching rows cannot
   lose data.
+- **Dialog state is the truth for selection inputs.** Fusion clears
+  selection inputs during focus/visibility churn and re-fires inputChanged;
+  honoring those events once silently wiped the stored cable point (the
+  next OK then deleted its attribute). Empty-selection events on the cable
+  input re-seed it from module state instead of erasing it, and activating
+  a row explicitly focuses the first editor input so canvas picks land on
+  the intended wire rather than auto-advancing into the cable input.
+- **Pin defaults auto-increment** (`logic.next_pin`): highest numeric pin
+  plus one, "1" for the first wire; non-numeric names are ignored.
+  Duplicate pins are rejected by `logic.validate_wires`.
 - **No executePreview**: attributes are invisible and preview would churn
   work-point create/rollback on every input change for nothing.
 - **Icons are placeholders** copied from `roundsketchdimensions` — replace
