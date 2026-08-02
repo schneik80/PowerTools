@@ -122,6 +122,16 @@ def read_connector(occ) -> dict:
         proxy, world = _point_refs(cable_entity, occ)
         if world is not None:
             data["cable"] = {"proxy": proxy, "world": world}
+        else:
+            ptutil.log(
+                f"{_LOG_NAME}: cable point attribute found on '{comp.name}' "
+                "but its point could not be resolved to a world position."
+            )
+    else:
+        ptutil.log(
+            f"{_LOG_NAME}: no cable point attribute on '{comp.name}' "
+            f"({len(data['wires'])} wire(s) found)."
+        )
 
     if not data["wires"]:
         data["error"] = (

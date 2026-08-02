@@ -462,7 +462,10 @@ def _cable_problems() -> list:
         if _sides[side]["cable"] is None:
             problems.append(
                 f"Connector {side + 1} ('{_sides[side]['comp_name']}') has "
-                "no cable point - re-run Define Wires to add one."
+                "no cable point. Re-run Define Wires on the connector part "
+                "and confirm its summary says 'Cable point written'; if the "
+                "part is referenced, save it and update the out-of-date "
+                "reference in this assembly."
             )
     wires_a, wires_b = _cable_wires(0), _cable_wires(1)
     if len(wires_a) != len(wires_b):

@@ -366,12 +366,30 @@ def _handle_selection_changed(changed, role: str, wire: dict):
 
 
 def _handle_cable_selection_changed(changed):
-    """Store or reject the connector-level cable point pick."""
+    """Store or reject the connector-level cable point pick.
+
+    An EMPTY selection event never erases the stored point: Fusion clears
+    selection inputs during focus/visibility churn and re-fires
+    inputChanged, and honoring those events wiped the cable point - the
+    next OK then silently DELETED the stored attribute. The module state is
+    the truth; the input is re-seeded from it. Changing the point is done
+    by picking a different one (a max-1 input replaces its selection).
+    """
     global _loading_row
     sel = adsk.core.SelectionCommandInput.cast(changed)
     if sel.selectionCount == 0:
-        _cable_point["entity"] = None
-        _update_editor_label()
+        entity = _cable_point.get("entity")
+        if entity is None:
+            return
+        _loading_row = True
+        try:
+            sel.addSelection(entity)
+        except Exception:
+            ptutil.log(f"{CMD_NAME}: stored cable point no longer selectable.")
+            _cable_point["entity"] = None
+            _cable_point["missing"] = True
+        finally:
+            _loading_row = False
         return
     entity = sel.selection(0).entity
     if not _is_supported_point_source(entity):
