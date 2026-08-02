@@ -25,3 +25,4 @@ from .log_utils import *
 from .upload_utils import *
 from .ui_utils import *
 from .json_utils import *
+from .palette_utils import *

@@ -300,42 +300,22 @@ def _show_palette():
     # so the user can deliberately insert them again in this new session.
     _inserted_in_session.clear()
 
-    palettes = ui.palettes
-    palette = palettes.itemById(PALETTE_ID)
-
-    # Fusion's palette.closed sometimes leaves a palette object in
-    # `ui.palettes` that has been internally torn down — toggling isVisible
-    # on it silently no-ops. The reliable cure is to delete any pre-existing
-    # palette and create a fresh one. That also means we re-register
-    # navigation / incoming / closed handlers cleanly each time, avoiding
-    # accumulating stale handlers across sessions.
-    if palette is not None:
-        try:
-            palette.deleteMe()
-        except Exception as e:
-            _diag(f"could not deleteMe() existing palette: {e}")
-        palette = None
-
-    _write_init_js(_gather_palette_state())
-    palette = palettes.add(
-        id=PALETTE_ID,
-        name=PALETTE_NAME,
-        htmlFileURL=PALETTE_URL,
-        isVisible=True,
-        showCloseButton=True,
-        isResizable=True,
+    # Delete-then-add lifecycle and handler hookup live in
+    # ptutil.palette_utils (shared with the other palette commands).
+    ptutil.write_init_js(INIT_JS_PATH, _gather_palette_state(), CMD_NAME)
+    ptutil.recreate_palette(
+        PALETTE_ID,
+        PALETTE_NAME,
+        PALETTE_URL,
         width=420,
         height=720,
-        useNewWebBrowser=True,
+        handlers={
+            "incoming": _palette_incoming,
+            "closed": _palette_closed,
+            "navigating": _palette_navigating,
+        },
+        docking=PALETTE_DOCKING,
     )
-    ptutil.add_handler(palette.closed, _palette_closed)
-    ptutil.add_handler(palette.navigatingURL, _palette_navigating)
-    ptutil.add_handler(palette.incomingFromHTML, _palette_incoming)
-
-    if palette.dockingState == adsk.core.PaletteDockingStates.PaletteDockStateFloating:
-        palette.dockingState = PALETTE_DOCKING
-
-    palette.isVisible = True
 
 
 def _gather_palette_state() -> dict:
@@ -343,7 +323,7 @@ def _gather_palette_state() -> dict:
     folder = cache.resolve_target_folder(CMD_NAME)
     return {
         "docName": getattr(doc, "name", ""),
-        "theme": _theme_str(),
+        "theme": ptutil.fusion_theme(),
         "showChildren": _show_children,
         "openDocs": _list_open_docs(),
         "recentDocs": _list_recent_docs(),
@@ -351,59 +331,6 @@ def _gather_palette_state() -> dict:
         "hasTargetProject": folder is not None,
         "targetProject": cache.target_project_label(folder),
     }
-
-
-def _theme_str() -> str:
-    themes = adsk.core.UserInterfaceThemes
-    theme = app.preferences.generalPreferences.userInterfaceTheme
-    if theme == themes.DeviceUserInterfaceTheme:
-        return "dark" if _os_is_dark() else "light"
-    if theme in (
-        themes.DarkBlueUserInterfaceTheme,
-        themes.DarkGrayUserInterfaceTheme,
-    ):
-        return "dark"
-    return "light"
-
-
-def _os_is_dark() -> bool:
-    import sys
-
-    if sys.platform == "win32":
-        try:
-            import winreg
-
-            with winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize",
-            ) as key:
-                val, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
-                return val == 0
-        except Exception:
-            return True
-    if sys.platform == "darwin":
-        try:
-            import subprocess
-
-            out = subprocess.run(
-                ["defaults", "read", "-g", "AppleInterfaceStyle"],
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-            return out.stdout.strip() == "Dark"
-        except Exception:
-            return True
-    return True
-
-
-def _write_init_js(state: dict) -> None:
-    try:
-        payload = json.dumps(state)
-        with open(INIT_JS_PATH, "w", encoding="utf-8") as fh:
-            fh.write(f"window.__ptInit = {payload};\n")
-    except Exception as e:
-        ptutil.log(f"{CMD_NAME}: could not write init.js — {e}")
 
 
 def _send_palette_init(palette: adsk.core.Palette):

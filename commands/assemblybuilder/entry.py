@@ -179,7 +179,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
         # loads it synchronously on first paint — no sendInfoToHTML round-trip,
         # no handshake, no theme/param flicker. (Reopen handled by the push
         # below.)
-        _write_init_js(_gather_palette_state())
+        ptutil.write_init_js(INIT_JS_PATH, _gather_palette_state(), CMD_NAME)
         palette = palettes.add(
             id=PALETTE_ID,
             name=PALETTE_NAME,
@@ -211,60 +211,14 @@ def command_execute(args: adsk.core.CommandEventArgs):
         _send_palette_init(palette)
 
 
-def _os_is_dark() -> bool:
-    """Best-effort OS dark-mode detection (for the 'match device' theme)."""
-    import sys
-
-    if sys.platform == "win32":
-        try:
-            import winreg
-
-            with winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize",
-            ) as key:
-                # AppsUseLightTheme: 1 = light, 0 = dark.
-                val, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
-                return val == 0
-        except Exception:
-            return True  # Fusion's modern default look is dark
-    if sys.platform == "darwin":
-        try:
-            import subprocess
-
-            out = subprocess.run(
-                ["defaults", "read", "-g", "AppleInterfaceStyle"],
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-            return out.stdout.strip() == "Dark"
-        except Exception:
-            return True
-    return True
-
-
 def _gather_palette_state() -> dict:
     """Collect the deterministic init state for the palette in one place."""
     doc = app.activeDocument
 
-    # userInterfaceTheme is one of: Classic(0)/LightGray(1) = light,
-    # DarkBlue(2)/DarkGray(3) = dark, Device(4) = follow the OS.
-    themes = adsk.core.UserInterfaceThemes
-    theme = app.preferences.generalPreferences.userInterfaceTheme
-    if theme == themes.DeviceUserInterfaceTheme:
-        is_dark = _os_is_dark()
-        source = "device/os"
-    else:
-        is_dark = theme in (
-            themes.DarkBlueUserInterfaceTheme,
-            themes.DarkGrayUserInterfaceTheme,
-        )
-        source = "explicit"
-    ptutil.log(
-        f"{CMD_NAME}: theme raw={int(theme)} ({source}) "
-        f"-> {'dark' if is_dark else 'light'}"
-    )
+    # Theme resolution (user preference, OS setting for "device" mode)
+    # lives in ptutil.palette_utils, shared with the other palettes.
+    resolved_theme = ptutil.fusion_theme()
+    ptutil.log(f"{CMD_NAME}: theme -> {resolved_theme}")
 
     # Discover existing global-parameter documents in the active project.
     global _param_doc_map, _active_project_ref
@@ -294,27 +248,12 @@ def _gather_palette_state() -> dict:
 
     return {
         "docName": doc.name,
-        "theme": "dark" if is_dark else "light",
+        "theme": resolved_theme,
         "saved": bool(doc.isSaved),
         "paramDocs": param_entries,
         "hasTargetProject": folder is not None,
         "targetProject": cache.target_project_label(folder),
     }
-
-
-def _write_init_js(state: dict) -> None:
-    """Write resources/html/init.js exposing the init state as window.__ptInit.
-
-    The page loads this via <script src="init.js"> (same as drawflow.min.js),
-    so the state is available synchronously before first paint. As an external
-    script there is no HTML parser, so embedded '</script>' in names is safe.
-    """
-    try:
-        payload = json.dumps(state)
-        with open(INIT_JS_PATH, "w", encoding="utf-8") as fh:
-            fh.write(f"window.__ptInit = {payload};\n")
-    except Exception as e:
-        ptutil.log(f"{CMD_NAME}: could not write init.js — {e}")
 
 
 def _send_palette_init(palette: adsk.core.Palette):

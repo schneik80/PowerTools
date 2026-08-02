@@ -111,32 +111,17 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
 
 def _show_palette():
-    palettes = ui.palettes
-    palette = palettes.itemById(PALETTE_ID)
-    if palette is not None:
-        try:
-            palette.deleteMe()
-        except Exception:
-            pass
-        palette = None
-
-    _write_init_js(_gather_state())
-    palette = palettes.add(
-        id=PALETTE_ID,
-        name=PALETTE_NAME,
-        htmlFileURL=PALETTE_URL,
-        isVisible=True,
-        showCloseButton=True,
-        isResizable=True,
+    # Delete-then-add lifecycle and handler hookup live in
+    # ptutil.palette_utils (shared with the other palette commands).
+    ptutil.write_init_js(INIT_JS_PATH, _gather_state(), CMD_NAME)
+    ptutil.recreate_palette(
+        PALETTE_ID,
+        PALETTE_NAME,
+        PALETTE_URL,
         width=920,
         height=760,
-        useNewWebBrowser=True,
+        handlers={"incoming": _palette_incoming, "closed": _palette_closed},
     )
-    ptutil.add_handler(palette.closed, _palette_closed)
-    ptutil.add_handler(palette.incomingFromHTML, _palette_incoming)
-    if palette.dockingState == adsk.core.PaletteDockingStates.PaletteDockStateFloating:
-        palette.dockingState = adsk.core.PaletteDockingStates.PaletteDockStateRight
-    palette.isVisible = True
 
 
 def _palette_closed(args: adsk.core.UserInterfaceGeneralEventArgs):
@@ -151,47 +136,6 @@ def _palette_closed(args: adsk.core.UserInterfaceGeneralEventArgs):
 # ---------------------------------------------------------------------------
 # State
 # ---------------------------------------------------------------------------
-
-
-def _os_is_dark() -> bool:
-    """Best-effort OS dark-mode detection (for the 'match device' theme)."""
-    if sys.platform == "win32":
-        try:
-            import winreg
-
-            with winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize",
-            ) as key:
-                val, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
-                return val == 0
-        except Exception:
-            return True
-    if sys.platform == "darwin":
-        try:
-            out = subprocess.run(
-                ["defaults", "read", "-g", "AppleInterfaceStyle"],
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-            return out.stdout.strip() == "Dark"
-        except Exception:
-            return True
-    return True
-
-
-def _theme() -> str:
-    themes = adsk.core.UserInterfaceThemes
-    theme = app.preferences.generalPreferences.userInterfaceTheme
-    if theme == themes.DeviceUserInterfaceTheme:
-        is_dark = _os_is_dark()
-    else:
-        is_dark = theme in (
-            themes.DarkBlueUserInterfaceTheme,
-            themes.DarkGrayUserInterfaceTheme,
-        )
-    return "dark" if is_dark else "light"
 
 
 def _module_for(key):
@@ -265,7 +209,7 @@ def _gather_state() -> dict:
         )
 
     return {
-        "theme": _theme(),
+        "theme": ptutil.fusion_theme(),
         "beta": bool(prefs.get("general", {}).get("beta_mode", False)),
         "groups": groups,
         "commandSettings": prefs.get("command_settings", {}),
@@ -273,14 +217,6 @@ def _gather_state() -> dict:
         "hub": _hub_info(),
         "restartNote": "Changes apply on the next Fusion restart.",
     }
-
-
-def _write_init_js(state: dict) -> None:
-    try:
-        with open(INIT_JS_PATH, "w", encoding="utf-8") as fh:
-            fh.write(f"window.__ptInit = {json.dumps(state)};\n")
-    except Exception as exc:
-        ptutil.log(f"{CMD_NAME}: could not write init.js — {exc}")
 
 
 def _send_state(palette):

@@ -25,11 +25,10 @@
 # units. Routes are found via their PowerTools.Cable "route" attributes
 # (builder.collect_routes).
 #
-# The palette follows the repo pattern (assemblyintent): delete-then-add
-# lifecycle, an init.js sidecar for first paint, an htmlReady handshake
-# pushing fresh state, and Fusion-theme awareness resolved Python-side
-# (user preference, with the OS setting for "device" mode) applied as a
-# body class in the page.
+# The palette mechanics (delete-then-add lifecycle, init.js first-paint
+# sidecar, theme resolution) come from ptutil.palette_utils - shared with
+# the other palette commands. The page pushes an htmlReady handshake and
+# applies the resolved theme as a body class.
 
 import datetime
 import json
@@ -320,7 +319,7 @@ def _display_state(design, report: dict) -> dict:
             assemblies.append(_display_single(design, entry))
     totals = report["totals"]
     return {
-        "theme": _theme_str(),
+        "theme": ptutil.fusion_theme(),
         "docName": app.activeDocument.name if app.activeDocument else "",
         "generated": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "totals": {
@@ -439,50 +438,23 @@ def _len_value(design, cm: float) -> dict:
 # ---------------------------------------------------------------------------
 def _show_palette(state: dict):
     global _palette_handlers
-    palettes = ui.palettes
-    palette = palettes.itemById(PALETTE_ID)
-    if palette is not None:
-        try:
-            palette.deleteMe()  # stale palettes silently ignore isVisible
-        except Exception:
-            ptutil.log(f"{CMD_NAME}: stale palette delete failed.")
-        _palette_handlers = []
-
-    _write_init_js(state)
-    palette = palettes.add(
-        id=PALETTE_ID,
-        name=PALETTE_NAME,
-        htmlFileURL=PALETTE_URL,
-        isVisible=True,
-        showCloseButton=True,
-        isResizable=True,
+    if ui.palettes.itemById(PALETTE_ID) is not None:
+        _palette_handlers = []  # the stale palette (and its handlers) go away
+    ptutil.write_init_js(INIT_JS_PATH, state, CMD_NAME)
+    ptutil.recreate_palette(
+        PALETTE_ID,
+        PALETTE_NAME,
+        PALETTE_URL,
         width=440,
         height=680,
-        useNewWebBrowser=True,
+        handlers={
+            "incoming": _palette_incoming,
+            "closed": _palette_closed,
+            "navigating": _palette_navigating,
+        },
+        local_handlers=_palette_handlers,
+        docking=PALETTE_DOCKING,
     )
-    ptutil.add_handler(
-        palette.incomingFromHTML, _palette_incoming, local_handlers=_palette_handlers
-    )
-    ptutil.add_handler(
-        palette.closed, _palette_closed, local_handlers=_palette_handlers
-    )
-    ptutil.add_handler(
-        palette.navigatingURL, _palette_navigating, local_handlers=_palette_handlers
-    )
-    if palette.dockingState == adsk.core.PaletteDockingStates.PaletteDockStateFloating:
-        palette.dockingState = PALETTE_DOCKING
-    palette.isVisible = True
-
-
-def _write_init_js(state: dict):
-    """First-paint sidecar (palettes.add rejects query strings; the page
-    loads async). Trusted only for the initial render - htmlReady pushes
-    fresh state because Windows CEF caches init.js by URL."""
-    try:
-        with open(INIT_JS_PATH, "w", encoding="utf-8") as sidecar:
-            sidecar.write(f"window.__ptInit = {json.dumps(state)};\n")
-    except Exception:
-        ptutil.log(f"{CMD_NAME}: init.js write failed:\n{traceback.format_exc()}")
 
 
 def _palette_incoming(html_args: adsk.core.HTMLEventArgs):
@@ -525,48 +497,3 @@ def _palette_navigating(args: adsk.core.NavigationEventArgs):
             args.launchExternally = True
     except Exception:
         ptutil.log(f"{CMD_NAME}: navigation handling failed.")
-
-
-def _theme_str() -> str:
-    """Fusion's effective UI theme ("dark" | "light")."""
-    themes = adsk.core.UserInterfaceThemes
-    theme = app.preferences.generalPreferences.userInterfaceTheme
-    if theme == themes.DeviceUserInterfaceTheme:
-        return "dark" if _os_is_dark() else "light"
-    if theme in (
-        themes.DarkBlueUserInterfaceTheme,
-        themes.DarkGrayUserInterfaceTheme,
-    ):
-        return "dark"
-    return "light"
-
-
-def _os_is_dark() -> bool:
-    import sys
-
-    if sys.platform == "win32":
-        try:
-            import winreg
-
-            with winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize",
-            ) as key:
-                val, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
-                return val == 0
-        except Exception:
-            return True
-    if sys.platform == "darwin":
-        try:
-            import subprocess
-
-            out = subprocess.run(
-                ["defaults", "read", "-g", "AppleInterfaceStyle"],
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-            return out.stdout.strip() == "Dark"
-        except Exception:
-            return True
-    return True
