@@ -733,8 +733,14 @@ def _add_fanout_spline(sketch, exit_line, cable_point, refs):
 
     Same merge-then-tangent construction as the single-wire exit spline,
     but one-sided: the cable end is direction-free (the wires converge into
-    the jacket there). Falls back to a guide-point spline
-    (logic.fanout_guide_points) when a step refuses, flagged in the result.
+    the jacket there). An anchor CONSTRUCTION line is drawn into the cable
+    point FIRST: SketchPoint.merge into a BARE included point raises
+    InternalValidationError, while merging into an included point that
+    already terminates a curve succeeds - which is why the jacket's merges
+    (its direction lines end at the cable points) and the single wire's
+    (its exit lines end at the exit points) never hit this. Falls back to
+    a guide-point spline (logic.fanout_guide_points) when a step refuses,
+    flagged in the result.
     """
     wire, job = refs
     fit = adsk.core.ObjectCollection.create()
@@ -742,6 +748,15 @@ def _add_fanout_spline(sketch, exit_line, cable_point, refs):
     fit.add(cable_point.geometry)
     spline = sketch.sketchCurves.sketchFittedSplines.add(fit)
     try:
+        anchor = sketch.sketchCurves.sketchLines.addByTwoPoints(
+            exit_line.endSketchPoint, cable_point
+        )
+        try:
+            # Construction so the anchor is excluded from paths and from
+            # the Wire Report's length measurement.
+            anchor.isConstruction = True
+        except Exception:
+            ptutil.log(f"{_LOG_NAME}: could not mark the fan-out anchor line.")
         if not exit_line.endSketchPoint.merge(spline.startSketchPoint):
             raise ValueError("merge of fan-out spline start failed")
         if not cable_point.merge(spline.endSketchPoint):

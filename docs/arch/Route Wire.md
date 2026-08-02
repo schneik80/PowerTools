@@ -107,10 +107,15 @@ jacket body) with one nested `Wire <pin>` component per paired wire:
   diameter) and a sheathed end segment: strip-to-exit line plus a fan-out
   spline to the cable point, merged at both ends and tangent at the exit
   only (the wires converge direction-free into the jacket;
-  `logic.fanout_guide_points` is the constraint fallback). Swept as Pipes
-  at the wire diameter — 4 bodies per wire, grouped in that wire's
-  component. The mid-run between cable points is represented by the jacket
-  only.
+  `logic.fanout_guide_points` is the constraint fallback). An anchor
+  CONSTRUCTION line is drawn into the included cable point before the
+  merge: `SketchPoint.merge` into a *bare* included point raises
+  `InternalValidationError`, while merging into an included point that
+  already terminates a curve succeeds (the jacket's direction lines and
+  the single wire's exit lines are why those merges never hit this).
+  Swept as Pipes at the wire diameter — 4 bodies per wire, grouped in
+  that wire's component. The mid-run between cable points is represented
+  by the jacket only.
 - **Sizing** — `logic.cable_od_mm(wire_od, count)`: bundle OD = wire OD x
   per-count packing factor (standard cable-design table: 2 -> 2.0,
   3 -> 2.155, 4 -> 2.414, ... , `1.155*sqrt(n)` beyond 12), x1.03 lay
