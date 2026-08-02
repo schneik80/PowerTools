@@ -55,3 +55,16 @@ def test_no_cache_path_is_a_noop(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(general_utils, "_CACHE_PATH", "")
     general_utils._append_debug_file("goes nowhere", None)  # must not raise
     assert list(tmp_path.iterdir()) == []
+
+
+def test_refresh_flags_recovers_from_partial_config_import(monkeypatch) -> None:
+    # config.py imports ptAddInUtils BEFORE defining its flags, so the
+    # import-time capture can see a half-initialized config and latch
+    # DEBUG=False / CACHE_PATH="" forever. _refresh_flags re-reads the
+    # completed module.
+    config = importlib.import_module(f"{PT_PKG}.config")
+    monkeypatch.setattr(general_utils, "DEBUG", False)
+    monkeypatch.setattr(general_utils, "_CACHE_PATH", "")
+    general_utils._refresh_flags()
+    assert general_utils._CACHE_PATH == config.CACHE_PATH
+    assert general_utils.DEBUG == bool(config.DEBUG)
