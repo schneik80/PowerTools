@@ -27,7 +27,7 @@ The Define Wires command turns a single-component part into a cable **connector*
 2. On the **Utilities** tab, open the **Power Tools** panel and click **Define Wires**.
 3. The **Wires** table lists the connector's wires; the **Wire editor** below it always edits one wire. Click **Add** to add a wire, **Delete** to remove the one being edited, or a row's **Edit** button to load that wire into the editor.
 4. In the editor, pick the wire's three points in order — conductor start, strip length, connector exit — then enter the pin and gauge range. Edits apply to the row immediately; switching rows never loses changes.
-5. With two or more wires, pick the **Cable point** (between the table and the editor) — [Route Wire](./Route%20Wire.md) needs it to route this connector as a cable.
+5. With two or more wires, pick the **Cable point** (at the bottom of the dialog) — [Route Wire](./Route%20Wire.md) needs it to route this connector as a cable.
 6. Click **OK**. The command creates any needed work points (named `Wire <pin> <role>` / `Cable point`), writes the attributes, and reports what it wrote.
 
 > **Note:** work points created for edge picks are kept even if you later re-pick or delete that wire — only the attributes are removed. Delete unwanted work points in the browser.

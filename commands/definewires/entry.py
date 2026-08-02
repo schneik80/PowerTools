@@ -200,22 +200,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         table.addToolbarCommandInput(add_btn)
         table.addToolbarCommandInput(del_btn)
 
-        # 3. Cable point - where a multi-conductor cable ends at this
-        # connector and its wires fan out to the pins. Required when the
-        # connector has more than one wire (validateInputs enforces it).
-        cable_sel = inputs.addSelectionInput(
-            INPUT_CABLE,
-            "Cable point",
-            "Where the cable meets this connector and its wires fan out. "
-            "Select a circular edge, circular/arc sketch curve, sketch "
-            "point, or work point.",
-        )
-        for filter_name in SELECTION_FILTERS:
-            cable_sel.addSelectionFilter(filter_name)
-        cable_sel.setSelectionLimits(0, 1)
-        _ui_refs["cable"] = cable_sel
-
-        # 4. Wire editor for the active row. Selection inputs cannot live in
+        # 3. Wire editor for the active row. Selection inputs cannot live in
         # table cells, so the editor always shows/edits the active wire.
         group = inputs.addGroupCommandInput(INPUT_EDITOR_GROUP, "Wire editor")
         group.isExpanded = True
@@ -254,6 +239,22 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
             1,
             logic.AWG_DEFAULT_MAX,
         )
+
+        # 4. Cable point (last, after the per-wire editor) - where a
+        # multi-conductor cable ends at this connector and its wires fan
+        # out to the pins. One per connector; required when it has more
+        # than one wire (validateInputs enforces it).
+        cable_sel = inputs.addSelectionInput(
+            INPUT_CABLE,
+            "Cable point",
+            "Where the cable meets this connector and its wires fan out. "
+            "Select a circular edge, circular/arc sketch curve, sketch "
+            "point, or work point.",
+        )
+        for filter_name in SELECTION_FILTERS:
+            cable_sel.addSelectionFilter(filter_name)
+        cable_sel.setSelectionLimits(0, 1)
+        _ui_refs["cable"] = cable_sel
 
         # 5. Rebuild rows from a previous run's attributes, if any.
         _load_existing_wires(design, inputs, table)
