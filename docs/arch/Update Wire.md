@@ -4,18 +4,19 @@
 ## Purpose
 
 Third piece of the cable prove-out: the delete-and-rebuild recovery path for
-routed wires. Route Wire's geometry is associative (included connector
-points), so ordinary moves need nothing; Update Wire exists for the accepted
-breakage cases — connector swapped or re-inserted, wire points redefined, or
-includes that fell back to baked positions.
+routed wires and cables. Route Wire's geometry is associative (included
+connector points), so ordinary moves need nothing; Update Wire exists for
+the accepted breakage cases — connector swapped or re-inserted, wire points
+redefined, or includes that fell back to baked positions.
 
 ## How it works
 
 1. **Collection** — top-level occurrences whose component carries the
    `PowerTools.Cable` / `route` attribute (`builder.collect_routes`, shared
-   with Wire Report; `entry._collect_routes` adds the dropdown labels). The
-   payload format is defined in `commands/routewire/logic.py`. Payloads
-   whose `kind` is not `single` (cables) are listed but refuse to rebuild.
+   with Wire Report; `entry._collect_routes` adds kind-prefixed dropdown
+   labels). The payload format is defined in
+   `commands/routewire/logic.py`; both `single` and `cable` kinds rebuild,
+   unknown kinds are refused.
 2. **Resolution** (`entry._resolve_route` + pure ladder in
    `commands/updatewire/logic.py`, tested in
    `tests/test_updatewire_logic.py`):
@@ -27,18 +28,23 @@ includes that fell back to baked positions.
      document copied or connector re-inserted). An ambiguous connector-id
      match (several instances, dead token) is refused rather than guessed.
    - The wire record on the resolved connector is found by **wire id**,
-     falling back to **pin** (wire redefined by Define Wires).
+     falling back to **pin** (wire redefined by Define Wires). Cable ends
+     resolve their whole stored wire list the same way in stored order
+     (`logic.match_cable_wires` — original pairing survives pin renames),
+     require the connector's cable point, and both ends must resolve
+     matching wire counts.
    - Stored name/gauge/diameter are validated by
-     `logic.coerce_route_params`; damaged payloads refuse to rebuild.
+     `logic.coerce_route_params` (plus `logic.coerce_cable_od_mm` for
+     cables); damaged payloads refuse to rebuild.
 3. **Delete** (`entry._delete_wire`) — the wire occurrence's
    `timelineObject.parentGroup` is deleted with contents
    (`TimelineGroup.deleteMe(True)`); when the group is gone (user
    ungrouped), the assembly occurrence itself is deleted. Nothing is
    deleted unless resolution fully succeeded.
-4. **Rebuild** — `commands/routewire/builder.build_wire` with the resolved
-   ends and stored parameters: same construction as Route Wire, including
-   fresh associative includes and a fresh route attribute with new
-   occurrence tokens.
+4. **Rebuild** — `commands/routewire/builder.build_wire` or `build_cable`
+   with the resolved ends and stored parameters: same construction as
+   Route Wire, including fresh associative includes and a fresh route
+   attribute with new occurrence tokens.
 
 ```mermaid
 flowchart TD
@@ -67,9 +73,6 @@ the unique-connector-id fallback.
 
 ## Known limitations (accepted for the prove-out)
 
-- **Cable routes cannot be rebuilt yet** — they are recognized (by the
-  payload's `kind`) and refused with guidance to delete the cable's
-  timeline group and re-route.
 - Deleting the timeline group removes everything the user may have manually
   added into it (documented in the user guide).
 - A wire whose both plausible connectors are ambiguous cannot be rebuilt —

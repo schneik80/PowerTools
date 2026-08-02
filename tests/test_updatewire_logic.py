@@ -121,3 +121,66 @@ def test_coerce_route_params_numeric_strings() -> None:
 )
 def test_coerce_route_params_damaged(payload) -> None:
     assert logic.coerce_route_params(payload) is None
+
+
+# ---------------------------------------------------------------------------
+# coerce_cable_od_mm
+# ---------------------------------------------------------------------------
+def test_coerce_cable_od_valid() -> None:
+    assert logic.coerce_cable_od_mm({"cable_od_mm": 4.33}) == pytest.approx(4.33)
+    assert logic.coerce_cable_od_mm({"cable_od_mm": "4.33"}) == pytest.approx(4.33)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [{}, {"cable_od_mm": "junk"}, {"cable_od_mm": 0.0}, {"cable_od_mm": -1.0}],
+)
+def test_coerce_cable_od_damaged(payload) -> None:
+    assert logic.coerce_cable_od_mm(payload) is None
+
+
+# ---------------------------------------------------------------------------
+# match_cable_wires
+# ---------------------------------------------------------------------------
+_CABLE_WIRES = {
+    "1": {"wire_id": "w-one", "pin": "1"},
+    "2": {"wire_id": "w-two", "pin": "2"},
+    "3": {"wire_id": "w-three", "pin": "3"},
+}
+
+
+def test_match_cable_wires_all_found_in_stored_order() -> None:
+    records, missing = logic.match_cable_wires(
+        _CABLE_WIRES, ["w-three", "w-one"], ["3", "1"]
+    )
+    assert missing == []
+    assert [record["pin"] for record in records] == ["3", "1"]  # stored order
+
+
+def test_match_cable_wires_pin_fallback_survives_redefined_ids() -> None:
+    records, missing = logic.match_cable_wires(
+        _CABLE_WIRES, ["w-dead", "w-two"], ["1", "2"]
+    )
+    assert missing == []
+    assert [record["wire_id"] for record in records] == ["w-one", "w-two"]
+
+
+def test_match_cable_wires_reports_missing() -> None:
+    records, missing = logic.match_cable_wires(
+        _CABLE_WIRES, ["w-one", "w-gone"], ["1", "9"]
+    )
+    assert [record["pin"] for record in records] == ["1"]
+    assert missing == ["9"]
+
+
+def test_match_cable_wires_empty_lists() -> None:
+    records, missing = logic.match_cable_wires(_CABLE_WIRES, [], [])
+    assert records == []
+    assert missing == []
+
+
+def test_match_cable_wires_mismatched_list_lengths() -> None:
+    # More ids than pins - the extra entry still resolves by id.
+    records, missing = logic.match_cable_wires(_CABLE_WIRES, ["w-one", "w-two"], ["1"])
+    assert missing == []
+    assert [record["pin"] for record in records] == ["1", "2"]

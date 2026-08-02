@@ -79,6 +79,45 @@ def find_wire(wires: dict, wire_id: str, pin: str) -> dict | None:
     return wires.get(pin)
 
 
+def coerce_cable_od_mm(payload: dict) -> float | None:
+    """The stored cable jacket OD in mm, or None when absent or damaged."""
+    try:
+        od_mm = float(payload.get("cable_od_mm"))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return od_mm if od_mm > 0 else None
+
+
+def match_cable_wires(wires: dict, wire_ids: list, pins: list) -> tuple[list, list]:
+    """Resolve a cable end's stored wire list against live connector data.
+
+    Args:
+        wires: ``{pin: record}`` from ``builder.read_connector``.
+        wire_ids: The route payload's ordered wire-id list for this end.
+        pins: The payload's ordered pin list (index-paired with wire_ids).
+
+    Each stored ``(wire_id, pin)`` resolves via :func:`find_wire` (wire id
+    preferred, pin fallback - so renamed pins keep their original pairing).
+
+    Returns:
+        ``(records, missing)`` - resolved wire records in stored order, and
+        display labels for entries that no longer exist on the connector.
+    """
+    records: list = []
+    missing: list = []
+    ids = [str(wire_id) for wire_id in (wire_ids or [])]
+    pin_list = [str(pin) for pin in (pins or [])]
+    for index in range(max(len(ids), len(pin_list))):
+        wire_id = ids[index] if index < len(ids) else ""
+        pin = pin_list[index] if index < len(pin_list) else ""
+        record = find_wire(wires, wire_id, pin)
+        if record is None:
+            missing.append(pin or wire_id or f"#{index + 1}")
+        else:
+            records.append(record)
+    return records, missing
+
+
 def coerce_route_params(payload: dict) -> dict | None:
     """Extract validated build parameters from a route payload.
 

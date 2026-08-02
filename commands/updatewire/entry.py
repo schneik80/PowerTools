@@ -13,16 +13,19 @@
 # associative links could not follow, or was swapped/edited so the links
 # broke, this command rebuilds the wire from its stored route attribute.
 #
-# The dialog lists every routed wire found at the design root (components
-# stamped with the PowerTools.Cable "route" attribute). For the chosen wire
-# each end is resolved back to a connector occurrence - by the stored
-# occurrence entity token first (survives renames and disambiguates multiple
-# instances of the same connector), then by unique connector id (survives a
-# dead token after reinsertion) - and the wire record is found by wire id
-# with a pin fallback. On OK the old wire (its "Wire <name>" timeline group,
-# or failing that its occurrence) is deleted and the wire is rebuilt with
-# builder.build_wire using the stored name, gauge, and diameter, creating
-# fresh associative links to wherever the connectors are now.
+# The dialog lists every routed assembly found at the design root
+# (components stamped with the PowerTools.Cable "route" attribute) - single
+# wires AND multi-conductor cables. For the chosen route each end is
+# resolved back to a connector occurrence - by the stored occurrence entity
+# token first (survives renames and disambiguates multiple instances of the
+# same connector), then by unique connector id (survives a dead token after
+# reinsertion). Wires are found by wire id with a pin fallback; for cables
+# the stored ordered pin/wire-id lists reconstruct the original pairing
+# (surviving pin renames), and both connectors must still carry their cable
+# points. On OK the old assembly (its timeline group, or failing that its
+# occurrence) is deleted and rebuilt with builder.build_wire / build_cable
+# using the stored name, gauge, and diameters, creating fresh associative
+# links to wherever the connectors are now.
 
 import os
 import traceback
@@ -42,9 +45,9 @@ ui = app.userInterface
 CMD_NAME = "Update Wire"
 CMD_ID = "PTCB_updatewire"
 CMD_Description = (
-    "Rebuild a routed wire from its stored route data: re-resolve both "
-    "connectors, delete the old wire assembly, and route it again with the "
-    "same name, gauge, and diameter."
+    "Rebuild a routed wire or cable from its stored route data: re-resolve "
+    "both connectors, delete the old assembly, and route it again with the "
+    "same name, gauge, and diameters."
 )
 IS_PROMOTED = False
 
@@ -219,7 +222,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
         if not _delete_wire(route["occ"]):
             ui.messageBox(
-                f"{CMD_NAME}: the existing wire assembly could not be deleted "
+                f"{CMD_NAME}: the existing assembly could not be deleted "
                 "- nothing was changed. Delete its timeline group manually "
                 "and use Route Wire instead.",
                 CMD_NAME,
@@ -229,28 +232,43 @@ def command_execute(args: adsk.core.CommandEventArgs):
             return
 
         params = resolution["params"]
-        result = builder.build_wire(design, tuple(resolution["ends"]), params)
+        if resolution["kind"] == route_logic.KIND_CABLE:
+            result = builder.build_cable(design, tuple(resolution["ends"]), params)
+            wire_count = len(resolution["ends"][0][1])
+            headline = f"Cable {params['name']} rebuilt ({wire_count} wires).\n\n"
+            sizes = (
+                f"\nGauge: {params['awg']} AWG, wire {params['od_mm']:.3f} mm, "
+                f"cable {params['cable_od_mm']:.3f} mm."
+            )
+        else:
+            result = builder.build_wire(design, tuple(resolution["ends"]), params)
+            headline = f"Wire {params['name']} rebuilt.\n\n"
+            sizes = f"\nGauge: {params['awg']} AWG, diameter {params['od_mm']:.3f} mm."
 
         summary = (
-            f"Wire {params['name']} rebuilt.\n\n"
+            headline
             + "\n".join(
-                f"Pin {pin}: {comp_name} (matched by "
+                f"{label}: {comp_name} (matched by "
                 f"{'entity token' if how == logic.HOW_TOKEN else 'connector id'})"
-                for comp_name, pin, how in resolution["hows"]
+                for comp_name, label, how in resolution["hows"]
             )
-            + f"\nGauge: {params['awg']} AWG, "
-            f"diameter {params['od_mm']:.3f} mm."
+            + sizes
         )
         if result["spline_fallback"]:
             summary += (
-                "\n\nNote: tangency constraints could not be applied - the "
-                "spline was shaped with guide points instead."
+                "\n\nNote: tangency constraints could not be applied "
+                "everywhere - some splines were shaped with guide points."
             )
         if result["baked_points"]:
             summary += (
                 f"\n\nNote: {result['baked_points']} point(s) could not be "
                 "linked to the connector geometry and were baked at fixed "
                 "positions."
+            )
+        if result.get("dropped_tangents"):
+            summary += (
+                f"\n\nNote: {result['dropped_tangents']} fan-out tangency "
+                "constraint(s) made their sketch unsolvable and were dropped."
             )
         ui.messageBox(summary, CMD_NAME)
     except Exception:
@@ -285,15 +303,18 @@ def _delete_wire(occ) -> bool:
 # Route collection and resolution
 # ---------------------------------------------------------------------------
 def _collect_routes(design) -> list:
-    """Routed wires at the design root, labeled for the dropdown."""
+    """Routed assemblies at the design root, labeled for the dropdown."""
     routes = builder.collect_routes(design)
     used = set()
     for route in routes:
-        base = str(route["payload"].get("name") or "unnamed")
-        label = f"Wire {base}"
+        payload = route["payload"]
+        base = str(payload.get("name") or "unnamed")
+        kind = payload.get("kind", route_logic.KIND_SINGLE)
+        prefix = "Cable" if kind == route_logic.KIND_CABLE else "Wire"
+        label = f"{prefix} {base}"
         suffix = 2
         while label in used:
-            label = f"Wire {base} ({suffix})"
+            label = f"{prefix} {base} ({suffix})"
             suffix += 1
         used.add(label)
         route["label"] = label
@@ -303,40 +324,50 @@ def _collect_routes(design) -> list:
 def _resolve_route(design, route) -> dict:
     """Resolve a stored route back to live connector data.
 
-    Returns ``{"ends": [(side_data, wire), ...], "params": dict | None,
-    "hows": [(comp_name, pin, how)], "problems": [str]}`` - empty problems
-    and two ends means the wire is rebuildable.
+    Returns ``{"kind": str, "ends": [...], "params": dict | None,
+    "hows": [(comp_name, label, how)], "problems": [str]}`` - empty
+    problems and two ends means the route is rebuildable. For single
+    routes each end is ``(side_data, wire)``; for cable routes each end is
+    ``(side_data, [wire, ...])`` in the stored (paired) order.
     """
     payload = route["payload"]
+    kind = payload.get("kind", route_logic.KIND_SINGLE)
     problems: list = []
-    if payload.get("kind", route_logic.KIND_SINGLE) != route_logic.KIND_SINGLE:
+    if kind not in (route_logic.KIND_SINGLE, route_logic.KIND_CABLE):
         return {
+            "kind": kind,
             "ends": [],
             "params": None,
             "hows": [],
             "problems": [
-                "Cable routes cannot be updated yet - delete the cable's "
-                "timeline group and re-route it with Route Wire."
+                f"Routes of type '{kind}' cannot be rebuilt - delete the "
+                "timeline group and re-route with Route Wire."
             ],
         }
     params = logic.coerce_route_params(payload)
     if params is None:
         problems.append("Stored route data is damaged (name/gauge/diameter).")
+    elif kind == route_logic.KIND_CABLE:
+        cable_od_mm = logic.coerce_cable_od_mm(payload)
+        if cable_od_mm is None:
+            problems.append("Stored route data is damaged (cable diameter).")
+        else:
+            params["cable_od_mm"] = cable_od_mm
 
     ends_payload = payload.get("ends") or []
     if len(ends_payload) != 2:
         problems.append("Stored route data does not describe two ends.")
         ends_payload = []
 
-    # Candidate occurrences: everything except the wire assembly's own tree.
-    wire_path = builder.occ_path(route["occ"])
+    # Candidate occurrences: everything except the route assembly's own tree.
+    route_path = builder.occ_path(route["occ"])
     candidate_occs: list = []
     candidates: list = []
     all_occs = design.rootComponent.allOccurrences
     for index in range(all_occs.count):
         occ = all_occs.item(index)
         path = builder.occ_path(occ)
-        if path == wire_path or path.startswith(wire_path + "+"):
+        if path == route_path or path.startswith(route_path + "+"):
             continue
         candidate_occs.append(occ)
         candidates.append(
@@ -350,16 +381,16 @@ def _resolve_route(design, route) -> dict:
     hows: list = []
     used_paths: set = set()
     for end in ends_payload:
-        pin = str(end.get("pin") or "?")
+        label = _end_label(end, kind)
         index, how = logic.choose_end_occurrence(candidates, end)
         if index is None:
             if how == logic.REASON_AMBIGUOUS:
                 problems.append(
-                    f"Pin {pin}: several instances of that connector exist - "
-                    "cannot tell which one this wire used."
+                    f"{label}: several instances of that connector exist - "
+                    "cannot tell which one this route used."
                 )
             else:
-                problems.append(f"Pin {pin}: connector occurrence not found.")
+                problems.append(f"{label}: connector occurrence not found.")
             continue
         occ = candidate_occs[index]
         path = builder.occ_path(occ)
@@ -369,20 +400,63 @@ def _resolve_route(design, route) -> dict:
         used_paths.add(path)
         side = builder.read_connector(occ)
         if side["error"]:
-            problems.append(f"Pin {pin}: {side['error']}")
+            problems.append(f"{label}: {side['error']}")
             continue
-        wire = logic.find_wire(side["wires"], str(end.get("wire_id") or ""), pin)
-        if wire is None:
-            problems.append(
-                f"Pin {pin}: wire no longer defined on '{side['comp_name']}'."
+        if kind == route_logic.KIND_CABLE:
+            if side["cable"] is None:
+                problems.append(
+                    f"{label}: '{side['comp_name']}' has no cable point - "
+                    "re-run Define Wires on the connector part."
+                )
+                continue
+            records, missing = logic.match_cable_wires(
+                side["wires"], end.get("wire_ids"), end.get("pins")
             )
-            continue
-        ends.append((side, wire))
-        hows.append((side["comp_name"], pin, how))
+            if missing:
+                problems.append(
+                    f"{label}: wire(s) {', '.join(missing)} no longer "
+                    f"defined on '{side['comp_name']}'."
+                )
+                continue
+            ends.append((side, records))
+        else:
+            wire = logic.find_wire(
+                side["wires"],
+                str(end.get("wire_id") or ""),
+                str(end.get("pin") or ""),
+            )
+            if wire is None:
+                problems.append(
+                    f"{label}: wire no longer defined on '{side['comp_name']}'."
+                )
+                continue
+            ends.append((side, wire))
+        hows.append((side["comp_name"], label, how))
 
+    if kind == route_logic.KIND_CABLE and len(ends) == 2:
+        count_a, count_b = len(ends[0][1]), len(ends[1][1])
+        if count_a != count_b or count_a == 0:
+            problems.append(
+                f"Resolved wire counts differ ({count_a} vs {count_b}) - "
+                "cable pairing cannot be reconstructed."
+            )
     if len(ends) != 2 and not problems:
         problems.append("Could not resolve both ends of the route.")
-    return {"ends": ends, "params": params, "hows": hows, "problems": problems}
+    return {
+        "kind": kind,
+        "ends": ends,
+        "params": params,
+        "hows": hows,
+        "problems": problems,
+    }
+
+
+def _end_label(end: dict, kind: str) -> str:
+    """Display label for one stored route end ("Pin 4" / "Pins 1, 2, 3")."""
+    if kind == route_logic.KIND_CABLE:
+        pins = ", ".join(str(pin) for pin in end.get("pins") or [])
+        return f"Pins {pins}" if pins else "Pins ?"
+    return f"Pin {end.get('pin') or '?'}"
 
 
 # ---------------------------------------------------------------------------
@@ -406,22 +480,23 @@ def _update_info():
         return
     route = _selected_route()
     if route is None or _resolution is None:
-        info.text = "Select a wire to rebuild."
+        info.text = "Select a route to rebuild."
         return
     lines = []
     params = _resolution["params"]
     if params:
-        lines.append(
-            f"{route['label']}: {params['awg']} AWG, {params['od_mm']:.2f} mm diameter."
-        )
-    for comp_name, pin, how in _resolution["hows"]:
+        spec = f"{route['label']}: {params['awg']} AWG, {params['od_mm']:.2f} mm"
+        if params.get("cable_od_mm"):
+            spec += f" wires, {params['cable_od_mm']:.2f} mm cable"
+        lines.append(spec + ".")
+    for comp_name, label, how in _resolution["hows"]:
         matched = "entity token" if how == logic.HOW_TOKEN else "connector id"
-        lines.append(f"Pin {pin}: {comp_name} (matched by {matched})")
+        lines.append(f"{label}: {comp_name} (matched by {matched})")
     if _resolution["problems"]:
         lines.extend(_resolution["problems"])
-        lines.append("This wire cannot be rebuilt until the above is resolved.")
+        lines.append("This route cannot be rebuilt until the above is resolved.")
     else:
-        lines.append("Ready to rebuild (the old wire assembly is replaced).")
+        lines.append("Ready to rebuild (the old assembly is replaced).")
     info.text = "\n".join(lines)
 
 

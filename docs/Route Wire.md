@@ -57,7 +57,7 @@ Each body is a solid circular **Pipe** feature along a 3D-sketch path whose poin
 5. Choose the **Gauge (AWG)** — only sizes the wires allow are offered. The **Wire diameter** (and for cables the **Cable diameter**) updates to the recommendation; edit if needed.
 6. Enter a name and click **OK**. The command reports the pins, gauge, and diameters it built.
 
-> **Note:** wires and cables follow ordinary connector moves on their own. **Swapping or re-inserting** a connector, or redefining its wire points, breaks the links — run [Update Wire](./Update%20Wire.md) to rebuild a single wire from its stored route data (cables cannot be rebuilt automatically yet: delete the cable's timeline group and route it again).
+> **Note:** wires and cables follow ordinary connector moves on their own. **Swapping or re-inserting** a connector, or redefining its wire points, breaks the links — run [Update Wire](./Update%20Wire.md) to rebuild the wire or cable from its stored route data.
 
 ## Access
 
