@@ -40,13 +40,17 @@ through `sketch.modelToSketchSpace` before sketching.
   standard `0.127 mm * 92^((36-AWG)/39)` formula).
 - **Sheath** component — one 3D sketch (`Wire <name> sheath path`): line
   strip1-to-exit1, line strip2-to-exit2, and an exit1-to-exit2 fitted spline.
-  The spline is made smooth against both lines by *fixing the lines*
-  (`isFixed`, so the solver bends the spline, not the connector geometry) and
-  adding coincident + tangent constraints. The API does not document
-  3D-sketch constraint support, so any constraint failure falls back to an
+  The spline's endpoints are **merged** into the lines' exit endpoints with
+  `SketchPoint.merge` (the API's "drag one point onto another" join — a
+  point-to-point coincident *constraint* is not supported by
+  `addCoincident` and silently forced an earlier version into its fallback
+  every time), the lines are *fixed* (`isFixed`, so the solver bends the
+  spline, not the connector geometry), and tangent constraints are added at
+  both shared points. If a step still refuses, the command falls back to an
   unconstrained spline shaped by directional guide points
   (`logic.spline_guide_points`: interior fit points continuing each
-  strip-to-exit direction past the exit by 25% of the exit-to-exit span).
+  strip-to-exit direction past the exit by 25% of the exit-to-exit span)
+  and says so in the completion summary.
   The three curves are collected into one Path
   (`createPath(ObjectCollection, False)` — endpoint-connected curves) and
   swept as a Pipe at the user's sheath diameter.

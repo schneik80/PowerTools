@@ -345,7 +345,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
         _build_conductor_bodies(
             conductor_comp, (wire_a, wire_b), conductor_dia_cm, name
         )
-        _build_sheath_body(sheath_comp, (wire_a, wire_b), sheath_dia_cm, name)
+        spline_fallback = _build_sheath_body(
+            sheath_comp, (wire_a, wire_b), sheath_dia_cm, name
+        )
 
         asm_comp.attributes.add(
             schema.ATTR_GROUP,
@@ -365,15 +367,21 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
         _group_timeline(design, timeline_start, name)
 
-        ui.messageBox(
+        summary = (
             f"Wire {name} routed.\n\n"
             f"Pins: {wire_a['pin']} <-> {wire_b['pin']}\n"
             f"Gauge: {awg} AWG "
             f"(conductor {logic.conductor_diameter_mm(awg):.3f} mm)\n"
             f"Sheath diameter: {sheath_dia_cm * 10.0:.3f} mm\n"
-            "Bodies: 2 conductor stubs + 1 sheath run.",
-            CMD_NAME,
+            "Bodies: 2 conductor stubs + 1 sheath run."
         )
+        if spline_fallback:
+            summary += (
+                "\n\nNote: tangency constraints could not be applied - the "
+                "spline was shaped with guide points instead (see the debug "
+                "log for the reason)."
+            )
+        ui.messageBox(summary, CMD_NAME)
     except Exception:
         ui.messageBox(f"{CMD_NAME} failed:\n{traceback.format_exc()}", CMD_NAME)
 
@@ -400,8 +408,13 @@ def _build_conductor_bodies(comp, wires, dia_cm: float, name: str):
         _add_pipe(comp, path, dia_cm, f"Wire {name} conductor {index}")
 
 
-def _build_sheath_body(comp, wires, dia_cm: float, name: str):
-    """Body 3: strip -> exit, smooth exit-to-exit spline, exit -> strip."""
+def _build_sheath_body(comp, wires, dia_cm: float, name: str) -> bool:
+    """Body 3: strip -> exit, smooth exit-to-exit spline, exit -> strip.
+
+    Returns:
+        True when the spline fell back to guide-point shaping (no tangency
+        constraints) so execute can surface it in the summary.
+    """
     wire_a, wire_b = wires
     sketch = comp.sketches.add(comp.xYConstructionPlane)
     sketch.name = f"Wire {name} sheath path"
@@ -414,7 +427,7 @@ def _build_sheath_body(comp, wires, dia_cm: float, name: str):
         sketch.modelToSketchSpace(wire_b["world"][schema.ROLE_STRIP]),
         sketch.modelToSketchSpace(wire_b["world"][schema.ROLE_EXIT]),
     )
-    spline = _add_exit_spline(sketch, (line_a, line_b), wire_a, wire_b)
+    spline, used_fallback = _add_exit_spline(sketch, (line_a, line_b), wire_a, wire_b)
 
     curves = adsk.core.ObjectCollection.create()
     curves.add(line_a)
@@ -422,16 +435,24 @@ def _build_sheath_body(comp, wires, dia_cm: float, name: str):
     curves.add(line_b)
     path = comp.features.createPath(curves, False)
     _add_pipe(comp, path, dia_cm, f"Wire {name} sheath")
+    return used_fallback
 
 
 def _add_exit_spline(sketch, exit_lines, wire_a, wire_b):
-    """Create the exit-to-exit spline, smooth against both exit lines.
+    """Create the exit-to-exit spline, tangent to both exit lines.
 
-    Preferred: a two-point fitted spline made coincident and tangent to the
-    exit lines (the lines are fixed first so the solver bends the spline, not
-    the connector geometry). 3D-sketch constraint support is not guaranteed by
-    the API docs, so any constraint failure falls back to an unconstrained
-    spline shaped by directional guide points (logic.spline_guide_points).
+    A two-point fitted spline whose endpoints are MERGED into the exit
+    lines' endpoints (SketchPoint.merge - the API's way to join two sketch
+    points; a point-to-point coincident constraint is not supported and was
+    the reason an earlier version always fell back). The lines are then
+    fixed so the solver bends the spline, not the connector geometry, and
+    tangent constraints are added at both shared points. Only if a step
+    still refuses does this fall back to an unconstrained spline shaped by
+    directional guide points (logic.spline_guide_points).
+
+    Returns:
+        ``(spline, used_fallback)`` - *used_fallback* is True when the
+        constrained construction failed and the guide-point spline was used.
     """
     line_a, line_b = exit_lines
     exit_a = sketch.modelToSketchSpace(wire_a["world"][schema.ROLE_EXIT])
@@ -441,20 +462,26 @@ def _add_exit_spline(sketch, exit_lines, wire_a, wire_b):
     fit.add(exit_b)
     spline = sketch.sketchCurves.sketchFittedSplines.add(fit)
     try:
+        # Merge the spline's endpoints into the lines' exit endpoints (the
+        # lines' points survive). This is the "drag one point onto another"
+        # join, giving real shared-point connectivity for the tangent
+        # constraints and the swept path.
+        if not line_a.endSketchPoint.merge(spline.startSketchPoint):
+            raise ValueError("merge of spline start into exit line A failed")
+        if not line_b.endSketchPoint.merge(spline.endSketchPoint):
+            raise ValueError("merge of spline end into exit line B failed")
         line_a.isFixed = True
         line_b.isFixed = True
         constraints = sketch.geometricConstraints
-        constraints.addCoincident(spline.startSketchPoint, line_a.endSketchPoint)
-        constraints.addCoincident(spline.endSketchPoint, line_b.endSketchPoint)
         if constraints.addTangent(line_a, spline) is None:
             raise ValueError("addTangent(line_a, spline) returned null")
         if constraints.addTangent(spline, line_b) is None:
             raise ValueError("addTangent(spline, line_b) returned null")
-        return spline
+        return spline, False
     except Exception:
         ptutil.log(
-            f"{CMD_NAME}: tangency constraints unavailable, using guide-point "
-            f"spline.\n{traceback.format_exc()}"
+            f"{CMD_NAME}: constrained spline construction failed, using "
+            f"guide-point spline.\n{traceback.format_exc()}"
         )
     try:
         spline.deleteMe()
@@ -469,7 +496,7 @@ def _add_exit_spline(sketch, exit_lines, wire_a, wire_b):
     fallback_fit = adsk.core.ObjectCollection.create()
     for xyz in guides:
         fallback_fit.add(sketch.modelToSketchSpace(adsk.core.Point3D.create(*xyz)))
-    return sketch.sketchCurves.sketchFittedSplines.add(fallback_fit)
+    return sketch.sketchCurves.sketchFittedSplines.add(fallback_fit), True
 
 
 def _add_pipe(comp, path, dia_cm: float, label: str):
