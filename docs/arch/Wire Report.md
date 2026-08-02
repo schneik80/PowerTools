@@ -82,7 +82,6 @@ inserted via `textContent` (no HTML injection from model-derived names).
   current sketch state measures.
 - Ribbon or future route kinds appear only in the "unsupported routes"
   count.
-- Icons are placeholders copied from `roundsketchdimensions`.
 
 ---
 

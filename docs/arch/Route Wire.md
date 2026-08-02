@@ -260,7 +260,6 @@ field parse as single.)
   cable-point-to-cable-point for cables), not the final spline shape.
 - Cable fan-out pipes overlap the jacket where they converge (no trim), and
   one gauge governs every wire in a cable.
-- Icons are placeholders copied from `roundsketchdimensions`.
 
 ---
 

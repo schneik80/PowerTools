@@ -87,7 +87,6 @@ string-compared against a live token.
   added into it (documented in the user guide).
 - A wire whose both plausible connectors are ambiguous cannot be rebuilt —
   the user re-routes manually with Route Wire.
-- Icons are placeholders copied from `roundsketchdimensions`.
 
 ---
 

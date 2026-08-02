@@ -152,8 +152,8 @@ design-wide wildcard queries below remain the intent for future tooling:
   center sketch point are the same point).
 - **No executePreview**: attributes are invisible and preview would churn
   work-point create/rollback on every input change for nothing.
-- **Icons are placeholders** copied from `roundsketchdimensions` — replace
-  before this graduates from beta.
+- **Icons**: dedicated 16px art, nearest-neighbor upscaled to 32/64 (the
+  dark variants share the same art).
 
 ---
 
