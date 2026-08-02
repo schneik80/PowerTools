@@ -731,39 +731,45 @@ def _build_cable_wire(comp, ctx_occ, pair, job):
 def _add_fanout_spline(sketch, exit_line, cable_point, refs):
     """Spline from a wire's exit to the cable point, tangent at the exit.
 
-    Fitted THROUGH the two existing sketch points (the included exit and
-    cable points), so both ends are attached and associative from
-    creation - no SketchPoint.merge. One-sided tangency at the exit only
-    (the wires converge direction-free into the jacket), with the sketch's
-    health checked afterwards: an unsatisfiable tangency is deleted again
-    and counted as a dropped tangent. Falls back to a guide-shaped spline
-    (still fitted through the end points) when a step refuses, flagged as
-    spline_fallback.
+    A clone of the JACKET's empirically working topology. Merging a spline
+    end into an included point holds only when that point permanently
+    terminates a real curve (the jacket's direction lines are why its
+    merges into the same cable points persist); a bare point raises
+    InternalValidationError, a temporary anchor left the end silently
+    detached, and fitting the spline THROUGH the included points never
+    created a binding at all. So: a permanent CONSTRUCTION helper line
+    strip-to-cable (shares only the cable point with the spline - no
+    unsolvable loop), then merge both spline ends, then the one-sided exit
+    tangency with a sketch-health check (an unsatisfiable tangency is
+    deleted again and counted). Falls back to a baked guide-point spline
+    when a step refuses, flagged as spline_fallback.
     """
     wire, job = refs
-    # The spline is created THROUGH the two existing sketch points -
-    # SketchFittedSplines.add accepts existing SketchPoints as fit points -
-    # so it is born attached to the included exit and cable points. No
-    # SketchPoint.merge involved: merging into a bare included point raises
-    # InternalValidationError, a persistent anchor line to enable it formed
-    # an unsolvable loop with the tangency, and a temporary anchor left the
-    # cable end silently detached.
     fit = adsk.core.ObjectCollection.create()
-    fit.add(exit_line.endSketchPoint)
-    fit.add(cable_point)
-    spline = None
+    fit.add(exit_line.endSketchPoint.geometry)
+    fit.add(cable_point.geometry)
+    spline = sketch.sketchCurves.sketchFittedSplines.add(fit)
     try:
-        spline = sketch.sketchCurves.sketchFittedSplines.add(fit)
-        if spline is None:
-            raise ValueError("fitted spline through existing points failed")
+        helper = sketch.sketchCurves.sketchLines.addByTwoPoints(
+            exit_line.startSketchPoint, cable_point
+        )
+        try:
+            # Construction: excluded from the swept path (explicit curve
+            # collection) and from the Wire Report's length measurement.
+            helper.isConstruction = True
+        except Exception:
+            ptutil.log(f"{_LOG_NAME}: could not mark the fan-out helper line.")
+        if not exit_line.endSketchPoint.merge(spline.startSketchPoint):
+            raise ValueError("merge of fan-out spline start failed")
+        if not cable_point.merge(spline.endSketchPoint):
+            raise ValueError("merge of fan-out spline end failed")
         tangent = sketch.geometricConstraints.addTangent(exit_line, spline)
         if tangent is None:
             raise ValueError("addTangent(exit_line, spline) returned null")
         if _sketch_is_sick(sketch):
             # A tangency the solver cannot satisfy leaves the whole sketch
-            # sick; the spline WITHOUT it is still fully associative (both
-            # ends ARE the included points), just not exactly tangent at
-            # the exit. Prefer a healthy sketch.
+            # sick; the merged spline WITHOUT it is still fully associative,
+            # just not exactly tangent at the exit. Prefer a healthy sketch.
             try:
                 tangent.deleteMe()
             except Exception:
@@ -778,22 +784,18 @@ def _add_fanout_spline(sketch, exit_line, cable_point, refs):
             f"{_LOG_NAME}: constrained fan-out spline failed, using "
             f"guide points.\n{traceback.format_exc()}"
         )
-    if spline is not None:
-        try:
-            spline.deleteMe()
-        except Exception:
-            ptutil.log(f"{_LOG_NAME}: could not delete the fan-out spline attempt.")
-    # Fallback: guide-shaped spline, still fitted THROUGH the end points so
-    # the ends stay associative; only the interior guide is baked.
+    try:
+        spline.deleteMe()
+    except Exception:
+        ptutil.log(f"{_LOG_NAME}: could not delete the fan-out spline attempt.")
     guides = logic.fanout_guide_points(
         _as_tuple(wire["world"][schema.ROLE_STRIP]),
         _as_tuple(wire["world"][schema.ROLE_EXIT]),
         _as_tuple(sketch.sketchToModelSpace(cable_point.geometry)),
     )
     fallback_fit = adsk.core.ObjectCollection.create()
-    fallback_fit.add(exit_line.endSketchPoint)
-    fallback_fit.add(sketch.modelToSketchSpace(adsk.core.Point3D.create(*guides[1])))
-    fallback_fit.add(cable_point)
+    for xyz in guides:
+        fallback_fit.add(sketch.modelToSketchSpace(adsk.core.Point3D.create(*xyz)))
     job["result"]["spline_fallback"] = True
     return sketch.sketchCurves.sketchFittedSplines.add(fallback_fit)
 
