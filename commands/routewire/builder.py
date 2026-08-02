@@ -734,19 +734,18 @@ def _add_fanout_spline(sketch, exit_line, cable_point, refs):
     Built the way the UI builds it: the lines already connect the included
     connector points, the spline is drawn between the exit and cable
     positions, and its endpoints get explicit point-to-point COINCIDENT
-    constraints onto the included points (``addCoincident`` documents its
-    entity argument as "The SketchPoint or sketch curve that the point
-    will be made coincident to"). Tangency is applied through the spline's
-    TANGENT HANDLE: ``activateTangentHandle(fitPoint)`` returns a real
-    SketchLine, and a COLLINEAR constraint between that handle and the
-    exit line pins the end direction along the line. Direct
-    ``addTangent(line, spline)`` is only the secondary attempt - it
-    consistently built without error yet most fan-outs failed to follow a
-    real connector move, so the handle route is preferred. One-sided at
-    the exit only (the wires converge direction-free into the jacket),
+    constraints onto the included points. One-sided tangency at the exit
+    via addTangent (the wires converge direction-free into the jacket),
     with a sketch-health check: an unsatisfiable tangency is deleted again
     and counted. Falls back to a baked guide-point spline when a step
     refuses, flagged as spline_fallback.
+
+    NOTE: the geometrically IDEAL construction is the tangent-HANDLE
+    recipe - activateTangentHandle(fitPoint) returns the handle as a real
+    SketchLine and a collinear constraint pins it along the exit line
+    (see git history) - but a Fusion defect prevents the constrained
+    splines from updating cleanly when connectors move, so it was
+    reverted. Revisit when Autodesk fixes spline-constraint recompute.
     """
     wire, job = refs
     fit = adsk.core.ObjectCollection.create()
@@ -763,41 +762,18 @@ def _add_fanout_spline(sketch, exit_line, cable_point, refs):
         end_bond = constraints.addCoincident(spline.endSketchPoint, cable_point)
         if end_bond is None:
             raise ValueError("addCoincident(spline end, cable point) returned null")
-        tangent_handle = None
-        tangency = None
-        try:
-            tangent_handle = spline.activateTangentHandle(spline.startSketchPoint)
-        except Exception:
-            ptutil.log(f"{_LOG_NAME}: fan-out tangent handle activation failed.")
-        if tangent_handle is not None:
-            try:
-                # Keep the handle out of the Wire Report's length sums in
-                # case handle lines enumerate as regular sketch curves.
-                tangent_handle.isConstruction = True
-            except Exception:
-                ptutil.log(f"{_LOG_NAME}: fan-out handle not marked construction.")
-            tangency = constraints.addCollinear(tangent_handle, exit_line)
-            if tangency is None:
-                ptutil.log(f"{_LOG_NAME}: fan-out handle collinear refused.")
-        if tangency is None:
-            # Secondary: the direct line-to-spline tangency.
-            tangency = constraints.addTangent(exit_line, spline)
-        if tangency is None:
-            raise ValueError("fan-out tangency failed (handle collinear and direct)")
+        tangent = constraints.addTangent(exit_line, spline)
+        if tangent is None:
+            raise ValueError("addTangent(exit_line, spline) returned null")
         if _sketch_is_sick(sketch):
             # A tangency the solver cannot satisfy leaves the whole sketch
             # sick; the coincident-bound spline WITHOUT it is still fully
             # associative, just not exactly tangent at the exit. Prefer a
-            # healthy sketch. (Deleting the handle line deactivates it.)
+            # healthy sketch.
             try:
-                tangency.deleteMe()
+                tangent.deleteMe()
             except Exception:
-                ptutil.log(f"{_LOG_NAME}: sick fan-out tangency not deleted.")
-            if tangent_handle is not None:
-                try:
-                    tangent_handle.deleteMe()
-                except Exception:
-                    ptutil.log(f"{_LOG_NAME}: fan-out tangent handle not removed.")
+                ptutil.log(f"{_LOG_NAME}: sick fan-out tangent not deleted.")
             job["result"]["dropped_tangents"] = (
                 job["result"].get("dropped_tangents", 0) + 1
             )

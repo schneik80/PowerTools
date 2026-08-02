@@ -113,15 +113,15 @@ jacket body) with one nested `Wire <pin>` component per paired wire:
   points (`addCoincident` documents its entity argument as "The
   SketchPoint or sketch curve that the point will be made coincident to").
   The one-sided exit tangency (the wires converge direction-free into the
-  jacket) goes through the spline's **tangent handle**:
-  `activateTangentHandle(fitPoint)` returns the handle as a real
-  `SketchLine`, and a **collinear** constraint between the handle and the
-  exit line pins the end direction along the line — direct
-  `addTangent(line, spline)` is only the secondary attempt, because it
-  repeatedly built without error yet failed to hold through real
-  connector moves. A `timelineObject.healthState` check follows — an
-  unsatisfiable tangency (and its handle) is deleted again (associativity
-  survives, exact tangency does not) and reported in the summary.
+  jacket) uses direct `addTangent(line, spline)` with a
+  `timelineObject.healthState` check — an unsatisfiable tangency is
+  deleted again (associativity survives, exact tangency does not) and
+  reported in the summary. The geometrically IDEAL tangency is the
+  spline's **tangent handle** (`activateTangentHandle(fitPoint)` returns
+  the handle as a real `SketchLine`; a collinear constraint pins it along
+  the exit line — see git history), but a **Fusion defect** prevents the
+  constrained splines from updating cleanly on connector moves, so it was
+  reverted. Revisit when Autodesk fixes spline-constraint recompute.
   **The failure chain that led here, for the record:** an early
   misdiagnosis ("point-to-point `addCoincident` is unsupported") drove a
   series of `SketchPoint.merge` recipes — a bare included point raised
