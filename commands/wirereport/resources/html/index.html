@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Wire &amp; Cable Report</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="dark">
+  <header class="report-header">
+    <div>
+      <h1>Wire &amp; Cable Report</h1>
+      <p id="docName" class="muted"></p>
+    </div>
+    <button id="refreshBtn" type="button" title="Re-measure and rebuild the report">Refresh</button>
+  </header>
+
+  <section id="totals" class="totals"></section>
+  <section id="assemblies"></section>
+  <p id="empty" class="muted empty" hidden>No routed wires or cables found in this design.</p>
+  <p id="generated" class="muted footer"></p>
+
+  <script src="init.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

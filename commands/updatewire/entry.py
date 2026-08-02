@@ -32,7 +32,6 @@ import adsk.fusion
 
 from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
-from ..definewires import logic as schema
 from ..routewire import builder
 from ..routewire import logic as route_logic
 from . import logic
@@ -286,14 +285,8 @@ def _delete_wire(occ) -> bool:
 # Route collection and resolution
 # ---------------------------------------------------------------------------
 def _collect_routes(design) -> list:
-    """Routed wires at the design root: occurrences stamped with a route."""
-    routes = []
-    root = design.rootComponent
-    for index in range(root.occurrences.count):
-        occ = root.occurrences.item(index)
-        payload = _route_payload_of(occ.component)
-        if payload:
-            routes.append({"occ": occ, "payload": payload})
+    """Routed wires at the design root, labeled for the dropdown."""
+    routes = builder.collect_routes(design)
     used = set()
     for route in routes:
         base = str(route["payload"].get("name") or "unnamed")
@@ -305,15 +298,6 @@ def _collect_routes(design) -> list:
         used.add(label)
         route["label"] = label
     return routes
-
-
-def _route_payload_of(comp):
-    """The component's parsed route attribute payload, or None."""
-    try:
-        attr = comp.attributes.itemByName(schema.ATTR_GROUP, route_logic.ROUTE_NAME)
-        return schema.parse_payload(attr.value if attr else "")
-    except Exception:
-        return None  # tolerant read - not a routed wire
 
 
 def _resolve_route(design, route) -> dict:

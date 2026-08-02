@@ -141,6 +141,32 @@ def read_connector(occ) -> dict:
     return data
 
 
+def collect_routes(design) -> list:
+    """Routed assemblies at the design root: ``[{"occ", "payload"}, ...]``.
+
+    An occurrence qualifies when its component carries a parseable
+    PowerTools.Cable ``route`` attribute (written by build_wire /
+    build_cable). Used by Update Wire and the Wire Report.
+    """
+    routes = []
+    root = design.rootComponent
+    for index in range(root.occurrences.count):
+        occ = root.occurrences.item(index)
+        payload = _route_payload_of(occ.component)
+        if payload:
+            routes.append({"occ": occ, "payload": payload})
+    return routes
+
+
+def _route_payload_of(comp):
+    """The component's parsed route attribute payload, or None."""
+    try:
+        attr = comp.attributes.itemByName(schema.ATTR_GROUP, logic.ROUTE_NAME)
+        return schema.parse_payload(attr.value if attr else "")
+    except Exception:
+        return None  # tolerant read - not a routed assembly
+
+
 def component_connector_id(comp) -> str:
     """The component's connector id from its manifest attribute ("" if none)."""
     try:

@@ -133,6 +133,7 @@ commands/relateddata/data.json
 commands/assemblybuilder/resources/html/init.js
 commands/assemblyintent/resources/html/init.js
 commands/preferences/resources/html/init.js
+commands/wirereport/resources/html/init.js
 cache/
 
 # Machine-local user preferences store. Auto-created on first run from

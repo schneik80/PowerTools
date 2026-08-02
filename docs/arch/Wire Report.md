@@ -1,0 +1,57 @@
+# Wire Report — Architecture
+[← Wire Report guide](../Wire%20Report.md)
+
+## Purpose
+
+Read-only consumer of the cable prove-out's data: enumerate routed
+assemblies via their `PowerTools.Cable` / `route` attributes
+(`routewire/builder.collect_routes`, shared with Update Wire), measure
+their as-built lengths, and present the result in an HTML palette.
+
+## Measurement
+
+Lengths come from the routing sketches the builder created, not from the
+solid bodies: per component, the sum of **non-construction** sketch curve
+lengths (`SketchCurve.length`, internal cm). Construction geometry — the
+jacket's tangency direction lines — is excluded.
+
+- Single wire: `Conductor` child component (both bare stubs) +
+  `Sheath` child component (line + spline + line) = **total wire length**.
+- Cable: the `Cable <name>` component's own sketch = jacket run; each
+  `Wire <pin>` child = that wire's out-of-jacket length (stubs, exit
+  lines, fan-out splines). A wire's full path = its own length + the
+  jacket; the **cable length = max over wires** (`logic.summarize_cable`
+  in `commands/wirereport/logic.py`, unit-tested) — every wire in a
+  manufactured cable is cut to the same length, so the longest path
+  governs. Child components map to pins by creation order (build order =
+  paired pin order), with name parsing as the fallback.
+
+Connector display names resolve from the route ends' occurrence tokens
+(`design.findEntityByToken`), falling back to the stored connector id.
+Formatting uses `UnitsManager.formatInternalValue` in the document's
+display units (mm fallback).
+
+## Palette
+
+Clones the repo's assemblyintent pattern: delete-then-add lifecycle,
+`init.js` sidecar for first paint (git-ignored, regenerated per show),
+`htmlReady` handshake pushing fresh state, `refresh` action re-measuring
+on demand, and external links forced out of the palette. Theme is resolved
+Python-side (Fusion preference; OS setting for "device" mode) and applied
+as a body class over CSS custom properties (`:root` dark, `body.light`) —
+the same variable values the other PowerTools palettes use to mirror
+Fusion's UI colors. The page renders exclusively from a single `setState`
+JSON payload; all strings are inserted via `textContent` (no HTML
+injection from model-derived names).
+
+## Known limitations (accepted for the prove-out)
+
+- Assemblies with broken (failed-recompute) sketches report whatever the
+  current sketch state measures.
+- Ribbon or future route kinds appear only in the "unsupported routes"
+  count.
+- Icons are placeholders copied from `roundsketchdimensions`.
+
+---
+
+[← Wire Report guide](../Wire%20Report.md)

@@ -241,6 +241,9 @@ assembly_intent_palette_id = (
 preferences_palette_id = (
     f"{COMPANY_NAME.replace(' ', '_')}_{ADDIN_NAME}_preferences_palette"
 )
+wire_report_palette_id = (
+    f"{COMPANY_NAME.replace(' ', '_')}_{ADDIN_NAME}_wire_report_palette"
+)
 
 # ---------------------------------------------------------------------------
 # 8. Preferences / user settings store

@@ -55,6 +55,7 @@ GROUPS = [
             _cmd("definewires", "Define Wires.md", beta=True),
             _cmd("routewire", "Route Wire.md", beta=True),
             _cmd("updatewire", "Update Wire.md", beta=True),
+            _cmd("wirereport", "Wire Report.md", beta=True),
         ],
     },
     {
