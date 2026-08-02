@@ -54,11 +54,12 @@ def read_connector(occ) -> dict:
     path), ``comp_name``, ``connector_id``, ``wires``, ``cable`` and
     ``error`` ("" when usable). Each wire (keyed by pin) carries
     ``wire_id``, ``pin``, ``awg_min``, ``awg_max``, ``world`` ({role:
-    Point3D in root space}) and ``proxies`` ({role: assembly-context point
-    proxy, for associative includes}). ``cable`` is the connector's cable
-    breakout point as ``{"proxy", "world"}`` (None when not authored) -
-    required for cable routing. Only complete wires (all three roles
-    resolvable) are offered.
+    Point3D in root space}), ``proxies`` ({role: assembly-context point
+    proxy, for associative includes}), ``natives`` ({role: native entity,
+    so a stale proxy can be recreated at include time}) and ``occ``.
+    ``cable`` is the connector's cable breakout point as ``{"proxy",
+    "world", "native"}`` (None when not authored) - required for cable
+    routing. Only complete wires (all three roles resolvable) are offered.
     """
     comp = occ.component
     data = {
@@ -105,23 +106,27 @@ def read_connector(occ) -> dict:
             continue  # incomplete wire - not routable
         world = {}
         proxies = {}
+        natives = {}
         for role, entity in record["points"].items():
             proxy, point = _point_refs(entity, occ)
             if point is None:
                 break
             world[role] = point
             proxies[role] = proxy
+            natives[role] = entity
         if len(world) != len(schema.ROLES):
             continue
         record["world"] = world
         record["proxies"] = proxies
+        record["natives"] = natives
+        record["occ"] = occ
         del record["points"]
         data["wires"][record["pin"]] = record
 
     if cable_entity is not None:
         proxy, world = _point_refs(cable_entity, occ)
         if world is not None:
-            data["cable"] = {"proxy": proxy, "world": world}
+            data["cable"] = {"proxy": proxy, "world": world, "native": cable_entity}
         else:
             ptutil.log(
                 f"{_LOG_NAME}: cable point attribute found on '{comp.name}' "
@@ -349,9 +354,11 @@ def build_cable(design, ends, params) -> dict:
     cable_comp = cable_occ.component
     cable_comp.name = f"Cable {job['name']}"
 
-    # The cable occurrence was created at the root, so it IS root context.
-    _build_jacket(cable_comp, cable_occ, ends, job)
-
+    # Wires build FIRST, jacket LAST: every occurrence/feature added before
+    # a sketch's includes is a chance for the dialog-time proxies to go
+    # stale, so the many per-wire includes run with the least prior
+    # mutation and the jacket's four (which have a decent guide-point
+    # fallback) absorb the most.
     for wire_a, wire_b in zip(wires_a, wires_b, strict=True):
         wire_occ = cable_comp.occurrences.addNewComponent(identity)
         wire_occ.component.name = f"Wire {wire_a['pin']}"
@@ -361,6 +368,9 @@ def build_cable(design, ends, params) -> dict:
             ((side_a, wire_a), (side_b, wire_b)),
             job,
         )
+
+    # The cable occurrence was created at the root, so it IS root context.
+    _build_jacket(cable_comp, cable_occ, ends, job)
 
     cable_comp.attributes.add(
         schema.ATTR_GROUP,
@@ -440,29 +450,59 @@ def _add_route_sketch(comp, ctx_occ, sketch_name: str):
     return sketch
 
 
-def _sketch_point_for(sketch, proxy, world, job):
+def _point_ref(wire: dict, role: str) -> dict:
+    """The include reference for one of a wire's points."""
+    return {
+        "proxy": wire["proxies"].get(role),
+        "native": wire.get("natives", {}).get(role),
+        "occ": wire.get("occ"),
+        "world": wire["world"][role],
+    }
+
+
+def _cable_ref(side: dict) -> dict:
+    """The include reference for a connector's cable point."""
+    cable = side["cable"]
+    return {
+        "proxy": cable.get("proxy"),
+        "native": cable.get("native"),
+        "occ": side.get("occ"),
+        "world": cable["world"],
+    }
+
+
+def _sketch_point_for(sketch, ref: dict, job):
     """A sketch point for one wire point: included (associative) or baked.
 
     include() creates a point linked to the connector geometry, so the line
-    it defines follows the connector. When include refuses (or no proxy is
-    available) the world position is baked as a FIXED point - the wire
-    still builds deterministically, just without associativity for that
-    point, counted in the build result.
+    it defines follows the connector. Proxies captured at dialog time can go
+    STALE by the time later sketches build (each occurrence/feature the
+    build adds can invalidate them - the cable build does far more work
+    before its wire sketches than the single-wire build does), so a failed
+    include is retried once with a FRESH proxy recreated from the native
+    entity. Only then does the point fall back to a baked fixed position,
+    counted in the build result and reported in the summary.
     """
-    if proxy is not None:
+    proxy = ref.get("proxy")
+    for attempt in ("cached", "refreshed"):
+        if proxy is None:
+            break
         try:
             created = sketch.include(proxy)
             if created and created.count > 0:
                 point = adsk.fusion.SketchPoint.cast(created.item(0))
                 if point is not None:
                     return point
-            ptutil.log(f"{_LOG_NAME}: include produced no sketch point.")
+            ptutil.log(f"{_LOG_NAME}: include produced no point ({attempt} proxy).")
         except Exception:
             ptutil.log(
-                f"{_LOG_NAME}: include failed for a wire point:\n"
+                f"{_LOG_NAME}: include failed ({attempt} proxy):\n"
                 f"{traceback.format_exc()}"
             )
-    point = sketch.sketchPoints.add(sketch.modelToSketchSpace(world))
+        if attempt == "refreshed":
+            break
+        proxy = _fresh_proxy(ref)
+    point = sketch.sketchPoints.add(sketch.modelToSketchSpace(ref["world"]))
     try:
         point.isFixed = True
     except Exception:
@@ -471,22 +511,29 @@ def _sketch_point_for(sketch, proxy, world, job):
     return point
 
 
+def _fresh_proxy(ref: dict):
+    """Recreate the assembly-context proxy from the native entity."""
+    native = ref.get("native")
+    occ = ref.get("occ")
+    if native is None or occ is None:
+        return None
+    try:
+        return native.createForAssemblyContext(occ)
+    except Exception:
+        ptutil.log(f"{_LOG_NAME}: proxy refresh failed:\n{traceback.format_exc()}")
+        return None
+
+
 def _build_conductor_bodies(comp, ctx_occ, wires, job):
     """Bodies 1 and 2: bare-conductor stubs, start -> strip, per connector."""
     name = job["name"]
     sketch = _add_route_sketch(comp, ctx_occ, f"Wire {name} conductor paths")
     for index, wire in enumerate(wires, start=1):
         start_point = _sketch_point_for(
-            sketch,
-            wire["proxies"].get(schema.ROLE_START),
-            wire["world"][schema.ROLE_START],
-            job,
+            sketch, _point_ref(wire, schema.ROLE_START), job
         )
         strip_point = _sketch_point_for(
-            sketch,
-            wire["proxies"].get(schema.ROLE_STRIP),
-            wire["world"][schema.ROLE_STRIP],
-            job,
+            sketch, _point_ref(wire, schema.ROLE_STRIP), job
         )
         line = sketch.sketchCurves.sketchLines.addByTwoPoints(start_point, strip_point)
         path = comp.features.createPath(line, False)
@@ -501,17 +548,9 @@ def _build_sheath_body(comp, ctx_occ, wires, job):
     end_points = []
     for wire in (wire_a, wire_b):
         strip_point = _sketch_point_for(
-            sketch,
-            wire["proxies"].get(schema.ROLE_STRIP),
-            wire["world"][schema.ROLE_STRIP],
-            job,
+            sketch, _point_ref(wire, schema.ROLE_STRIP), job
         )
-        exit_point = _sketch_point_for(
-            sketch,
-            wire["proxies"].get(schema.ROLE_EXIT),
-            wire["world"][schema.ROLE_EXIT],
-            job,
-        )
+        exit_point = _sketch_point_for(sketch, _point_ref(wire, schema.ROLE_EXIT), job)
         end_points.append((strip_point, exit_point))
 
     lines = sketch.sketchCurves.sketchLines
@@ -598,24 +637,10 @@ def _build_jacket(comp, ctx_occ, ends, job):
     (side_a, wires_a), (side_b, wires_b) = ends
     name = job["name"]
     sketch = _add_route_sketch(comp, ctx_occ, f"Cable {name} jacket path")
-    cable_a = _sketch_point_for(
-        sketch, side_a["cable"]["proxy"], side_a["cable"]["world"], job
-    )
-    cable_b = _sketch_point_for(
-        sketch, side_b["cable"]["proxy"], side_b["cable"]["world"], job
-    )
-    exit_a = _sketch_point_for(
-        sketch,
-        wires_a[0]["proxies"].get(schema.ROLE_EXIT),
-        wires_a[0]["world"][schema.ROLE_EXIT],
-        job,
-    )
-    exit_b = _sketch_point_for(
-        sketch,
-        wires_b[0]["proxies"].get(schema.ROLE_EXIT),
-        wires_b[0]["world"][schema.ROLE_EXIT],
-        job,
-    )
+    cable_a = _sketch_point_for(sketch, _cable_ref(side_a), job)
+    cable_b = _sketch_point_for(sketch, _cable_ref(side_b), job)
+    exit_a = _sketch_point_for(sketch, _point_ref(wires_a[0], schema.ROLE_EXIT), job)
+    exit_b = _sketch_point_for(sketch, _point_ref(wires_b[0], schema.ROLE_EXIT), job)
     lines = sketch.sketchCurves.sketchLines
     direction_a = lines.addByTwoPoints(exit_a, cable_a)
     direction_b = lines.addByTwoPoints(exit_b, cable_b)
@@ -676,26 +701,13 @@ def _build_cable_wire(comp, ctx_occ, pair, job):
     sketch = _add_route_sketch(comp, ctx_occ, f"{label} paths")
     for suffix, side, wire in (("1", side_a, wire_a), ("2", side_b, wire_b)):
         start_point = _sketch_point_for(
-            sketch,
-            wire["proxies"].get(schema.ROLE_START),
-            wire["world"][schema.ROLE_START],
-            job,
+            sketch, _point_ref(wire, schema.ROLE_START), job
         )
         strip_point = _sketch_point_for(
-            sketch,
-            wire["proxies"].get(schema.ROLE_STRIP),
-            wire["world"][schema.ROLE_STRIP],
-            job,
+            sketch, _point_ref(wire, schema.ROLE_STRIP), job
         )
-        exit_point = _sketch_point_for(
-            sketch,
-            wire["proxies"].get(schema.ROLE_EXIT),
-            wire["world"][schema.ROLE_EXIT],
-            job,
-        )
-        cable_point = _sketch_point_for(
-            sketch, side["cable"]["proxy"], side["cable"]["world"], job
-        )
+        exit_point = _sketch_point_for(sketch, _point_ref(wire, schema.ROLE_EXIT), job)
+        cable_point = _sketch_point_for(sketch, _cable_ref(side), job)
 
         lines = sketch.sketchCurves.sketchLines
         conductor_line = lines.addByTwoPoints(start_point, strip_point)

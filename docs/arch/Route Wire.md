@@ -56,10 +56,15 @@ active occurrence) and the wire points are brought in with
 `Sketch.include()` of the connector-point *proxies*. The lines are drawn
 `addByTwoPoints` **between the included points**, so they are fully DEFINED
 by connector geometry: the solver has no freedom on them, and they follow
-when connectors move. When an include refuses, that point is baked at its
-world position and `isFixed` (so the lines stay deterministic), counted in
-the build result and reported in the summary. Connector swap/edit breaking
-the include links is accepted — Update Wire is the recovery path.
+when connectors move. Proxies captured at dialog time can go **stale** by
+the time later sketches build (each occurrence/feature added can invalidate
+them — the cable build does far more work before its wire sketches than the
+single-wire build), so a failed include is retried once with a fresh proxy
+recreated from the native entity (`read_connector` carries both). Only then
+is the point baked at its world position and `isFixed` (so the lines stay
+deterministic), counted in the build result and reported in the summary.
+Connector swap/edit breaking the include links is accepted — Update Wire is
+the recovery path.
 
 - **Conductor** component — one 3D sketch (`Wire <name> conductor paths`)
   with a start-to-strip line per connector; each line becomes a Path
@@ -113,6 +118,10 @@ jacket body) with one nested `Wire <pin>` component per paired wire:
   diameter default.
 - Pins pair in `logic.sort_pins` order (numeric-aware); counts must match;
   one AWG (`logic.awg_overlap_many` across every paired wire) governs all.
+- **Build order: wires first, jacket last** — every operation before a
+  sketch's includes is a chance for dialog-time proxies to stale, so the
+  many per-wire includes run with the least prior mutation and the
+  jacket's four (with their guide-point fallback) absorb the most.
 
 **Pipe instead of manual sweep.** The described "sweep a circle along the
 path" is implemented with `PipeFeatures` (path + solid circular section),
