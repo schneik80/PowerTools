@@ -65,6 +65,7 @@ INPUT_SEL_EXIT = "dw_sel_exit"
 INPUT_PIN = "dw_pin"
 INPUT_AWG_MIN = "dw_awg_min"
 INPUT_AWG_MAX = "dw_awg_max"
+INPUT_CABLE = "dw_sel_cable"
 
 # Per-row cell id prefixes; the suffix is the row's monotonic rid.
 ROW_EDIT_PREFIX = "dw_row_edit_"
@@ -107,6 +108,9 @@ _active_rid = None  # rid currently loaded in the editor
 _deleted_wire_ids: set = set()  # attribute-backed wires the user deleted
 _loading_row = False  # reentrancy guard while seeding editor inputs
 _row_counter = 0
+# Connector-level cable point (multi-conductor cable breakout); required by
+# validateInputs when the connector has more than one wire.
+_cable_point: dict = {"entity": None, "missing": False}
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +200,22 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         table.addToolbarCommandInput(add_btn)
         table.addToolbarCommandInput(del_btn)
 
-        # 3. Wire editor for the active row. Selection inputs cannot live in
+        # 3. Cable point - where a multi-conductor cable ends at this
+        # connector and its wires fan out to the pins. Required when the
+        # connector has more than one wire (validateInputs enforces it).
+        cable_sel = inputs.addSelectionInput(
+            INPUT_CABLE,
+            "Cable point",
+            "Where the cable meets this connector and its wires fan out. "
+            "Select a circular edge, circular/arc sketch curve, sketch "
+            "point, or work point.",
+        )
+        for filter_name in SELECTION_FILTERS:
+            cable_sel.addSelectionFilter(filter_name)
+        cable_sel.setSelectionLimits(0, 1)
+        _ui_refs["cable"] = cable_sel
+
+        # 4. Wire editor for the active row. Selection inputs cannot live in
         # table cells, so the editor always shows/edits the active wire.
         group = inputs.addGroupCommandInput(INPUT_EDITOR_GROUP, "Wire editor")
         group.isExpanded = True
@@ -236,7 +255,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
             logic.AWG_DEFAULT_MAX,
         )
 
-        # 4. Rebuild rows from a previous run's attributes, if any.
+        # 5. Rebuild rows from a previous run's attributes, if any.
         _load_existing_wires(design, inputs, table)
         if not _row_order:
             _add_wire_row(inputs, table)
@@ -291,6 +310,10 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
                 _activate_row(_row_order[row - 1])
             return
 
+        if changed_id == INPUT_CABLE:
+            _handle_cable_selection_changed(changed)
+            return
+
         wire = _wires.get(_active_rid)
         if wire is None:
             return
@@ -342,6 +365,33 @@ def _handle_selection_changed(changed, role: str, wire: dict):
     _update_editor_label()
 
 
+def _handle_cable_selection_changed(changed):
+    """Store or reject the connector-level cable point pick."""
+    global _loading_row
+    sel = adsk.core.SelectionCommandInput.cast(changed)
+    if sel.selectionCount == 0:
+        _cable_point["entity"] = None
+        _update_editor_label()
+        return
+    entity = sel.selection(0).entity
+    if not _is_supported_point_source(entity):
+        # Guard the programmatic clearSelection - it re-fires inputChanged.
+        _loading_row = True
+        try:
+            sel.clearSelection()
+        finally:
+            _loading_row = False
+        _cable_point["entity"] = None
+        _update_editor_label(
+            "Pick a circular edge, circular/arc sketch curve, sketch point, "
+            "or work point for the cable."
+        )
+        return
+    _cable_point["entity"] = entity
+    _cable_point["missing"] = False
+    _update_editor_label()
+
+
 # ---------------------------------------------------------------------------
 # Validate - gate OK until every wire is complete and consistent
 # ---------------------------------------------------------------------------
@@ -372,6 +422,10 @@ def command_validate(args: adsk.core.ValidateInputsEventArgs):
                 if len(set(tokens)) != len(tokens):
                     problems.append("Same point used twice in one wire.")
                     break
+        if not problems and len(_row_order) > 1:
+            # Multi-pin connectors need the cable breakout point.
+            if _cable_point.get("entity") is None:
+                problems.append("Cable point required for multi-pin connectors.")
         args.areInputsValid = not problems
     except Exception:
         ptutil.handle_error(f"{CMD_NAME} validateInputs")
@@ -423,10 +477,14 @@ def command_execute(args: adsk.core.CommandEventArgs):
             logic.build_manifest_payload(connector_id, root.name, desired),
         )
 
+        cable_note = _write_cable_point(root, connector_id, existing)
+
         lines = [
             f"Connector: {connector_id}",
             f"Wires written: {len(desired)}",
         ]
+        if cable_note:
+            lines.append(cable_note)
         if created_points:
             lines.append(f"Work points created: {created_points}")
         if diff["remove"]:
@@ -475,6 +533,42 @@ def _write_wire(root, wire: dict, connector_id: str, existing: dict):
     return fields, created
 
 
+def _write_cable_point(root, connector_id: str, existing: dict) -> str:
+    """Write, move, or remove the connector's cable point attribute.
+
+    Returns a one-line summary note ("" when nothing notable happened).
+    """
+    old_attr = existing["cable_attr"]
+    old_entity = existing["cable_entity"]
+    entity = _cable_point.get("entity")
+    if entity is None:
+        if old_attr is not None:
+            try:
+                old_attr.deleteMe()
+                return "Cable point removed."
+            except Exception:
+                ptutil.log(f"{CMD_NAME}: could not delete the old cable point.")
+        return ""
+    point, created = _resolve_point(root, entity, "", logic.ROLE_CABLE)
+    if point is None:
+        return "Cable point could not be resolved - not written."
+    if old_attr is not None and (
+        old_entity is None or _entity_token(old_entity) != _entity_token(point)
+    ):
+        try:
+            old_attr.deleteMe()
+        except Exception:
+            ptutil.log(f"{CMD_NAME}: could not delete the stale cable point.")
+    point.attributes.add(
+        logic.ATTR_GROUP,
+        logic.CABLE_POINT_NAME,
+        logic.build_cable_point_payload(connector_id),
+    )
+    if created:
+        return "Cable point written (work point created)."
+    return "Cable point written."
+
+
 def _resolve_point(root, entity, pin: str, role: str):
     """Resolve a user selection to a durable, attributable point entity.
 
@@ -511,7 +605,10 @@ def _resolve_point(root, entity, pin: str, role: str):
         )
         return None, False
     try:
-        point.name = f"Wire {pin or 'unpinned'} {role}"
+        if role == logic.ROLE_CABLE:
+            point.name = "Cable point"
+        else:
+            point.name = f"Wire {pin or 'unpinned'} {role}"
     except Exception:
         ptutil.log(f"{CMD_NAME}: could not rename work point for role '{role}'.")
     return point, True
@@ -571,6 +668,8 @@ def _read_existing(design) -> dict:
     entity_map: dict = {}
     bad_attrs: list = []
     records: list = []
+    cable_attr = None
+    cable_entity = None
     try:
         found = design.findAttributes(logic.ATTR_GROUP, "") or []
     except Exception:
@@ -592,23 +691,52 @@ def _read_existing(design) -> dict:
         if key is not None:
             attr_objs[key] = attribute
             entity_map[key] = parent
+        elif name == logic.CABLE_POINT_NAME:
+            cable_attr = attribute
+            cable_entity = parent
         elif name != logic.MANIFEST_NAME:
             bad_attrs.append(attribute)
     return {
         "attr_objs": attr_objs,
         "entity_map": entity_map,
         "bad_attrs": bad_attrs,
+        "cable_attr": cable_attr,
+        "cable_entity": cable_entity,
         "state": logic.group_attributes_into_wires(records),
     }
 
 
 def _load_existing_wires(design, inputs, table):
-    """Rebuild table rows and wire records from a previous run's attributes."""
+    """Rebuild table rows, cable point, and wire records from attributes."""
+    global _loading_row
     existing = _read_existing(design)
     state = existing["state"]
-    if not state["wires"]:
-        return
+
     missing_any = False
+    if existing["cable_attr"] is not None:
+        if existing["cable_entity"] is not None:
+            _cable_point["entity"] = existing["cable_entity"]
+            cable_sel = _ui_refs.get("cable")
+            if cable_sel is not None:
+                _loading_row = True
+                try:
+                    cable_sel.addSelection(existing["cable_entity"])
+                except Exception:
+                    ptutil.log(f"{CMD_NAME}: stored cable point not selectable.")
+                    _cable_point["entity"] = None
+                    _cable_point["missing"] = True
+                    missing_any = True
+                finally:
+                    _loading_row = False
+        else:
+            # Cable point deleted outside the command - must be re-picked.
+            _cable_point["missing"] = True
+            missing_any = True
+
+    if not state["wires"]:
+        if missing_any:
+            _show_missing_notice()
+        return
     for wire_id in logic.ordered_wire_ids(state["manifest"], state["wires"]):
         roles = state["wires"][wire_id]
         fields = logic.wire_fields(
@@ -631,14 +759,20 @@ def _load_existing_wires(design, inputs, table):
                 missing_any = True
         _add_wire_row(inputs, table, wire)
     if missing_any:
-        notice = _ui_refs.get("notice")
-        if notice:
-            notice.text = (
-                "Some stored wire points no longer exist (deleted outside this "
-                "command). Re-select the missing points in the rows marked "
-                "'missing', or delete those rows."
-            )
-            notice.isVisible = True
+        _show_missing_notice()
+
+
+def _show_missing_notice():
+    """Unhide the notice about stored points that no longer exist."""
+    notice = _ui_refs.get("notice")
+    if notice:
+        notice.text = (
+            "Some stored points no longer exist (deleted outside this "
+            "command). Re-select the missing wire points in the rows marked "
+            "'missing' (or delete those rows) and re-pick the cable point "
+            "if it is empty."
+        )
+        notice.isVisible = True
 
 
 # ---------------------------------------------------------------------------
@@ -670,7 +804,11 @@ def _add_wire_row(inputs, table, wire: dict | None = None) -> int:
     global _row_counter
     _row_counter += 1
     rid = _row_counter
-    _wires[rid] = wire if wire is not None else _new_wire()
+    if wire is None:
+        wire = _new_wire()
+        # Default pin: highest numeric pin so far + 1 ("1" for the first).
+        wire["pin"] = logic.next_pin(w["pin"] for w in _wires.values())
+    _wires[rid] = wire
     _row_order.append(rid)
 
     row = table.rowCount
@@ -822,7 +960,7 @@ def _rid_from_input_id(input_id: str, prefix: str):
 def _reset_state():
     """Reset all per-dialog module state."""
     global _wires, _row_order, _row_inputs, _ui_refs, _active_rid
-    global _deleted_wire_ids, _loading_row, _row_counter
+    global _deleted_wire_ids, _loading_row, _row_counter, _cable_point
     _wires = {}
     _row_order = []
     _row_inputs = {}
@@ -831,6 +969,7 @@ def _reset_state():
     _deleted_wire_ids = set()
     _loading_row = False
     _row_counter = 0
+    _cable_point = {"entity": None, "missing": False}
 
 
 # ---------------------------------------------------------------------------

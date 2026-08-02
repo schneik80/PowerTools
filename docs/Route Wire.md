@@ -2,7 +2,7 @@
 
 [Back to PowerTools](../README.md)
 
-The Route Wire command connects two connectors that carry [Define Wires](./Define%20Wires.md) data. Pick the two connector components in an assembly, choose one pin on each, pick an AWG size that both wires allow, accept or edit the recommended sheathed wire diameter, name the wire, and the command builds the physical wire: two bare-conductor stubs and a smooth sheathed run, organized as a local wire assembly and grouped in the timeline.
+The Route Wire command connects two connectors that carry [Define Wires](./Define%20Wires.md) data. Pick the two connector components in an assembly, choose the **route type** — a **single wire** (one pin on each side) or a **multi-conductor cable** (every pin, paired in order) — pick an AWG size the wires allow, accept or edit the recommended diameters, name the route, and the command builds the physical geometry as a local assembly grouped in the timeline. (A **ribbon cable** type is listed but not implemented yet.)
 
 > **Prove-out status:** this is a beta test command that validates consuming the PowerTools.Cable attributes across an assembly. Its behavior may change.
 
@@ -16,6 +16,8 @@ The Route Wire command connects two connectors that carry [Define Wires](./Defin
 
 ## What gets built on OK
 
+**Single wire:**
+
 ```text
 Root of the design
   Wire <name>          (local assembly component)
@@ -23,6 +25,20 @@ Root of the design
     Sheath             body 3 - strip-to-exit, smooth exit-to-exit spline,
                        exit-to-strip, at the sheath diameter
 ```
+
+**Cable** (pins paired in sorted order, 1-1, 2-2, ...; both connectors need the cable point from Define Wires and matching pin counts):
+
+```text
+Root of the design
+  Cable <name>         (component; owns the jacket body - cable point to
+                        cable point, at the cable diameter)
+    Wire <pin>         one component per pair, 4 bodies each:
+                       2 bare-conductor stubs (start-to-strip, AWG diameter)
+                       2 sheathed end segments (strip-to-exit, then a smooth
+                        fan-out spline to the cable point, wire diameter)
+```
+
+One gauge governs the whole cable (the AWG list is the intersection across every paired wire). The **cable diameter** defaults to the standard cable-design recommendation — packed wire bundle (per-count packing factor), a lay allowance, plus jacket walls — and stays editable.
 
 Each body is a solid circular **Pipe** feature along a 3D-sketch path whose points are **linked to the connector geometry** (Include 3D Geometry), so the wire is **associative** — it follows when connectors move. The exit-to-exit spline is made tangent to both exit segments (falling back to direction-guided fit points where 3D tangency is unavailable). All timeline items are grouped as **Wire \<name\>**, and the sketches, features, and bodies carry `Wire <name> ...` names. The wire assembly component is stamped with a `PowerTools.Cable` / `route` attribute recording both ends (connector ids, wire ids, pins, occurrence tokens), the gauge, and the diameter.
 
@@ -36,9 +52,10 @@ Each body is a solid circular **Pipe** feature along a 3D-sketch path whose poin
 
 1. Open the assembly containing the two connectors.
 2. On the **Utilities** tab, open the **Power Tools** panel and click **Route Wire**.
-3. Pick **Connector 1** and **Connector 2** in the canvas or browser. Each shows its component name and available pins; pick a **Pin** for each side.
-4. Choose the **Gauge (AWG)** — only sizes allowed by both wires are offered. The **Wire diameter** updates to the recommended sheathed size; edit it if needed.
-5. Enter a **Wire name** and click **OK**. The command reports the pins, gauge, and diameter it built.
+3. Choose the **Route type**. Pick **Connector 1** and **Connector 2** in the canvas or browser; each shows its component name and available pins.
+4. **Single wire**: pick a **Pin** for each side. **Cable**: pins are hidden — every pin connects, paired in sorted order.
+5. Choose the **Gauge (AWG)** — only sizes the wires allow are offered. The **Wire diameter** (and for cables the **Cable diameter**) updates to the recommendation; edit if needed.
+6. Enter a name and click **OK**. The command reports the pins, gauge, and diameters it built.
 
 > **Note:** the wire follows ordinary connector moves on its own. **Swapping or re-inserting** a connector, or redefining its wire points, breaks the links — run [Update Wire](./Update%20Wire.md) to rebuild the wire from its stored route data.
 

@@ -29,8 +29,10 @@ from collections.abc import Iterable
 
 ATTR_GROUP = "PowerTools.Cable"
 MANIFEST_NAME = "connector"
+CABLE_POINT_NAME = "cablepoint"
 POINT_NAME_PREFIX = "point"
 SCHEMA_VERSION = 1
+ROLE_CABLE = "cable"
 
 ROLE_START = "start"
 ROLE_STRIP = "strip"
@@ -156,6 +158,32 @@ def build_manifest_payload(
     )
 
 
+def build_cable_point_payload(connector_id: str) -> str:
+    """Serialize the JSON attribute value for a connector's cable point.
+
+    The cable point is where a multi-conductor cable ends at this connector
+    and its wires fan out to the pins. One per connector, stored under the
+    attribute name :data:`CABLE_POINT_NAME`.
+    """
+    return json.dumps(
+        {
+            "schema": SCHEMA_VERSION,
+            "connector_id": connector_id,
+            "role": ROLE_CABLE,
+        }
+    )
+
+
+def next_pin(pins: Iterable[str]) -> str:
+    """Default pin name for a new wire: highest numeric pin + 1.
+
+    Non-numeric pin names are ignored; with no numeric pins the first
+    default is ``"1"``. The user can always edit the result.
+    """
+    numbers = [int(pin) for pin in pins if str(pin).strip().isdigit()]
+    return str(max(numbers) + 1) if numbers else "1"
+
+
 def parse_payload(value: str | None) -> dict | None:
     """Parse a JSON attribute value written by this command.
 
@@ -185,12 +213,15 @@ def group_attributes_into_wires(records: Iterable[tuple[str, str, bool]]) -> dic
     Returns:
         A dict with keys:
         ``manifest`` — parsed manifest payload or None;
+        ``cable`` — ``{"payload": dict, "has_parent": bool}`` for the
+        connector's cable point attribute, or None;
         ``wires`` — ``{wire_id: {role: {"payload": dict, "has_parent": bool}}}``;
         ``orphans`` — ``(name, payload)`` for parentless point attributes
         (also present in ``wires`` with ``has_parent`` False);
         ``bad`` — names that failed to parse (cleanup candidates).
     """
     manifest: dict | None = None
+    cable: dict | None = None
     wires: dict = {}
     orphans: list = []
     bad: list = []
@@ -201,6 +232,12 @@ def group_attributes_into_wires(records: Iterable[tuple[str, str, bool]]) -> dic
                 bad.append(name)
             else:
                 manifest = payload
+            continue
+        if name == CABLE_POINT_NAME:
+            if payload is None:
+                bad.append(name)
+            else:
+                cable = {"payload": payload, "has_parent": has_parent}
             continue
         parsed = parse_point_attr_name(name)
         if parsed is None or payload is None:
@@ -213,7 +250,13 @@ def group_attributes_into_wires(records: Iterable[tuple[str, str, bool]]) -> dic
             "payload": payload,
             "has_parent": has_parent,
         }
-    return {"manifest": manifest, "wires": wires, "orphans": orphans, "bad": bad}
+    return {
+        "manifest": manifest,
+        "cable": cable,
+        "wires": wires,
+        "orphans": orphans,
+        "bad": bad,
+    }
 
 
 def ordered_wire_ids(manifest: dict | None, wires: dict) -> list[str]:

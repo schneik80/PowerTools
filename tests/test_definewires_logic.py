@@ -148,7 +148,66 @@ def test_group_attributes_routes_orphans_and_bad() -> None:
 
 def test_group_attributes_empty_input() -> None:
     state = logic.group_attributes_into_wires([])
-    assert state == {"manifest": None, "wires": {}, "orphans": [], "bad": []}
+    assert state == {
+        "manifest": None,
+        "cable": None,
+        "wires": {},
+        "orphans": [],
+        "bad": [],
+    }
+
+
+def test_group_attributes_recognizes_cable_point() -> None:
+    records = [
+        ("cablepoint", logic.build_cable_point_payload("cid"), True),
+        _point_record("w1", "start"),
+    ]
+    state = logic.group_attributes_into_wires(records)
+    assert state["cable"] == {
+        "payload": {"schema": 1, "connector_id": "cid", "role": "cable"},
+        "has_parent": True,
+    }
+    assert state["bad"] == []  # must NOT be treated as cleanup garbage
+
+
+def test_group_attributes_orphaned_cable_point() -> None:
+    records = [("cablepoint", logic.build_cable_point_payload("cid"), False)]
+    state = logic.group_attributes_into_wires(records)
+    assert state["cable"]["has_parent"] is False
+
+
+def test_group_attributes_damaged_cable_point_is_bad() -> None:
+    state = logic.group_attributes_into_wires([("cablepoint", "not json", True)])
+    assert state["cable"] is None
+    assert state["bad"] == ["cablepoint"]
+
+
+def test_cable_point_payload_round_trip() -> None:
+    payload = logic.parse_payload(logic.build_cable_point_payload("Conn-3f9a2b1c"))
+    assert payload is not None
+    assert payload["schema"] == 1
+    assert payload["connector_id"] == "Conn-3f9a2b1c"
+    assert payload["role"] == "cable"
+
+
+# ---------------------------------------------------------------------------
+# Pin defaults
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "pins, expected",
+    [
+        ([], "1"),  # first wire of a fresh dialog
+        (["1"], "2"),
+        (["1", "2", "3"], "4"),
+        (["3", "1"], "4"),  # unordered
+        (["1", "5"], "6"),  # gaps are not filled - always highest + 1
+        (["A", "B"], "1"),  # non-numeric pins ignored
+        (["A", "2"], "3"),  # mixed
+        (["", " 7 "], "8"),  # whitespace-tolerant
+    ],
+)
+def test_next_pin(pins, expected) -> None:
+    assert logic.next_pin(pins) == expected
 
 
 # ---------------------------------------------------------------------------

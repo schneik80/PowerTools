@@ -51,12 +51,14 @@ def read_connector(occ) -> dict:
     """Scan the occurrence's component for Define Wires attribute data.
 
     Returns a dict with ``occ``, ``occ_token``, ``path`` (unique occurrence
-    path), ``comp_name``, ``connector_id``, ``wires`` and ``error`` (""
-    when usable). Each wire (keyed by pin) carries ``wire_id``, ``pin``,
-    ``awg_min``, ``awg_max``, ``world`` ({role: Point3D in root space}) and
-    ``proxies`` ({role: assembly-context point proxy, for associative
-    includes}). Only complete wires (all three roles resolvable) are
-    offered.
+    path), ``comp_name``, ``connector_id``, ``wires``, ``cable`` and
+    ``error`` ("" when usable). Each wire (keyed by pin) carries
+    ``wire_id``, ``pin``, ``awg_min``, ``awg_max``, ``world`` ({role:
+    Point3D in root space}) and ``proxies`` ({role: assembly-context point
+    proxy, for associative includes}). ``cable`` is the connector's cable
+    breakout point as ``{"proxy", "world"}`` (None when not authored) -
+    required for cable routing. Only complete wires (all three roles
+    resolvable) are offered.
     """
     comp = occ.component
     data = {
@@ -66,12 +68,18 @@ def read_connector(occ) -> dict:
         "comp_name": comp.name,
         "connector_id": component_connector_id(comp),
         "wires": {},
+        "cable": None,
         "error": "",
     }
 
     partial: dict = {}
+    cable_entity = None
     for entity in _iter_component_points(comp):
         for attr_name, payload in _cable_attrs_on(entity):
+            if attr_name == schema.CABLE_POINT_NAME:
+                if payload is not None and cable_entity is None:
+                    cable_entity = entity
+                continue
             parsed = schema.parse_point_attr_name(attr_name)
             if parsed is None or payload is None:
                 continue
@@ -109,6 +117,11 @@ def read_connector(occ) -> dict:
         record["proxies"] = proxies
         del record["points"]
         data["wires"][record["pin"]] = record
+
+    if cable_entity is not None:
+        proxy, world = _point_refs(cable_entity, occ)
+        if world is not None:
+            data["cable"] = {"proxy": proxy, "world": world}
 
     if not data["wires"]:
         data["error"] = (
@@ -259,8 +272,90 @@ def build_wire(design, ends, params) -> dict:
         ),
     )
 
-    _group_timeline(design, timeline_start, job["name"])
+    _group_timeline(design, timeline_start, f"Wire {job['name']}")
     return job["result"]
+
+
+def build_cable(design, ends, params) -> dict:
+    """Build a complete multi-conductor cable assembly.
+
+    Tree: a ``Cable <name>`` component at the root owning the jacket body
+    (cable point to cable point), with one nested ``Wire <pin>`` component
+    per paired wire holding its 4 bodies (2 conductor stubs + 2 sheathed
+    end segments from strip via exit to the cable point).
+
+    Args:
+        design: The active parametric design.
+        ends: Two ``(side_data, wires)`` tuples - side_data from
+            :func:`read_connector` (must carry a ``cable`` point), wires an
+            equal-length list of its wire records in paired (pin) order.
+        params: ``{"name": str, "awg": int, "od_mm": float,
+            "cable_od_mm": float}``.
+
+    Returns:
+        ``{"spline_fallback": bool, "baked_points": int}`` as for
+        :func:`build_wire`.
+    """
+    job = {
+        "name": params["name"],
+        "conductor_dia_cm": logic.conductor_diameter_mm(params["awg"]) / 10.0,
+        "sheath_dia_cm": params["od_mm"] / 10.0,
+        "cable_dia_cm": params["cable_od_mm"] / 10.0,
+        "result": {"spline_fallback": False, "baked_points": 0},
+    }
+    (side_a, wires_a), (side_b, wires_b) = ends
+
+    timeline_start = design.timeline.markerPosition
+
+    identity = adsk.core.Matrix3D.create()
+    root = design.rootComponent
+    cable_occ = root.occurrences.addNewComponent(identity)
+    cable_comp = cable_occ.component
+    cable_comp.name = f"Cable {job['name']}"
+
+    # The cable occurrence was created at the root, so it IS root context.
+    _build_jacket(cable_comp, cable_occ, ends, job)
+
+    for wire_a, wire_b in zip(wires_a, wires_b, strict=True):
+        wire_occ = cable_comp.occurrences.addNewComponent(identity)
+        wire_occ.component.name = f"Wire {wire_a['pin']}"
+        _build_cable_wire(
+            wire_occ.component,
+            _root_context_occurrence(wire_occ, cable_occ),
+            ((side_a, wire_a), (side_b, wire_b)),
+            job,
+        )
+
+    cable_comp.attributes.add(
+        schema.ATTR_GROUP,
+        logic.ROUTE_NAME,
+        logic.build_route_payload(
+            {
+                "kind": logic.KIND_CABLE,
+                "name": job["name"],
+                "awg": params["awg"],
+                "od_mm": params["od_mm"],
+                "cable_od_mm": params["cable_od_mm"],
+                "ends": [
+                    _cable_route_end(side_a, wires_a),
+                    _cable_route_end(side_b, wires_b),
+                ],
+            }
+        ),
+    )
+
+    _group_timeline(design, timeline_start, f"Cable {job['name']}")
+    return job["result"]
+
+
+def _cable_route_end(side_data: dict, wires: list) -> dict:
+    """One connector's identity for a cable route attribute payload."""
+    return {
+        "connector_id": side_data["connector_id"],
+        "occ_token": side_data["occ_token"],
+        "pins": [wire["pin"] for wire in wires],
+        "wire_ids": [wire["wire_id"] for wire in wires],
+    }
 
 
 def _route_end(side_data: dict, wire: dict) -> dict:
@@ -447,6 +542,154 @@ def _add_exit_spline(sketch, exit_lines, wires, job):
     return sketch.sketchCurves.sketchFittedSplines.add(fallback_fit)
 
 
+def _build_jacket(comp, ctx_occ, ends, job):
+    """The cable jacket body: cable point to cable point, at the cable OD.
+
+    A fitted spline whose END fit points are merged into the included cable
+    points (associative ends); its two interior guide points continue each
+    side's exit-centroid-to-cable-point direction (baked positions -
+    accepted, they only shape the slack of the run).
+    """
+    (side_a, wires_a), (side_b, wires_b) = ends
+    name = job["name"]
+    sketch = _add_route_sketch(comp, ctx_occ, f"Cable {name} jacket path")
+    cable_a = _sketch_point_for(
+        sketch, side_a["cable"]["proxy"], side_a["cable"]["world"], job
+    )
+    cable_b = _sketch_point_for(
+        sketch, side_b["cable"]["proxy"], side_b["cable"]["world"], job
+    )
+    guides = logic.spline_guide_points(
+        _as_tuple(_centroid([w["world"][schema.ROLE_EXIT] for w in wires_a])),
+        _as_tuple(side_a["cable"]["world"]),
+        _as_tuple(_centroid([w["world"][schema.ROLE_EXIT] for w in wires_b])),
+        _as_tuple(side_b["cable"]["world"]),
+    )
+    fit = adsk.core.ObjectCollection.create()
+    fit.add(cable_a.geometry)
+    fit.add(sketch.modelToSketchSpace(adsk.core.Point3D.create(*guides[1])))
+    fit.add(sketch.modelToSketchSpace(adsk.core.Point3D.create(*guides[2])))
+    fit.add(cable_b.geometry)
+    spline = sketch.sketchCurves.sketchFittedSplines.add(fit)
+    try:
+        if not cable_a.merge(spline.startSketchPoint):
+            raise ValueError("merge of jacket spline start failed")
+        if not cable_b.merge(spline.endSketchPoint):
+            raise ValueError("merge of jacket spline end failed")
+    except Exception:
+        # Ends stay baked at the current positions; the jacket still builds.
+        ptutil.log(
+            f"{_LOG_NAME}: jacket spline ends not linked:\n{traceback.format_exc()}"
+        )
+    path = comp.features.createPath(spline, False)
+    _add_pipe(comp, path, job["cable_dia_cm"], f"Cable {name} jacket")
+
+
+def _build_cable_wire(comp, ctx_occ, pair, job):
+    """One paired wire of a cable: 4 bodies in its own component.
+
+    Per end: a bare conductor stub (start to strip, AWG diameter) and a
+    sheathed segment strip -> exit -> cable point (line plus fan-out spline,
+    wire OD). The mid-run between the cable points is represented by the
+    jacket only.
+    """
+    (side_a, wire_a), (side_b, wire_b) = pair
+    label = f"Cable {job['name']} wire {wire_a['pin']}"
+    sketch = _add_route_sketch(comp, ctx_occ, f"{label} paths")
+    for suffix, side, wire in (("1", side_a, wire_a), ("2", side_b, wire_b)):
+        start_point = _sketch_point_for(
+            sketch,
+            wire["proxies"].get(schema.ROLE_START),
+            wire["world"][schema.ROLE_START],
+            job,
+        )
+        strip_point = _sketch_point_for(
+            sketch,
+            wire["proxies"].get(schema.ROLE_STRIP),
+            wire["world"][schema.ROLE_STRIP],
+            job,
+        )
+        exit_point = _sketch_point_for(
+            sketch,
+            wire["proxies"].get(schema.ROLE_EXIT),
+            wire["world"][schema.ROLE_EXIT],
+            job,
+        )
+        cable_point = _sketch_point_for(
+            sketch, side["cable"]["proxy"], side["cable"]["world"], job
+        )
+
+        lines = sketch.sketchCurves.sketchLines
+        conductor_line = lines.addByTwoPoints(start_point, strip_point)
+        conductor_path = comp.features.createPath(conductor_line, False)
+        _add_pipe(
+            comp,
+            conductor_path,
+            job["conductor_dia_cm"],
+            f"{label} conductor {suffix}",
+        )
+
+        exit_line = lines.addByTwoPoints(strip_point, exit_point)
+        spline = _add_fanout_spline(sketch, exit_line, cable_point, (wire, job))
+        curves = adsk.core.ObjectCollection.create()
+        curves.add(exit_line)
+        curves.add(spline)
+        sheath_path = comp.features.createPath(curves, False)
+        _add_pipe(comp, sheath_path, job["sheath_dia_cm"], f"{label} sheath {suffix}")
+
+
+def _add_fanout_spline(sketch, exit_line, cable_point, refs):
+    """Spline from a wire's exit to the cable point, tangent at the exit.
+
+    Same merge-then-tangent construction as the single-wire exit spline,
+    but one-sided: the cable end is direction-free (the wires converge into
+    the jacket there). Falls back to a guide-point spline
+    (logic.fanout_guide_points) when a step refuses, flagged in the result.
+    """
+    wire, job = refs
+    fit = adsk.core.ObjectCollection.create()
+    fit.add(exit_line.endSketchPoint.geometry)
+    fit.add(cable_point.geometry)
+    spline = sketch.sketchCurves.sketchFittedSplines.add(fit)
+    try:
+        if not exit_line.endSketchPoint.merge(spline.startSketchPoint):
+            raise ValueError("merge of fan-out spline start failed")
+        if not cable_point.merge(spline.endSketchPoint):
+            raise ValueError("merge of fan-out spline end failed")
+        if sketch.geometricConstraints.addTangent(exit_line, spline) is None:
+            raise ValueError("addTangent(exit_line, spline) returned null")
+        return spline
+    except Exception:
+        ptutil.log(
+            f"{_LOG_NAME}: constrained fan-out spline failed, using "
+            f"guide points.\n{traceback.format_exc()}"
+        )
+    try:
+        spline.deleteMe()
+    except Exception:
+        ptutil.log(f"{_LOG_NAME}: could not delete the fan-out spline attempt.")
+    guides = logic.fanout_guide_points(
+        _as_tuple(wire["world"][schema.ROLE_STRIP]),
+        _as_tuple(wire["world"][schema.ROLE_EXIT]),
+        _as_tuple(sketch.sketchToModelSpace(cable_point.geometry)),
+    )
+    fallback_fit = adsk.core.ObjectCollection.create()
+    for xyz in guides:
+        fallback_fit.add(sketch.modelToSketchSpace(adsk.core.Point3D.create(*xyz)))
+    job["result"]["spline_fallback"] = True
+    return sketch.sketchCurves.sketchFittedSplines.add(fallback_fit)
+
+
+def _centroid(points) -> adsk.core.Point3D:
+    """Average of a non-empty list of Point3D."""
+    count = len(points)
+    return adsk.core.Point3D.create(
+        sum(p.x for p in points) / count,
+        sum(p.y for p in points) / count,
+        sum(p.z for p in points) / count,
+    )
+
+
 def _add_pipe(comp, path, dia_cm: float, label: str):
     """Solid circular pipe of *dia_cm* along *path*, named *label*."""
     pipes = comp.features.pipeFeatures
@@ -467,14 +710,14 @@ def _add_pipe(comp, path, dia_cm: float, label: str):
     return pipe
 
 
-def _group_timeline(design, start_index: int, name: str):
-    """Group everything created since *start_index* as 'Wire <name>'."""
+def _group_timeline(design, start_index: int, label: str):
+    """Group everything created since *start_index* under *label*."""
     try:
         timeline = design.timeline
         end_index = timeline.markerPosition - 1
         if end_index > start_index:
             group = timeline.timelineGroups.add(start_index, end_index)
-            group.name = f"Wire {name}"
+            group.name = label
     except Exception:
         ptutil.log(f"{_LOG_NAME}: timeline grouping failed:\n{traceback.format_exc()}")
 

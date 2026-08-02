@@ -53,6 +53,22 @@ the cheap set-level index. Pin and gauge duplicated per point means a partial
 recovery (manifest lost) still reconstructs the set — `logic.wire_fields`
 prefers point payloads and falls back to the manifest entry.
 
+### The cable point — one attribute per connector
+
+Multi-pin connectors also carry a **cable breakout point** (where a
+multi-conductor cable ends and its wires fan out to the pins). Attribute
+**name** `cablepoint` on the point entity (work point or sketch point),
+**value** (JSON):
+
+```json
+{"schema": 1, "connector_id": "PigtailConn-3f9a2b1c", "role": "cable"}
+```
+
+`logic.group_attributes_into_wires` buckets it under `"cable"` — crucially
+NOT under `"bad"`, whose entries the command's execute deletes as garbage.
+Define Wires requires it whenever the connector has more than one wire;
+Route Wire's cable mode requires it on both connectors.
+
 ### Query story for the future routing command
 
 - `design.findAttributes("PowerTools.Cable", "connector")` — enumerate every

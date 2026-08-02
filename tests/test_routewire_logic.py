@@ -126,6 +126,94 @@ def test_spline_guide_points_custom_fraction() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Cable sizing (bundle factors per standard cable-design tables)
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "count, factor",
+    [
+        (1, 1.0),
+        (2, 2.0),
+        (3, 2.155),
+        (4, 2.414),
+        (7, 3.0),
+        (12, 4.03),
+    ],
+)
+def test_bundle_factor_table(count, factor) -> None:
+    assert logic.bundle_factor(count) == pytest.approx(factor)
+
+
+def test_bundle_factor_large_counts_use_sqrt_approximation() -> None:
+    assert logic.bundle_factor(19) == pytest.approx(1.155 * 19**0.5)
+    # Continuous with the table at the changeover point.
+    assert logic.bundle_factor(13) > logic.bundle_factor(12)
+
+
+def test_bundle_factor_degenerate_counts() -> None:
+    assert logic.bundle_factor(0) == 1.0
+    assert logic.bundle_factor(-3) == 1.0
+
+
+def test_cable_od_three_conductors() -> None:
+    # 3 x 1.5 mm wires: bundle 1.5 * 2.155 * 1.03 + 2 * 0.6 jacket.
+    expected = 1.5 * 2.155 * 1.03 + 1.2
+    assert logic.cable_od_mm(1.5, 3) == pytest.approx(expected)
+
+
+def test_cable_od_custom_jacket_wall() -> None:
+    got = logic.cable_od_mm(1.0, 2, jacket_wall_mm=0.0)
+    assert got == pytest.approx(2.0 * 1.03)
+
+
+# ---------------------------------------------------------------------------
+# Pin sorting and multi-range gauge intersection
+# ---------------------------------------------------------------------------
+def test_sort_pins_numeric_aware() -> None:
+    assert logic.sort_pins(["10", "2", "1"]) == ["1", "2", "10"]
+    assert logic.sort_pins(["B", "2", "A", "1"]) == ["1", "2", "A", "B"]
+    assert logic.sort_pins([]) == []
+
+
+@pytest.mark.parametrize(
+    "ranges, expected",
+    [
+        ([], []),
+        ([(16, 24)], list(range(16, 25))),
+        ([(16, 24), (20, 28), (18, 22)], [20, 21, 22]),
+        ([(16, 24), (26, 30)], []),  # one disjoint pair empties the set
+        ([(16, 24), (24, 16)], []),  # inverted range contributes nothing
+    ],
+)
+def test_awg_overlap_many(ranges, expected) -> None:
+    assert logic.awg_overlap_many(ranges) == expected
+
+
+# ---------------------------------------------------------------------------
+# Fan-out guide points (cable tangency fallback)
+# ---------------------------------------------------------------------------
+def test_fanout_guide_points_continue_exit_direction() -> None:
+    points = logic.fanout_guide_points(
+        strip=(-2.0, 0.0, 0.0),
+        exit_pt=(0.0, 0.0, 0.0),
+        cable_pt=(0.0, 8.0, 0.0),
+    )
+    assert len(points) == 3
+    assert points[0] == (0.0, 0.0, 0.0)
+    assert points[2] == (0.0, 8.0, 0.0)
+    # Guide continues the +x exit direction by 25% of the 8-unit span.
+    assert points[1] == pytest.approx((2.0, 0.0, 0.0))
+
+
+def test_fanout_guide_points_degenerate_exit_line() -> None:
+    points = logic.fanout_guide_points(
+        strip=(0.0, 0.0, 0.0),
+        exit_pt=(0.0, 0.0, 0.0),
+        cable_pt=(4.0, 0.0, 0.0),
+    )
+    assert points[1] == pytest.approx((1.0, 0.0, 0.0))  # toward the cable
+
+
+# ---------------------------------------------------------------------------
 # Route payload
 # ---------------------------------------------------------------------------
 def test_route_payload_round_trip() -> None:
@@ -139,7 +227,41 @@ def test_route_payload_round_trip() -> None:
     payload = schema.parse_payload(value)
     assert payload is not None
     assert payload["schema"] == schema.SCHEMA_VERSION
+    assert payload["kind"] == "single"  # default when not given
     assert payload["name"] == "PWR1"
     assert payload["awg"] == 22
     assert payload["od_mm"] == pytest.approx(1.54)
+    assert payload["ends"] == ends
+    assert "cable_od_mm" not in payload
+
+
+def test_route_payload_cable_kind() -> None:
+    ends = [
+        {
+            "connector_id": "A",
+            "occ_token": "t1",
+            "pins": ["1", "2"],
+            "wire_ids": ["w1", "w2"],
+        },
+        {
+            "connector_id": "B",
+            "occ_token": "t2",
+            "pins": ["1", "2"],
+            "wire_ids": ["w3", "w4"],
+        },
+    ]
+    value = logic.build_route_payload(
+        {
+            "kind": logic.KIND_CABLE,
+            "name": "HARN1",
+            "awg": 24,
+            "od_mm": 1.41,
+            "cable_od_mm": 4.33,
+            "ends": ends,
+        }
+    )
+    payload = schema.parse_payload(value)
+    assert payload is not None
+    assert payload["kind"] == "cable"
+    assert payload["cable_od_mm"] == pytest.approx(4.33)
     assert payload["ends"] == ends

@@ -13,26 +13,35 @@
 # picks two connector occurrences in an assembly; each component is scanned
 # for wire-point attributes (construction points and sketch points - the scan
 # is per-component, sidestepping the open question of whether findAttributes
-# crosses XRef boundaries). The user then picks one pin per connector, an AWG
-# size from the intersection of both wires' allowed ranges (a recommended
-# sheathed outer diameter is offered, editable), and a wire name. A custom
-# graphics line previews the exit-to-exit connection.
+# crosses XRef boundaries). A Route type dropdown selects what gets built:
 #
-# On OK the command builds, under the design root:
+# Single wire - pick one pin per connector, an AWG size from the two wires'
+# range intersection, and a diameter. Builds under the root:
 #
 #   Wire <name>            (local assembly component)
 #     Conductor            (component: bodies 1 and 2, bare-conductor stubs)
 #     Sheath               (component: body 3, the sheathed run)
 #
+# Cable - every pin is connected, paired in sorted order (counts must
+# match); both connectors need the cable breakout point authored by Define
+# Wires. One AWG (intersection across every paired wire) and wire diameter
+# govern all wires; the cable jacket OD defaults to the standard packed-
+# bundle recommendation (logic.cable_od_mm). Builds under the root:
+#
+#   Cable <name>           (component owning the jacket body)
+#     Wire <pin>           (per pair: 2 conductor stubs + 2 sheathed
+#                           strip->exit->cable-point end segments)
+#
+# Ribbon cable is listed but not implemented yet (OK stays disabled).
+#
 # The geometry construction lives in builder.py (shared with Update Wire):
 # solid circular Pipe features along 3D-sketch paths whose points are
-# INCLUDED from the connector geometry, so the wire is associative and
-# follows connector moves; the exit-to-exit spline is merged onto the exit
-# lines and tangency-constrained (guide-point fallback if constraints
-# refuse). All timeline items are grouped as "Wire <name>", features/bodies
-# carry "Wire <name> ..." names, and the wire assembly component is stamped
-# with a "route" attribute recording both ends (including occurrence tokens
-# so Update Wire can rebuild after connector edits break the links).
+# INCLUDED from the connector geometry, so the result is associative and
+# follows connector moves; splines are merged onto their neighbor curves
+# and tangency-constrained (guide-point fallback if constraints refuse).
+# Timeline items are grouped as "Wire <name>" / "Cable <name>" and the
+# assembly component is stamped with a "route" attribute recording both
+# ends (including occurrence tokens so Update Wire can rebuild).
 
 import os
 import traceback
@@ -51,9 +60,10 @@ ui = app.userInterface
 CMD_NAME = "Route Wire"
 CMD_ID = "PTCB_routewire"
 CMD_Description = (
-    "Route a wire between two connectors that carry Define Wires data: pick "
-    "the connectors and pins, choose an allowed AWG size and sheath diameter, "
-    "and build the conductor and sheath bodies as a local wire assembly."
+    "Route a single wire or a multi-conductor cable between two connectors "
+    "that carry Define Wires data: pick the connectors, choose an allowed "
+    "AWG size and diameters, and build the conductor, sheath, and cable "
+    "jacket bodies as a local assembly."
 )
 IS_PROMOTED = False
 
@@ -61,6 +71,8 @@ ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resource
 
 # Command-input ids.
 INPUT_STATUS = "rw_status"
+INPUT_KIND = "rw_kind"
+INPUT_CABLE_DIA = "rw_cable_dia"
 INPUT_SEL_C1 = "rw_conn1"
 INPUT_INFO_C1 = "rw_conn1_info"
 INPUT_PIN1 = "rw_pin1"
@@ -77,6 +89,13 @@ SIDE_INFO_KEYS = ("info0", "info1")
 SIDE_PIN_KEYS = ("pin0", "pin1")
 
 PREVIEW_GFX_ID = "PTCB_routewire_preview"
+
+# Route type dropdown labels -> logic kind constants (dropdown order).
+KIND_LABELS = (
+    ("Single wire", logic.KIND_SINGLE),
+    ("Cable", logic.KIND_CABLE),
+    ("Ribbon cable", logic.KIND_RIBBON),
+)
 
 local_handlers: list = []
 
@@ -162,6 +181,13 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         status.isFullWidth = True
         _ui_refs["status"] = status
 
+        kind_dd = inputs.addDropDownCommandInput(
+            INPUT_KIND, "Route type", adsk.core.DropDownStyles.TextListDropDownStyle
+        )
+        for index, (label, _kind) in enumerate(KIND_LABELS):
+            kind_dd.listItems.add(label, index == 0)
+        _ui_refs["kind"] = kind_dd
+
         for side in (0, 1):
             sel = inputs.addSelectionInput(
                 SIDE_SEL_IDS[side],
@@ -202,6 +228,20 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
             "insulation walls) is filled in when the gauge changes; edit freely."
         )
         _ui_refs["dia"] = dia
+
+        cable_dia = inputs.addValueInput(
+            INPUT_CABLE_DIA,
+            "Cable diameter",
+            "mm",
+            adsk.core.ValueInput.createByReal(0.0),
+        )
+        cable_dia.tooltip = (
+            "Cable jacket outer diameter. The recommendation is the packed "
+            "wire bundle (standard cable-design factors) plus a lay "
+            "allowance and jacket walls; edit freely."
+        )
+        cable_dia.isVisible = False  # cable route type only
+        _ui_refs["cable_dia"] = cable_dia
 
         _ui_refs["name"] = inputs.addStringValueInput(INPUT_NAME, "Wire name", "")
 
@@ -275,10 +315,31 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
                 _refresh_route_options()
             finally:
                 _loading = False
+        elif changed_id == INPUT_KIND:
+            _loading = True
+            try:
+                _apply_kind_visibility()
+                _refresh_route_options()
+            finally:
+                _loading = False
         elif changed_id == INPUT_AWG:
             _loading = True
             try:
                 _update_dia()
+                _update_cable_dia()
+            finally:
+                _loading = False
+        elif changed_id == INPUT_DIA:
+            # A hand-edited wire diameter changes the recommended cable OD.
+            _loading = True
+            try:
+                _update_cable_dia()
+            finally:
+                _loading = False
+        elif changed_id == INPUT_NAME:
+            _loading = True
+            try:
+                _update_status()  # clears a stale "Enter a name." hint
             finally:
                 _loading = False
     except Exception:
@@ -286,10 +347,36 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
 
 
 def _refresh_route_options():
-    """Recompute the AWG options, recommended diameter, preview, and status."""
+    """Recompute the AWG options, diameters, preview, and status."""
     _rebuild_awg_dropdown()
+    _update_cable_dia()
     _update_preview()
     _update_status()
+
+
+def _current_kind() -> str:
+    """The selected route type as a logic kind constant."""
+    dropdown = _ui_refs.get("kind")
+    selected = dropdown.selectedItem if dropdown else None
+    if selected is not None:
+        for label, kind in KIND_LABELS:
+            if label == selected.name:
+                return kind
+    return logic.KIND_SINGLE
+
+
+def _apply_kind_visibility():
+    """Show/hide the kind-dependent inputs (pins for single, cable OD)."""
+    kind = _current_kind()
+    is_cable = kind == logic.KIND_CABLE
+    for key in SIDE_PIN_KEYS:
+        dropdown = _ui_refs.get(key)
+        if dropdown is not None:
+            # A cable connects every pin (paired in order) - no pin choice.
+            dropdown.isVisible = not is_cable
+    cable_dia = _ui_refs.get("cable_dia")
+    if cable_dia is not None:
+        cable_dia.isVisible = is_cable
 
 
 def _on_connector_changed(side: int, sel):
@@ -308,30 +395,96 @@ def _on_connector_changed(side: int, sel):
 # ---------------------------------------------------------------------------
 def command_validate(args: adsk.core.ValidateInputsEventArgs):
     try:
-        wire_a, wire_b = _selected_wire(0), _selected_wire(1)
-        if not wire_a or not wire_b:
-            args.areInputsValid = False
-            return
-        if _sides[0]["path"] == _sides[1]["path"]:
-            args.areInputsValid = False  # same occurrence picked twice
-            return
-        awg = _selected_awg()
-        if awg is None:
-            args.areInputsValid = False
-            return
-        dia_cm = _ui_refs["dia"].value
-        if dia_cm <= logic.conductor_diameter_mm(awg) / 10.0:
-            args.areInputsValid = False  # sheath must cover the conductor
-            return
-        if not _ui_refs["name"].value.strip():
-            args.areInputsValid = False
-            return
-        exit_a = wire_a["world"][schema.ROLE_EXIT]
-        exit_b = wire_b["world"][schema.ROLE_EXIT]
-        args.areInputsValid = exit_a.distanceTo(exit_b) > 1e-6
+        args.areInputsValid = not _route_problems()
     except Exception:
         ptutil.handle_error(f"{CMD_NAME} validateInputs")
         args.areInputsValid = True  # fail-open so the user is never stuck
+
+
+def _route_problems() -> list:
+    """Everything preventing OK for the current route type (empty = ready).
+
+    Shared by validateInputs (gates OK) and the status box (explains why).
+    """
+    problems: list = []
+    kind = _current_kind()
+    if kind == logic.KIND_RIBBON:
+        return ["Ribbon cable routing is not implemented yet."]
+    if _sides[0] is None or _sides[1] is None:
+        return ["Select two connector components that carry wire points."]
+    for side in (0, 1):
+        if _sides[side]["error"]:
+            problems.append(f"Connector {side + 1}: {_sides[side]['error']}")
+    if problems:
+        return problems
+    if _sides[0]["path"] == _sides[1]["path"]:
+        return ["Pick two different occurrences."]
+
+    if kind == logic.KIND_CABLE:
+        problems.extend(_cable_problems())
+    else:
+        problems.extend(_single_problems())
+    if problems:
+        return problems
+
+    awg = _selected_awg()
+    dia = _ui_refs.get("dia")
+    if (
+        awg is not None
+        and dia is not None
+        and dia.value <= logic.conductor_diameter_mm(awg) / 10.0
+    ):
+        problems.append("Wire diameter must exceed the bare conductor.")
+    name_input = _ui_refs.get("name")
+    if name_input is None or not name_input.value.strip():
+        problems.append("Enter a name.")
+    return problems
+
+
+def _single_problems() -> list:
+    """Single-wire route checks (both connectors already validated)."""
+    wire_a, wire_b = _selected_wire(0), _selected_wire(1)
+    if not wire_a or not wire_b:
+        return ["Select a pin on each connector."]
+    if _selected_awg() is None:
+        return ["The selected wires share no allowed AWG size."]
+    exit_a = wire_a["world"][schema.ROLE_EXIT]
+    exit_b = wire_b["world"][schema.ROLE_EXIT]
+    if exit_a.distanceTo(exit_b) < 1e-6:
+        return ["The two exit points coincide."]
+    return []
+
+
+def _cable_problems() -> list:
+    """Cable route checks (both connectors already validated)."""
+    problems: list = []
+    for side in (0, 1):
+        if _sides[side]["cable"] is None:
+            problems.append(
+                f"Connector {side + 1} ('{_sides[side]['comp_name']}') has "
+                "no cable point - re-run Define Wires to add one."
+            )
+    wires_a, wires_b = _cable_wires(0), _cable_wires(1)
+    if len(wires_a) != len(wires_b):
+        problems.append(
+            f"Pin counts differ ({len(wires_a)} vs {len(wires_b)}) - cable "
+            "routing pairs pins in sorted order."
+        )
+    elif len(wires_a) < 2:
+        problems.append("A cable needs at least two wires per connector.")
+    if problems:
+        return problems
+    if _selected_awg() is None:
+        return ["The paired wires share no allowed AWG size."]
+    cable_a = _sides[0]["cable"]["world"]
+    cable_b = _sides[1]["cable"]["world"]
+    if cable_a.distanceTo(cable_b) < 1e-6:
+        return ["The two cable points coincide."]
+    cable_dia = _ui_refs.get("cable_dia")
+    dia = _ui_refs.get("dia")
+    if cable_dia is not None and dia is not None and cable_dia.value < dia.value:
+        return ["Cable diameter must not be smaller than the wire diameter."]
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -346,44 +499,88 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 f"{CMD_NAME} requires an active Fusion 3D design.", CMD_NAME, 0, 2
             )
             return
-        wire_a, wire_b = _selected_wire(0), _selected_wire(1)
         awg = _selected_awg()
-        if not wire_a or not wire_b or awg is None:
+        if awg is None:
             ui.messageBox(f"{CMD_NAME}: route is incomplete.", CMD_NAME, 0, 2)
             return
         name = _ui_refs["name"].value.strip()
         sheath_dia_cm = _ui_refs["dia"].value
-
-        result = builder.build_wire(
-            design,
-            ((_sides[0], wire_a), (_sides[1], wire_b)),
-            {"name": name, "awg": awg, "od_mm": sheath_dia_cm * 10.0},
-        )
-
-        summary = (
-            f"Wire {name} routed.\n\n"
-            f"Pins: {wire_a['pin']} <-> {wire_b['pin']}\n"
-            f"Gauge: {awg} AWG "
-            f"(conductor {logic.conductor_diameter_mm(awg):.3f} mm)\n"
-            f"Sheath diameter: {sheath_dia_cm * 10.0:.3f} mm\n"
-            "Bodies: 2 conductor stubs + 1 sheath run."
-        )
-        if result["spline_fallback"]:
-            summary += (
-                "\n\nNote: tangency constraints could not be applied - the "
-                "spline was shaped with guide points instead (see the debug "
-                "log for the reason)."
-            )
-        if result["baked_points"]:
-            summary += (
-                f"\n\nNote: {result['baked_points']} point(s) could not be "
-                "linked to the connector geometry and were baked at fixed "
-                "positions (that part of the wire will not follow connector "
-                "moves)."
-            )
-        ui.messageBox(summary, CMD_NAME)
+        if _current_kind() == logic.KIND_CABLE:
+            _execute_cable(design, name, awg, sheath_dia_cm)
+        else:
+            _execute_single(design, name, awg, sheath_dia_cm)
     except Exception:
         ui.messageBox(f"{CMD_NAME} failed:\n{traceback.format_exc()}", CMD_NAME)
+
+
+def _execute_single(design, name: str, awg: int, sheath_dia_cm: float):
+    """Build a single wire and report the result."""
+    wire_a, wire_b = _selected_wire(0), _selected_wire(1)
+    if not wire_a or not wire_b:
+        ui.messageBox(f"{CMD_NAME}: route is incomplete.", CMD_NAME, 0, 2)
+        return
+    result = builder.build_wire(
+        design,
+        ((_sides[0], wire_a), (_sides[1], wire_b)),
+        {"name": name, "awg": awg, "od_mm": sheath_dia_cm * 10.0},
+    )
+    summary = (
+        f"Wire {name} routed.\n\n"
+        f"Pins: {wire_a['pin']} <-> {wire_b['pin']}\n"
+        f"Gauge: {awg} AWG "
+        f"(conductor {logic.conductor_diameter_mm(awg):.3f} mm)\n"
+        f"Sheath diameter: {sheath_dia_cm * 10.0:.3f} mm\n"
+        "Bodies: 2 conductor stubs + 1 sheath run."
+    )
+    ui.messageBox(summary + _result_notes(result), CMD_NAME)
+
+
+def _execute_cable(design, name: str, awg: int, sheath_dia_cm: float):
+    """Build a multi-conductor cable and report the result."""
+    wires_a, wires_b = _cable_wires(0), _cable_wires(1)
+    if not wires_a or len(wires_a) != len(wires_b):
+        ui.messageBox(f"{CMD_NAME}: cable route is incomplete.", CMD_NAME, 0, 2)
+        return
+    cable_dia_cm = _ui_refs["cable_dia"].value
+    result = builder.build_cable(
+        design,
+        ((_sides[0], wires_a), (_sides[1], wires_b)),
+        {
+            "name": name,
+            "awg": awg,
+            "od_mm": sheath_dia_cm * 10.0,
+            "cable_od_mm": cable_dia_cm * 10.0,
+        },
+    )
+    summary = (
+        f"Cable {name} routed.\n\n"
+        f"Wires: {len(wires_a)} "
+        f"(pins {', '.join(wire['pin'] for wire in wires_a)})\n"
+        f"Gauge: {awg} AWG "
+        f"(conductor {logic.conductor_diameter_mm(awg):.3f} mm)\n"
+        f"Wire diameter: {sheath_dia_cm * 10.0:.3f} mm\n"
+        f"Cable diameter: {cable_dia_cm * 10.0:.3f} mm\n"
+        f"Bodies: 1 jacket + {len(wires_a) * 4} wire bodies."
+    )
+    ui.messageBox(summary + _result_notes(result), CMD_NAME)
+
+
+def _result_notes(result: dict) -> str:
+    """The build result's fallback/baked-point notes for the summary box."""
+    notes = ""
+    if result["spline_fallback"]:
+        notes += (
+            "\n\nNote: tangency constraints could not be applied everywhere "
+            "- some splines were shaped with guide points instead (see the "
+            "debug log for the reason)."
+        )
+    if result["baked_points"]:
+        notes += (
+            f"\n\nNote: {result['baked_points']} point(s) could not be "
+            "linked to the connector geometry and were baked at fixed "
+            "positions (those parts will not follow connector moves)."
+        )
+    return notes
 
 
 # ---------------------------------------------------------------------------
@@ -410,10 +607,15 @@ def _set_list_items(dropdown, names: list):
 
 def _sorted_pins(wires: dict) -> list:
     """Pins sorted numerically when possible, then lexically."""
-    return sorted(
-        wires.keys(),
-        key=lambda pin: (0, int(pin), "") if pin.isdigit() else (1, 0, pin),
-    )
+    return logic.sort_pins(wires.keys())
+
+
+def _cable_wires(side: int) -> list:
+    """ALL of a side's wire records in paired (sorted pin) order."""
+    data = _sides[side]
+    if not data or not data["wires"]:
+        return []
+    return [data["wires"][pin] for pin in _sorted_pins(data["wires"])]
 
 
 def _rebuild_pin_dropdown(side: int):
@@ -427,22 +629,46 @@ def _rebuild_pin_dropdown(side: int):
 
 
 def _rebuild_awg_dropdown():
-    """Refresh the AWG options from the two selected wires (idempotent)."""
+    """Refresh the AWG options for the current route type (idempotent).
+
+    Single wire: the intersection of the two selected wires' ranges.
+    Cable: the intersection across EVERY wire on both connectors (one gauge
+    governs the whole cable).
+    """
     dropdown = _ui_refs.get("awg")
     if dropdown is None:
         return
-    wire_a, wire_b = _selected_wire(0), _selected_wire(1)
-    names = []
-    if wire_a and wire_b:
-        names = [
-            str(size)
-            for size in logic.awg_overlap(
+    if _current_kind() == logic.KIND_CABLE:
+        wires = _cable_wires(0) + _cable_wires(1)
+        sizes = (
+            logic.awg_overlap_many([(w["awg_min"], w["awg_max"]) for w in wires])
+            if _cable_wires(0) and _cable_wires(1)
+            else []
+        )
+    else:
+        wire_a, wire_b = _selected_wire(0), _selected_wire(1)
+        sizes = (
+            logic.awg_overlap(
                 (wire_a["awg_min"], wire_a["awg_max"]),
                 (wire_b["awg_min"], wire_b["awg_max"]),
             )
-        ]
-    _set_list_items(dropdown, names)
+            if wire_a and wire_b
+            else []
+        )
+    _set_list_items(dropdown, [str(size) for size in sizes])
     _update_dia()
+
+
+def _update_cable_dia():
+    """Refresh the recommended cable jacket OD from wire dia and count."""
+    if _current_kind() != logic.KIND_CABLE:
+        return
+    cable_dia = _ui_refs.get("cable_dia")
+    dia = _ui_refs.get("dia")
+    count = len(_cable_wires(0))
+    if cable_dia is None or dia is None or count == 0:
+        return
+    cable_dia.value = logic.cable_od_mm(dia.value * 10.0, count) / 10.0
 
 
 def _selected_wire(side: int):
@@ -496,17 +722,7 @@ def _update_status():
     status = _ui_refs.get("status")
     if status is None:
         return
-    problems = []
-    if _sides[0] is None or _sides[1] is None:
-        problems.append("Select two connector components that carry wire points.")
-    for side in (0, 1):
-        if _sides[side] and _sides[side]["error"]:
-            problems.append(f"Connector {side + 1}: {_sides[side]['error']}")
-    if _sides[0] and _sides[1] and _sides[0]["path"] == _sides[1]["path"]:
-        problems.append("Pick two different occurrences.")
-    wire_a, wire_b = _selected_wire(0), _selected_wire(1)
-    if wire_a and wire_b and _selected_awg() is None:
-        problems.append("The selected wires share no allowed AWG size.")
+    problems = _route_problems()
     status.text = "\n".join(problems) if problems else "Ready to route."
 
 
@@ -525,22 +741,32 @@ def _clear_preview():
 
 
 def _update_preview():
-    """Redraw the exit-to-exit preview line for the selected pins."""
+    """Redraw the preview line: exit-to-exit (single) or the cable run."""
     _clear_preview()
-    wire_a, wire_b = _selected_wire(0), _selected_wire(1)
-    if not wire_a or not wire_b:
-        return
+    kind = _current_kind()
+    if kind == logic.KIND_CABLE:
+        cable_a = _sides[0]["cable"] if _sides[0] else None
+        cable_b = _sides[1]["cable"] if _sides[1] else None
+        if not cable_a or not cable_b:
+            return
+        point_a, point_b = cable_a["world"], cable_b["world"]
+    elif kind == logic.KIND_SINGLE:
+        wire_a, wire_b = _selected_wire(0), _selected_wire(1)
+        if not wire_a or not wire_b:
+            return
+        point_a = wire_a["world"][schema.ROLE_EXIT]
+        point_b = wire_b["world"][schema.ROLE_EXIT]
+    else:
+        return  # ribbon: nothing to preview yet
     try:
         design = adsk.fusion.Design.cast(app.activeProduct)
         if not design:
             return
-        exit_a = wire_a["world"][schema.ROLE_EXIT]
-        exit_b = wire_b["world"][schema.ROLE_EXIT]
-        if exit_a.distanceTo(exit_b) < 1e-6:
+        if point_a.distanceTo(point_b) < 1e-6:
             return
         graphics = design.rootComponent.customGraphicsGroups.add()
         graphics.id = PREVIEW_GFX_ID
-        curve = graphics.addCurve(adsk.core.Line3D.create(exit_a, exit_b))
+        curve = graphics.addCurve(adsk.core.Line3D.create(point_a, point_b))
         curve.weight = 2.0
         curve.color = adsk.fusion.CustomGraphicsSolidColorEffect.create(
             adsk.core.Color.create(255, 140, 0, 255)

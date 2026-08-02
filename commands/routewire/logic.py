@@ -20,10 +20,16 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Iterable
 
 from ..definewires import logic as schema
 
 ROUTE_NAME = "route"
+
+# Route kinds stored in the route payload's "kind" field.
+KIND_SINGLE = "single"
+KIND_CABLE = "cable"
+KIND_RIBBON = "ribbon"
 
 # Default insulation wall thickness used for the recommended sheathed outer
 # diameter (rule of thumb for common hookup wire, e.g. UL1007-class).
@@ -32,6 +38,27 @@ WALL_MM_DEFAULT = 0.45
 # How far past each connector exit the fallback spline guide points reach,
 # as a fraction of the exit-to-exit distance.
 GUIDE_FRACTION = 0.25
+
+# Bundle diameter factors for n identical round wires (standard cable-design
+# circle-packing table, cf. Standard Wire & Cable / Glenair bundle charts);
+# bundle OD = wire OD * factor. Beyond the table the dense-packing
+# approximation 1.155 * sqrt(n) is used (continuous: n=12 -> 4.0).
+_BUNDLE_FACTORS = {
+    1: 1.0,
+    2: 2.0,
+    3: 2.155,
+    4: 2.414,
+    5: 2.7,
+    6: 3.0,
+    7: 3.0,
+    8: 3.31,
+    9: 3.61,
+    10: 3.81,
+    11: 3.92,
+    12: 4.03,
+}
+CABLE_JACKET_WALL_MM = 0.6
+CABLE_LAY_FACTOR = 1.03  # twist/lay allowance over the ideal packed bundle
 
 Vec = tuple[float, float, float]
 
@@ -48,6 +75,51 @@ def conductor_diameter_mm(awg: int) -> float:
 def recommended_od_mm(awg: int, wall_mm: float = WALL_MM_DEFAULT) -> float:
     """Recommended sheathed outer diameter in mm: conductor + 2 * wall."""
     return conductor_diameter_mm(awg) + 2.0 * wall_mm
+
+
+def bundle_factor(count: int) -> float:
+    """Bundle-to-wire diameter ratio for *count* identical round wires."""
+    if count <= 1:
+        return 1.0
+    if count in _BUNDLE_FACTORS:
+        return _BUNDLE_FACTORS[count]
+    return 1.155 * math.sqrt(count)
+
+
+def cable_od_mm(
+    wire_od_mm: float, count: int, jacket_wall_mm: float = CABLE_JACKET_WALL_MM
+) -> float:
+    """Recommended multi-conductor cable outer diameter in mm.
+
+    Standard cable-design method: bundle OD = insulated wire OD x packing
+    factor for the conductor count, a small lay (twist) allowance, plus two
+    jacket walls.
+    """
+    bundle = wire_od_mm * bundle_factor(count) * CABLE_LAY_FACTOR
+    return bundle + 2.0 * jacket_wall_mm
+
+
+def sort_pins(pins: Iterable[str]) -> list[str]:
+    """Pins sorted numerically when possible, then lexically."""
+    return sorted(
+        pins,
+        key=lambda pin: (0, int(pin), "") if str(pin).isdigit() else (1, 0, str(pin)),
+    )
+
+
+def awg_overlap_many(ranges: Iterable[tuple[int, int]]) -> list[int]:
+    """AWG sizes allowed by EVERY range, thickest first ([] when none).
+
+    Used for cables: the single gauge choice must satisfy every paired wire
+    on both connectors.
+    """
+    sizes: set | None = None
+    for low, high in ranges:
+        current = set(range(low, high + 1)) if low <= high else set()
+        sizes = current if sizes is None else sizes & current
+        if not sizes:
+            return []
+    return sorted(sizes) if sizes else []
 
 
 def awg_overlap(range_a: tuple[int, int], range_b: tuple[int, int]) -> list[int]:
@@ -95,27 +167,53 @@ def spline_guide_points(
     return [tuple(exit_a), guide_a, guide_b, tuple(exit_b)]
 
 
+def fanout_guide_points(
+    strip: Vec, exit_pt: Vec, cable_pt: Vec, fraction: float = GUIDE_FRACTION
+) -> list[Vec]:
+    """Fit points for a wire's exit-to-cable spline without a tangent.
+
+    One-sided fallback for the cable fan-out: a single interior guide point
+    continues the strip-to-exit direction past the exit by *fraction* of the
+    exit-to-cable distance, then the spline runs on to the cable point.
+    A degenerate strip-to-exit segment falls back to the direct direction.
+
+    Returns:
+        ``[exit_pt, guide, cable_pt]`` as xyz tuples.
+    """
+    span = _norm(_sub(cable_pt, exit_pt))
+    direct = _unit(_sub(cable_pt, exit_pt)) or (0.0, 0.0, 1.0)
+    direction = _unit(_sub(exit_pt, strip)) or direct
+    guide = _add(exit_pt, _scale(direction, (span or 1.0) * fraction))
+    return [tuple(exit_pt), guide, tuple(cable_pt)]
+
+
 def build_route_payload(fields: dict) -> str:
-    """Serialize the route attribute stamped on the wire assembly component.
+    """Serialize the route attribute stamped on the built assembly component.
 
     Args:
-        fields: Route fields — ``name`` (wire name), ``awg`` (chosen size),
-            ``od_mm`` (sheathed outer diameter), and ``ends`` (a list of two
-            dicts with ``connector_id``, ``wire_id``, ``pin``).
+        fields: Route fields — ``name``, ``awg`` (chosen size), ``od_mm``
+            (per-wire sheathed outer diameter), ``ends`` (a list of two
+            per-connector dicts, stored verbatim: single-wire routes carry
+            ``connector_id``/``wire_id``/``pin``/``occ_token``; cable routes
+            carry ``connector_id``/``occ_token``/``pins``/``wire_ids``),
+            optional ``kind`` (:data:`KIND_SINGLE` when omitted), and
+            optional ``cable_od_mm`` (cable jacket OD, cable routes only).
 
     Returns:
         A JSON string in the PowerTools.Cable schema (parse with
         :func:`schema.parse_payload`).
     """
-    return json.dumps(
-        {
-            "schema": schema.SCHEMA_VERSION,
-            "name": fields["name"],
-            "awg": fields["awg"],
-            "od_mm": fields["od_mm"],
-            "ends": fields["ends"],
-        }
-    )
+    payload = {
+        "schema": schema.SCHEMA_VERSION,
+        "kind": fields.get("kind", KIND_SINGLE),
+        "name": fields["name"],
+        "awg": fields["awg"],
+        "od_mm": fields["od_mm"],
+        "ends": fields["ends"],
+    }
+    if "cable_od_mm" in fields:
+        payload["cable_od_mm"] = fields["cable_od_mm"]
+    return json.dumps(payload)
 
 
 def _sub(a: Vec, b: Vec) -> Vec:

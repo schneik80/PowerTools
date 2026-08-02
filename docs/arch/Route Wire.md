@@ -69,6 +69,32 @@ the include links is accepted — Update Wire is the recovery path.
   (`createPath(ObjectCollection, False)` — endpoint-connected curves) and
   swept as a Pipe at the user's sheath diameter.
 
+### Cable routes (multi-conductor)
+
+`builder.build_cable` builds the `Cable <name>` component (owning the
+jacket body) with one nested `Wire <pin>` component per paired wire:
+
+- **Jacket** — a fitted spline between the two included cable points
+  (`cablepoint` attribute from Define Wires); end fit points merged into
+  the included points (associative ends), two interior guide points from
+  the exit-centroid-to-cable-point directions (baked — they only shape the
+  slack). Swept as a Pipe at the cable diameter.
+- **Per wire, per end** — a conductor stub (start-to-strip line, AWG
+  diameter) and a sheathed end segment: strip-to-exit line plus a fan-out
+  spline to the cable point, merged at both ends and tangent at the exit
+  only (the wires converge direction-free into the jacket;
+  `logic.fanout_guide_points` is the constraint fallback). Swept as Pipes
+  at the wire diameter — 4 bodies per wire, grouped in that wire's
+  component. The mid-run between cable points is represented by the jacket
+  only.
+- **Sizing** — `logic.cable_od_mm(wire_od, count)`: bundle OD = wire OD x
+  per-count packing factor (standard cable-design table: 2 -> 2.0,
+  3 -> 2.155, 4 -> 2.414, ... , `1.155*sqrt(n)` beyond 12), x1.03 lay
+  allowance, + 2 x 0.6 mm jacket walls. Shown as the editable Cable
+  diameter default.
+- Pins pair in `logic.sort_pins` order (numeric-aware); counts must match;
+  one AWG (`logic.awg_overlap_many` across every paired wire) governs all.
+
 **Pipe instead of manual sweep.** The described "sweep a circle along the
 path" is implemented with `PipeFeatures` (path + solid circular section),
 Fusion's native feature for exactly this — it removes the
@@ -115,6 +141,17 @@ re-route/update flows) without parsing geometry. `occ_token` is the
 occurrence's `entityToken`, so Update Wire can re-resolve the exact instance
 even when several occurrences of the same connector exist; `connector_id` is
 its fallback when the token dies (see the Update Wire architecture notes).
+
+Cable routes use `"kind": "cable"`, add `"cable_od_mm"`, and their ends
+carry the whole pin set instead of a single wire:
+
+```json
+{"connector_id": "ConnA-3f9a2b1c", "occ_token": "...",
+ "pins": ["1", "2", "3"], "wire_ids": ["7c1d2e3f", "9ab04d12", "55aa66bb"]}
+```
+
+(Single-wire payloads carry `"kind": "single"`; older payloads without the
+field parse as single.)
 
 ## Known limitations (accepted for the prove-out)
 

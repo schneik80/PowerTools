@@ -20,6 +20,7 @@ The dialog reports the reason and keeps Rebuild disabled:
 - **Connector occurrence not found** — the connector was removed and nothing carries its connector id.
 - **Several instances of that connector exist** — the stored token is dead and the connector id alone cannot say which instance the wire used. Delete the wire group and use Route Wire to pick the connectors explicitly.
 - **Wire no longer defined** — the pin was removed in Define Wires.
+- **Cable route selected** — cable routes cannot be updated yet; delete the cable's timeline group and re-route it with Route Wire.
 
 ## Prerequisites
 

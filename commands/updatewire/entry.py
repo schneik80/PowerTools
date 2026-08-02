@@ -325,6 +325,16 @@ def _resolve_route(design, route) -> dict:
     """
     payload = route["payload"]
     problems: list = []
+    if payload.get("kind", route_logic.KIND_SINGLE) != route_logic.KIND_SINGLE:
+        return {
+            "ends": [],
+            "params": None,
+            "hows": [],
+            "problems": [
+                "Cable routes cannot be updated yet - delete the cable's "
+                "timeline group and re-route it with Route Wire."
+            ],
+        }
     params = logic.coerce_route_params(payload)
     if params is None:
         problems.append("Stored route data is damaged (name/gauge/diameter).")
