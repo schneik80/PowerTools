@@ -731,18 +731,20 @@ def _build_cable_wire(comp, ctx_occ, pair, job):
 def _add_fanout_spline(sketch, exit_line, cable_point, refs):
     """Spline from a wire's exit to the cable point, tangent at the exit.
 
-    A clone of the JACKET's empirically working topology. Merging a spline
-    end into an included point holds only when that point permanently
-    terminates a real curve (the jacket's direction lines are why its
-    merges into the same cable points persist); a bare point raises
-    InternalValidationError, a temporary anchor left the end silently
-    detached, and fitting the spline THROUGH the included points never
-    created a binding at all. So: a permanent CONSTRUCTION helper line
-    strip-to-cable (shares only the cable point with the spline - no
-    unsolvable loop), then merge both spline ends, then the one-sided exit
-    tangency with a sketch-health check (an unsatisfiable tangency is
-    deleted again and counted). Falls back to a baked guide-point spline
-    when a step refuses, flagged as spline_fallback.
+    Built the way the UI builds it: the lines already connect the included
+    connector points, the spline is drawn between the exit and cable
+    positions, and its endpoints get explicit point-to-point COINCIDENT
+    constraints onto the included points. ``addCoincident`` documents its
+    entity argument as "The SketchPoint or sketch curve that the point
+    will be made coincident to" - point-to-point IS supported (an earlier
+    note here claimed otherwise; that misdiagnosis drove a series of
+    SketchPoint.merge recipes, the last of which - a permanent helper line
+    plus merged ends - built without error but left most fan-outs detached
+    when a connector actually moved). One-sided tangency at the exit only
+    (the wires converge direction-free into the jacket), with a
+    sketch-health check: an unsatisfiable tangency is deleted again and
+    counted. Falls back to a baked guide-point spline when a step refuses,
+    flagged as spline_fallback.
     """
     wire, job = refs
     fit = adsk.core.ObjectCollection.create()
@@ -750,26 +752,23 @@ def _add_fanout_spline(sketch, exit_line, cable_point, refs):
     fit.add(cable_point.geometry)
     spline = sketch.sketchCurves.sketchFittedSplines.add(fit)
     try:
-        helper = sketch.sketchCurves.sketchLines.addByTwoPoints(
-            exit_line.startSketchPoint, cable_point
+        constraints = sketch.geometricConstraints
+        start_bond = constraints.addCoincident(
+            spline.startSketchPoint, exit_line.endSketchPoint
         )
-        try:
-            # Construction: excluded from the swept path (explicit curve
-            # collection) and from the Wire Report's length measurement.
-            helper.isConstruction = True
-        except Exception:
-            ptutil.log(f"{_LOG_NAME}: could not mark the fan-out helper line.")
-        if not exit_line.endSketchPoint.merge(spline.startSketchPoint):
-            raise ValueError("merge of fan-out spline start failed")
-        if not cable_point.merge(spline.endSketchPoint):
-            raise ValueError("merge of fan-out spline end failed")
-        tangent = sketch.geometricConstraints.addTangent(exit_line, spline)
+        if start_bond is None:
+            raise ValueError("addCoincident(spline start, exit point) returned null")
+        end_bond = constraints.addCoincident(spline.endSketchPoint, cable_point)
+        if end_bond is None:
+            raise ValueError("addCoincident(spline end, cable point) returned null")
+        tangent = constraints.addTangent(exit_line, spline)
         if tangent is None:
             raise ValueError("addTangent(exit_line, spline) returned null")
         if _sketch_is_sick(sketch):
             # A tangency the solver cannot satisfy leaves the whole sketch
-            # sick; the merged spline WITHOUT it is still fully associative,
-            # just not exactly tangent at the exit. Prefer a healthy sketch.
+            # sick; the coincident-bound spline WITHOUT it is still fully
+            # associative, just not exactly tangent at the exit. Prefer a
+            # healthy sketch.
             try:
                 tangent.deleteMe()
             except Exception:

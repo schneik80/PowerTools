@@ -19,7 +19,7 @@ flowchart TD
     E --> B["builder.build_wire / build_cable"]
     B --> S["in-context 3D sketches<br/>Sketches.add + occurrenceForCreation"]
     S --> I["Sketch.include of connector point proxies<br/>(associative links)"]
-    I --> C["lines between included points;<br/>splines merged (SketchPoint.merge) + tangent"]
+    I --> C["lines between included points;<br/>spline ends bound to the points<br/>(merge or coincident) + tangent"]
     C --> P["Paths swept as Pipe features<br/>(solid circular sections)"]
     P --> T["timeline group + route attribute"]
     L["logic.py (pure, unit-tested)<br/>AWG formula, bundle factors,<br/>guide points, payloads"] -.-> E
@@ -74,10 +74,12 @@ the recovery path.
 - **Sheath** component — one 3D sketch (`Wire <name> sheath path`): line
   strip1-to-exit1, line strip2-to-exit2, and an exit1-to-exit2 fitted spline.
   The spline's endpoints are **merged** into the lines' exit endpoints with
-  `SketchPoint.merge` (the API's "drag one point onto another" join — a
-  point-to-point coincident *constraint* is not supported by
-  `addCoincident` and silently forced an earlier version into its fallback
-  every time), and tangent constraints are added at both shared points.
+  `SketchPoint.merge` (the API's "drag one point onto another" join), and
+  tangent constraints are added at both shared points. (`addCoincident`
+  DOES document point-to-point support — its entity argument is "The
+  SketchPoint or sketch curve that the point will be made coincident to" —
+  and the cable fan-outs now use it; this merge recipe predates that
+  finding and demonstrably works here, so it is left alone.)
   Because the lines are fully defined by their endpoints, tangency
   deterministically bends only the spline — including on recompute when
   connectors move. If a step still refuses, the command falls back to an
@@ -105,25 +107,30 @@ jacket body) with one nested `Wire <pin>` component per paired wire:
   flagged in the summary.) Swept as a Pipe at the cable diameter.
 - **Per wire, per end** — a conductor stub (start-to-strip line, AWG
   diameter) and a sheathed end segment: strip-to-exit line plus a fan-out
-  spline to the cable point, built as a clone of the jacket's empirically
-  working topology. **The rule, learned the hard way:** merging a spline
-  end into an included point only holds when that point *permanently
-  terminates a real curve*. A bare included point raises
+  spline to the cable point. The spline is built the way the UI builds
+  it: drawn between the exit and cable positions, then its endpoints get
+  explicit **point-to-point coincident constraints** onto the included
+  points (`addCoincident` documents its entity argument as "The
+  SketchPoint or sketch curve that the point will be made coincident to"),
+  then the one-sided exit tangency (the wires converge direction-free
+  into the jacket) with a `timelineObject.healthState` check — an
+  unsatisfiable tangency is deleted again (associativity survives, exact
+  tangency does not) and reported in the summary.
+  **The failure chain that led here, for the record:** an early
+  misdiagnosis ("point-to-point `addCoincident` is unsupported") drove a
+  series of `SketchPoint.merge` recipes — a bare included point raised
   `InternalValidationError`; a persistent exit-to-cable anchor formed a
   two-curve loop that made the tangency unsolvable; a temporary anchor
-  left the cable end silently detached after its deletion; and fitting
-  the spline THROUGH the included points (`SketchFittedSplines.add` with
-  existing SketchPoints) never created a binding at all. The working
-  recipe: a permanent CONSTRUCTION helper line strip-to-cable (shares
-  only the cable point with the spline — no loop; excluded from paths and
-  measurement), then merge both spline ends, then the one-sided exit
-  tangency (the wires converge direction-free into the jacket) with a
-  `timelineObject.healthState` check — an unsatisfiable tangency is
-  deleted again (associativity survives, exact tangency does not) and
-  reported in the summary. `logic.fanout_guide_points` remains the baked
-  fallback. Swept as Pipes at the wire diameter — 4 bodies per wire,
-  grouped in that wire's component. The mid-run between cable points is
-  represented by the jacket only.
+  left the cable end silently detached after its deletion; fitting the
+  spline THROUGH the included points (`SketchFittedSplines.add` with
+  existing SketchPoints) never created a binding; and the final merge
+  recipe (permanent construction helper line strip-to-cable + merged
+  ends) *built without error* but still left most fan-outs detached when
+  a connector actually moved. Explicit coincident constraints replace all
+  of it. `logic.fanout_guide_points` remains the baked fallback. Swept as
+  Pipes at the wire diameter — 4 bodies per wire, grouped in that wire's
+  component. The mid-run between cable points is represented by the
+  jacket only.
 - **Sizing** — `logic.cable_od_mm(wire_od, count)`: bundle OD = wire OD x
   per-count packing factor (standard cable-design table: 2 -> 2.0,
   3 -> 2.155, 4 -> 2.414, ... , `1.155*sqrt(n)` beyond 12), x1.03 lay
