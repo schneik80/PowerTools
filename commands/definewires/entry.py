@@ -830,6 +830,7 @@ def _add_wire_row(inputs, table, wire: dict | None = None) -> int:
         "pts": pts_cell,
     }
     _refresh_row_cells(rid)
+    _update_cable_visibility()
     return rid
 
 
@@ -851,6 +852,19 @@ def _delete_active_row(inputs):
         _activate_row(_row_order[max(0, index - 1)])
     else:
         _activate_row(_add_wire_row(inputs, table))
+    _update_cable_visibility()
+
+
+def _update_cable_visibility():
+    """Show the single, connector-level cable point only when relevant.
+
+    Hidden for a one-wire connector (no cable to break out) unless a cable
+    point is already set, so it can still be reviewed or cleared.
+    """
+    cable_sel = _ui_refs.get("cable")
+    if cable_sel is None:
+        return
+    cable_sel.isVisible = len(_row_order) > 1 or _cable_point.get("entity") is not None
 
 
 def _activate_row(rid):
@@ -862,6 +876,18 @@ def _activate_row(rid):
     _active_rid = rid
     _loading_row = True
     try:
+        # Focus the first editor input so the user's next canvas pick goes
+        # to THIS wire's conductor start. Without this, Fusion's focus
+        # auto-advance can wrap into the (single, connector-level) cable
+        # point input after a wire's third pick, making every wire appear
+        # to demand a cable point. Set before seeding in case focusing
+        # resets the input's selection.
+        start_input = _ui_refs.get(INPUT_SEL_START)
+        if start_input is not None:
+            try:
+                start_input.hasFocus = True
+            except Exception:
+                ptutil.log(f"{CMD_NAME}: could not focus the start input.")
         for input_id, role in SEL_INPUT_ROLE.items():
             sel = _ui_refs.get(input_id)
             if sel is None:
