@@ -24,9 +24,9 @@ flowchart LR
 ## The attribute schema contract (v1)
 
 All attributes live in group **`PowerTools.Cable`** (constants in
-`commands/definewires/logic.py` — treat that module as the schema's single
-source of truth; it is pure Python with unit tests in
-`tests/test_definewires_logic.py`).
+`commands/cable_shared/schema.py` — treat that module as the schema's
+single source of truth; it is pure Python with unit tests in
+`tests/test_cable_schema.py`).
 
 ### Root component — one manifest attribute
 

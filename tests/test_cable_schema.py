@@ -1,12 +1,13 @@
-"""Unit tests for the Define Wires pure-logic helpers.
+"""Unit tests for the shared PowerTools.Cable attribute schema.
 
-Exercises the cable-routing attribute schema: name and payload round-trips,
-tolerant parsing of damaged values, grouping raw attribute records into wires
-(with orphan and garbage bucketing), recall ordering, AWG validation, wire-set
-validation, and the add/update/remove diff. These helpers have no Fusion
-dependency; the module uses package-relative imports, so it is loaded via its
-full package path with the conftest scaffolding in place (which also
-fabricates the ``adsk`` package).
+Exercises ``commands/cable_shared/schema.py`` (authored by Define Wires):
+name and payload round-trips, tolerant parsing of damaged values, grouping
+raw attribute records into wires (with orphan and garbage bucketing),
+recall ordering, AWG validation, wire-set validation, and the
+add/update/remove diff. These helpers have no Fusion dependency; the
+module uses package-relative imports, so it is loaded via its full package
+path with the conftest scaffolding in place (which also fabricates the
+``adsk`` package).
 """
 
 import importlib
@@ -17,7 +18,7 @@ from pathlib import Path
 import pytest
 
 PT_PKG = Path(__file__).resolve().parent.parent.name
-logic = importlib.import_module(f"{PT_PKG}.commands.definewires.logic")
+logic = importlib.import_module(f"{PT_PKG}.commands.cable_shared.schema")
 
 
 # ---------------------------------------------------------------------------

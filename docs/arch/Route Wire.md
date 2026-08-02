@@ -7,11 +7,13 @@ The build half of the cable family: consume the `PowerTools.Cable`
 attributes written by [Define Wires](./Define%20Wires.md) from *assembly*
 context and build real wire and cable geometry from them ([Update
 Wire](./Update%20Wire.md) rebuilds it; [Wire Report](./Wire%20Report.md)
-reports it). The schema module `commands/definewires/logic.py` stays the
-single source of truth; this command imports it as `schema`. Route-specific
-pure logic (AWG math, gauge intersection and packing factors, spline guide
-points, route payloads) lives in `commands/routewire/logic.py` with tests
-in `tests/test_routewire_logic.py`.
+reports it). The family's shared modules live in `commands/cable_shared/`
+(the `partnumber_shared` precedent): `schema.py` stays the single source
+of truth for the attribute schema (imported as `schema`), the pure routing
+logic (AWG math, gauge intersection and packing factors, spline guide
+points, route payloads, result notes) is `routing.py` with tests in
+`tests/test_cable_routing.py`, and the Fusion-side construction is
+`builder.py`.
 
 ```mermaid
 flowchart TD
@@ -22,7 +24,7 @@ flowchart TD
     I --> C["lines between included points;<br/>splines (single wire + jacket)<br/>merged + tangent; cable fan-outs<br/>are straight lines"]
     C --> P["Paths swept as Pipe features<br/>(solid circular sections)"]
     P --> T["timeline group + route attribute"]
-    L["logic.py (pure, unit-tested)<br/>AWG formula, bundle factors,<br/>guide points, payloads"] -.-> E
+    L["cable_shared/routing.py (pure, unit-tested)<br/>AWG formula, bundle factors,<br/>guide points, payloads"] -.-> E
     L -.-> B
 ```
 
@@ -33,8 +35,9 @@ left an open question by Define Wires. Route Wire sidesteps it: the user
 *selects* the two occurrences, so the command scans just those components
 directly — every construction point and sketch point of `occurrence.component`
 is checked for attributes in the `PowerTools.Cable` group
-(`builder.read_connector` in `commands/routewire/builder.py`, shared with
-Update Wire). This works identically for referenced and local components.
+(`builder.read_connector` in `commands/cable_shared/builder.py`, shared
+with Update Wire). This works identically for referenced and local
+components.
 Only **complete** wires (all three roles present, non-empty pin) are offered
 for routing.
 
@@ -46,9 +49,9 @@ occurrence is nested; used for the preview and fallbacks).
 
 ## Geometry construction (associative)
 
-All geometry building lives in `commands/routewire/builder.py` (shared with
-Update Wire). New components use identity transforms, so component-local
-coordinates equal root (world) coordinates.
+All geometry building lives in `commands/cable_shared/builder.py` (shared
+with Update Wire). New components use identity transforms, so
+component-local coordinates equal root (world) coordinates.
 
 **Associativity model.** Each routing sketch is created in root context
 (`Sketches.add` with `occurrenceForCreation` — the API analog of the UI's

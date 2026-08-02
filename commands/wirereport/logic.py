@@ -17,7 +17,7 @@ end fan-outs plus the jacket) governs the cable cut length.
 
 from __future__ import annotations
 
-from ..routewire import logic as route_logic
+from ..cable_shared import routing as route_logic
 
 
 def summarize_single(route: dict) -> dict:

@@ -6,11 +6,12 @@
 # This file is confidential and only available to authorized individuals with the
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
-"""Pure, Fusion-free helpers for the Define Wires command.
+"""The PowerTools.Cable attribute schema - single source of truth.
 
-Implements the attribute schema for cable-routing wire points so it can be
-unit-tested without a live Fusion runtime (see ``tests/test_definewires_logic.py``
-and the schema contract in ``docs/arch/Define Wires.md``).
+Pure and Fusion-free: authored by Define Wires, consumed by Route Wire,
+Update Wire, and Wire Report, and unit-tested without a live Fusion
+runtime (see ``tests/test_cable_schema.py`` and the schema contract in
+``docs/arch/Define Wires.md``).
 
 Every attribute lives in the :data:`ATTR_GROUP` group. The root component holds
 one manifest attribute (:data:`MANIFEST_NAME`) indexing the connector's wire

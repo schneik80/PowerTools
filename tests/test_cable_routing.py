@@ -1,10 +1,11 @@
-"""Unit tests for the Route Wire pure-logic helpers.
+"""Unit tests for the shared cable routing math.
 
-Exercises the AWG sizing math, the allowed-gauge intersection, the spline
-guide-point fallback geometry, and the route attribute payload. These helpers
-have no Fusion dependency; the module uses package-relative imports, so it is
-loaded via its full package path with the conftest scaffolding in place (which
-also fabricates the ``adsk`` package).
+Exercises ``commands/cable_shared/routing.py``: the AWG sizing math, the
+allowed-gauge intersections, the spline guide-point fallback geometry, the
+route attribute payload, and the build-result summary notes. These helpers
+have no Fusion dependency; the module uses package-relative imports, so it
+is loaded via its full package path with the conftest scaffolding in place
+(which also fabricates the ``adsk`` package).
 """
 
 import importlib
@@ -13,8 +14,8 @@ from pathlib import Path
 import pytest
 
 PT_PKG = Path(__file__).resolve().parent.parent.name
-logic = importlib.import_module(f"{PT_PKG}.commands.routewire.logic")
-schema = importlib.import_module(f"{PT_PKG}.commands.definewires.logic")
+logic = importlib.import_module(f"{PT_PKG}.commands.cable_shared.routing")
+schema = importlib.import_module(f"{PT_PKG}.commands.cable_shared.schema")
 
 
 # ---------------------------------------------------------------------------

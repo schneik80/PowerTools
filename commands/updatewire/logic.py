@@ -12,13 +12,13 @@ Resolution logic for rebuilding a routed wire from its stored route
 attribute: matching each route end back to a connector occurrence, finding
 the wire record on that connector, and validating the stored build
 parameters. The route payload format is defined by
-``commands/routewire/logic.py``; the attribute schema constants live in
-``commands/definewires/logic.py`` (imported as ``schema``).
+``commands/cable_shared/routing.py``; the attribute schema constants live
+in ``commands/cable_shared/schema.py`` (imported as ``schema``).
 """
 
 from __future__ import annotations
 
-from ..definewires import logic as schema
+from ..cable_shared import schema
 
 HOW_TOKEN = "token"
 HOW_CONNECTOR_ID = "connector_id"

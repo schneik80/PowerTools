@@ -15,7 +15,7 @@ redefined, or includes that fell back to baked positions.
    `PowerTools.Cable` / `route` attribute (`builder.collect_routes`, shared
    with Wire Report; `entry._collect_routes` adds kind-prefixed dropdown
    labels). The payload format is defined in
-   `commands/routewire/logic.py`; both `single` and `cable` kinds rebuild,
+   `commands/cable_shared/routing.py`; both `single` and `cable` kinds rebuild,
    unknown kinds are refused.
 2. **Resolution** (`entry._resolve_route` + pure ladder in
    `commands/updatewire/logic.py`, tested in
@@ -48,7 +48,7 @@ redefined, or includes that fell back to baked positions.
    plus unrelated features must never be destroyed wholesale. On a name
    mismatch (or when the group is gone), only the assembly occurrence is
    deleted. Nothing is deleted unless resolution fully succeeded.
-4. **Rebuild** — `commands/routewire/builder.build_wire` or `build_cable`
+4. **Rebuild** — `commands/cable_shared/builder.build_wire` or `build_cable`
    with the resolved ends and stored parameters: same construction as
    Route Wire, including fresh associative includes and a fresh route
    attribute with new occurrence tokens.

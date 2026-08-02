@@ -51,8 +51,8 @@ import adsk.fusion
 
 from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
-from ..definewires import logic as schema
-from . import builder, logic
+from ..cable_shared import builder, schema
+from ..cable_shared import routing as logic
 
 app = adsk.core.Application.get()
 ui = app.userInterface

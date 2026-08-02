@@ -38,8 +38,8 @@ import adsk.core
 import adsk.fusion
 
 from ...lib import ptAddInUtils as ptutil
-from ..definewires import logic as schema
-from . import logic
+from . import routing as logic
+from . import schema
 
 _LOG_NAME = "Cable wire builder"
 

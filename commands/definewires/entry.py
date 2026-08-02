@@ -36,7 +36,8 @@ import adsk.fusion
 
 from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
-from . import logic
+from ..cable_shared import schema as logic
+from ..cable_shared.builder import entity_token as _entity_token
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -1011,16 +1012,6 @@ def _is_supported_point_source(entity) -> bool:
             return False
         return bool(adsk.core.Circle3D.cast(geometry) or adsk.core.Arc3D.cast(geometry))
     return False
-
-
-def _entity_token(entity) -> str:
-    """Return the entity's token, or "" when unavailable."""
-    if entity is None:
-        return ""
-    try:
-        return entity.entityToken or ""
-    except Exception:
-        return ""
 
 
 def _point_identity(entity) -> str:

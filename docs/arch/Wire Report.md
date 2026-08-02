@@ -5,7 +5,7 @@
 
 Read-only consumer of the cable prove-out's data: enumerate routed
 assemblies via their `PowerTools.Cable` / `route` attributes
-(`routewire/builder.collect_routes`, shared with Update Wire), measure
+(`cable_shared/builder.collect_routes`, shared with Update Wire), measure
 their as-built lengths, and present the result in an HTML palette.
 
 ## Measurement

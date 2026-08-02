@@ -6,14 +6,15 @@
 # This file is confidential and only available to authorized individuals with the
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
-"""Pure, Fusion-free helpers for the Route Wire command.
+"""Pure, Fusion-free routing math for the Cable command family.
 
-AWG sizing math, the allowed-gauge intersection of two wires, the guide-point
-fallback used when 3D-sketch tangency constraints are unavailable, and the
-route attribute payload stamped on the created wire assembly component. The
-attribute schema itself (group name, payload parsing) lives in
-``commands/definewires/logic.py`` and is imported here as ``schema`` — that
-module remains the single source of truth for the PowerTools.Cable group.
+AWG sizing math, the allowed-gauge intersections, the guide-point fallback
+used when 3D-sketch tangency constraints are unavailable, the route
+attribute payload stamped on built assemblies, and the shared build-result
+summary notes. The attribute schema itself (group name, payload parsing)
+lives in ``commands/cable_shared/schema.py`` and is imported here as
+``schema`` — that module remains the single source of truth for the
+PowerTools.Cable group.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ import json
 import math
 from collections.abc import Iterable
 
-from ..definewires import logic as schema
+from . import schema
 
 ROUTE_NAME = "route"
 
