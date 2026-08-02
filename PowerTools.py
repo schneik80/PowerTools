@@ -23,6 +23,12 @@ def run(context):
         # then starts every command module defined in commands/__init__.py.
         commands.start()
 
+        # Session marker (no-op unless the .debug marker enables logging).
+        # Guarantees cache/powertools-debug.log exists and stamps when this
+        # code was loaded, so "is the new build running / is logging alive"
+        # is answerable from the file alone.
+        ptutil.log("PowerTools add-in started (debug logging active).")
+
     except Exception:
         ptutil.handle_error("run")
 
