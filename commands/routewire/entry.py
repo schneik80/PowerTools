@@ -24,14 +24,15 @@
 #     Conductor            (component: bodies 1 and 2, bare-conductor stubs)
 #     Sheath               (component: body 3, the sheathed run)
 #
-# Each body is a solid circular Pipe feature along a path: the conductor
-# stubs run conductor-start -> strip-length per connector at the bare AWG
-# diameter; the sheath runs strip -> exit, a smooth exit-to-exit spline
-# (tangency-constrained to the exit lines, with a guide-point fallback when
-# 3D-sketch constraints refuse), then exit -> strip on the far side, swept at
-# the sheath diameter. All timeline items are grouped as "Wire <name>" and
-# the features/bodies carry "Wire <name> ..." names. The wire assembly
-# component is stamped with a "route" attribute recording both ends.
+# The geometry construction lives in builder.py (shared with Update Wire):
+# solid circular Pipe features along 3D-sketch paths whose points are
+# INCLUDED from the connector geometry, so the wire is associative and
+# follows connector moves; the exit-to-exit spline is merged onto the exit
+# lines and tangency-constrained (guide-point fallback if constraints
+# refuse). All timeline items are grouped as "Wire <name>", features/bodies
+# carry "Wire <name> ..." names, and the wire assembly component is stamped
+# with a "route" attribute recording both ends (including occurrence tokens
+# so Update Wire can rebuild after connector edits break the links).
 
 import os
 import traceback
@@ -42,7 +43,7 @@ import adsk.fusion
 from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
 from ..definewires import logic as schema
-from . import logic
+from . import builder, logic
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -82,7 +83,7 @@ local_handlers: list = []
 # Dialog state for the open command. All reset in command_destroy and,
 # defensively, at the top of command_created.
 _ui_refs: dict = {}  # long-lived input refs (selections, dropdowns, textboxes)
-_sides: list = [None, None]  # per-side connector data dict (see _read_connector)
+_sides: list = [None, None]  # per-side data dict (see builder.read_connector)
 _loading = False  # reentrancy guard while mutating inputs programmatically
 
 
@@ -274,7 +275,7 @@ def _on_connector_changed(side: int, sel):
         _sides[side] = None
     else:
         occ = adsk.fusion.Occurrence.cast(sel.selection(0).entity)
-        _sides[side] = _read_connector(occ) if occ else None
+        _sides[side] = builder.read_connector(occ) if occ else None
     _update_info(side)
     _rebuild_pin_dropdown(side)
 
@@ -329,43 +330,12 @@ def command_execute(args: adsk.core.CommandEventArgs):
             return
         name = _ui_refs["name"].value.strip()
         sheath_dia_cm = _ui_refs["dia"].value
-        conductor_dia_cm = logic.conductor_diameter_mm(awg) / 10.0
 
-        timeline_start = design.timeline.markerPosition
-
-        identity = adsk.core.Matrix3D.create()
-        root = design.rootComponent
-        asm_comp = root.occurrences.addNewComponent(identity).component
-        asm_comp.name = f"Wire {name}"
-        conductor_comp = asm_comp.occurrences.addNewComponent(identity).component
-        conductor_comp.name = "Conductor"
-        sheath_comp = asm_comp.occurrences.addNewComponent(identity).component
-        sheath_comp.name = "Sheath"
-
-        _build_conductor_bodies(
-            conductor_comp, (wire_a, wire_b), conductor_dia_cm, name
+        result = builder.build_wire(
+            design,
+            ((_sides[0], wire_a), (_sides[1], wire_b)),
+            {"name": name, "awg": awg, "od_mm": sheath_dia_cm * 10.0},
         )
-        spline_fallback = _build_sheath_body(
-            sheath_comp, (wire_a, wire_b), sheath_dia_cm, name
-        )
-
-        asm_comp.attributes.add(
-            schema.ATTR_GROUP,
-            logic.ROUTE_NAME,
-            logic.build_route_payload(
-                {
-                    "name": name,
-                    "awg": awg,
-                    "od_mm": sheath_dia_cm * 10.0,
-                    "ends": [
-                        _route_end(_sides[0], wire_a),
-                        _route_end(_sides[1], wire_b),
-                    ],
-                }
-            ),
-        )
-
-        _group_timeline(design, timeline_start, name)
 
         summary = (
             f"Wire {name} routed.\n\n"
@@ -375,294 +345,22 @@ def command_execute(args: adsk.core.CommandEventArgs):
             f"Sheath diameter: {sheath_dia_cm * 10.0:.3f} mm\n"
             "Bodies: 2 conductor stubs + 1 sheath run."
         )
-        if spline_fallback:
+        if result["spline_fallback"]:
             summary += (
                 "\n\nNote: tangency constraints could not be applied - the "
                 "spline was shaped with guide points instead (see the debug "
                 "log for the reason)."
             )
+        if result["baked_points"]:
+            summary += (
+                f"\n\nNote: {result['baked_points']} point(s) could not be "
+                "linked to the connector geometry and were baked at fixed "
+                "positions (that part of the wire will not follow connector "
+                "moves)."
+            )
         ui.messageBox(summary, CMD_NAME)
     except Exception:
         ui.messageBox(f"{CMD_NAME} failed:\n{traceback.format_exc()}", CMD_NAME)
-
-
-def _route_end(side_data: dict, wire: dict) -> dict:
-    """One end's identity for the route attribute payload."""
-    return {
-        "connector_id": side_data["connector_id"],
-        "wire_id": wire["wire_id"],
-        "pin": wire["pin"],
-    }
-
-
-def _build_conductor_bodies(comp, wires, dia_cm: float, name: str):
-    """Bodies 1 and 2: bare-conductor stubs, start -> strip, per connector."""
-    sketch = comp.sketches.add(comp.xYConstructionPlane)
-    sketch.name = f"Wire {name} conductor paths"
-    for index, wire in enumerate(wires, start=1):
-        line = sketch.sketchCurves.sketchLines.addByTwoPoints(
-            sketch.modelToSketchSpace(wire["world"][schema.ROLE_START]),
-            sketch.modelToSketchSpace(wire["world"][schema.ROLE_STRIP]),
-        )
-        path = comp.features.createPath(line, False)
-        _add_pipe(comp, path, dia_cm, f"Wire {name} conductor {index}")
-
-
-def _build_sheath_body(comp, wires, dia_cm: float, name: str) -> bool:
-    """Body 3: strip -> exit, smooth exit-to-exit spline, exit -> strip.
-
-    Returns:
-        True when the spline fell back to guide-point shaping (no tangency
-        constraints) so execute can surface it in the summary.
-    """
-    wire_a, wire_b = wires
-    sketch = comp.sketches.add(comp.xYConstructionPlane)
-    sketch.name = f"Wire {name} sheath path"
-    lines = sketch.sketchCurves.sketchLines
-    line_a = lines.addByTwoPoints(
-        sketch.modelToSketchSpace(wire_a["world"][schema.ROLE_STRIP]),
-        sketch.modelToSketchSpace(wire_a["world"][schema.ROLE_EXIT]),
-    )
-    line_b = lines.addByTwoPoints(
-        sketch.modelToSketchSpace(wire_b["world"][schema.ROLE_STRIP]),
-        sketch.modelToSketchSpace(wire_b["world"][schema.ROLE_EXIT]),
-    )
-    spline, used_fallback = _add_exit_spline(sketch, (line_a, line_b), wire_a, wire_b)
-
-    curves = adsk.core.ObjectCollection.create()
-    curves.add(line_a)
-    curves.add(spline)
-    curves.add(line_b)
-    path = comp.features.createPath(curves, False)
-    _add_pipe(comp, path, dia_cm, f"Wire {name} sheath")
-    return used_fallback
-
-
-def _add_exit_spline(sketch, exit_lines, wire_a, wire_b):
-    """Create the exit-to-exit spline, tangent to both exit lines.
-
-    A two-point fitted spline whose endpoints are MERGED into the exit
-    lines' endpoints (SketchPoint.merge - the API's way to join two sketch
-    points; a point-to-point coincident constraint is not supported and was
-    the reason an earlier version always fell back). The lines are then
-    fixed so the solver bends the spline, not the connector geometry, and
-    tangent constraints are added at both shared points. Only if a step
-    still refuses does this fall back to an unconstrained spline shaped by
-    directional guide points (logic.spline_guide_points).
-
-    Returns:
-        ``(spline, used_fallback)`` - *used_fallback* is True when the
-        constrained construction failed and the guide-point spline was used.
-    """
-    line_a, line_b = exit_lines
-    exit_a = sketch.modelToSketchSpace(wire_a["world"][schema.ROLE_EXIT])
-    exit_b = sketch.modelToSketchSpace(wire_b["world"][schema.ROLE_EXIT])
-    fit = adsk.core.ObjectCollection.create()
-    fit.add(exit_a)
-    fit.add(exit_b)
-    spline = sketch.sketchCurves.sketchFittedSplines.add(fit)
-    try:
-        # Merge the spline's endpoints into the lines' exit endpoints (the
-        # lines' points survive). This is the "drag one point onto another"
-        # join, giving real shared-point connectivity for the tangent
-        # constraints and the swept path.
-        if not line_a.endSketchPoint.merge(spline.startSketchPoint):
-            raise ValueError("merge of spline start into exit line A failed")
-        if not line_b.endSketchPoint.merge(spline.endSketchPoint):
-            raise ValueError("merge of spline end into exit line B failed")
-        line_a.isFixed = True
-        line_b.isFixed = True
-        constraints = sketch.geometricConstraints
-        if constraints.addTangent(line_a, spline) is None:
-            raise ValueError("addTangent(line_a, spline) returned null")
-        if constraints.addTangent(spline, line_b) is None:
-            raise ValueError("addTangent(spline, line_b) returned null")
-        return spline, False
-    except Exception:
-        ptutil.log(
-            f"{CMD_NAME}: constrained spline construction failed, using "
-            f"guide-point spline.\n{traceback.format_exc()}"
-        )
-    try:
-        spline.deleteMe()
-    except Exception:
-        ptutil.log(f"{CMD_NAME}: could not delete the constrained spline attempt.")
-    guides = logic.spline_guide_points(
-        _as_tuple(wire_a["world"][schema.ROLE_STRIP]),
-        _as_tuple(wire_a["world"][schema.ROLE_EXIT]),
-        _as_tuple(wire_b["world"][schema.ROLE_STRIP]),
-        _as_tuple(wire_b["world"][schema.ROLE_EXIT]),
-    )
-    fallback_fit = adsk.core.ObjectCollection.create()
-    for xyz in guides:
-        fallback_fit.add(sketch.modelToSketchSpace(adsk.core.Point3D.create(*xyz)))
-    return sketch.sketchCurves.sketchFittedSplines.add(fallback_fit), True
-
-
-def _add_pipe(comp, path, dia_cm: float, label: str):
-    """Solid circular pipe of *dia_cm* along *path*, named *label*."""
-    pipes = comp.features.pipeFeatures
-    pipe_input = pipes.createInput(
-        path, adsk.fusion.FeatureOperations.NewBodyFeatureOperation
-    )
-    # VERIFY AT RUNTIME: sectionSize is assumed to be the section DIAMETER
-    # (matching the UI's "Section Size" field); the API docs do not say
-    # radius or diameter. Section type defaults to circular, solid.
-    pipe_input.sectionSize = adsk.core.ValueInput.createByReal(dia_cm)
-    pipe = pipes.add(pipe_input)
-    pipe.name = label
-    try:
-        if pipe.bodies.count > 0:
-            pipe.bodies.item(0).name = label
-    except Exception:
-        ptutil.log(f"{CMD_NAME}: could not rename body for '{label}'.")
-    return pipe
-
-
-def _group_timeline(design, start_index: int, name: str):
-    """Group everything created since *start_index* as 'Wire <name>'."""
-    try:
-        timeline = design.timeline
-        end_index = timeline.markerPosition - 1
-        if end_index > start_index:
-            group = timeline.timelineGroups.add(start_index, end_index)
-            group.name = f"Wire {name}"
-    except Exception:
-        ptutil.log(f"{CMD_NAME}: timeline grouping failed:\n{traceback.format_exc()}")
-
-
-# ---------------------------------------------------------------------------
-# Reading connector data
-# ---------------------------------------------------------------------------
-def _read_connector(occ) -> dict:
-    """Scan the occurrence's component for Define Wires attribute data.
-
-    Returns a dict with ``occ``, ``path`` (unique occurrence path),
-    ``comp_name``, ``connector_id``, ``wires`` (``{pin: {wire_id, pin,
-    awg_min, awg_max, world: {role: Point3D}}}`` — complete wires only, world
-    positions in root space via occurrence proxies), and ``error`` ("" when
-    usable).
-    """
-    comp = occ.component
-    data = {
-        "occ": occ,
-        "path": _occ_path(occ),
-        "comp_name": comp.name,
-        "connector_id": "",
-        "wires": {},
-        "error": "",
-    }
-    manifest = schema.parse_payload(_component_manifest_value(comp))
-    if manifest:
-        data["connector_id"] = str(manifest.get("connector_id") or "")
-
-    partial: dict = {}
-    for entity in _iter_component_points(comp):
-        for attr_name, payload in _cable_attrs_on(entity):
-            parsed = schema.parse_point_attr_name(attr_name)
-            if parsed is None or payload is None:
-                continue
-            wire_id, role = parsed
-            record = partial.setdefault(
-                wire_id,
-                {
-                    "wire_id": wire_id,
-                    "pin": str(payload.get("pin") or ""),
-                    "awg_min": schema.coerce_awg(
-                        payload.get("awg_min"), schema.AWG_DEFAULT_MIN
-                    ),
-                    "awg_max": schema.coerce_awg(
-                        payload.get("awg_max"), schema.AWG_DEFAULT_MAX
-                    ),
-                    "points": {},
-                },
-            )
-            record["points"][role] = entity
-
-    for record in partial.values():
-        if not record["pin"] or set(record["points"]) != set(schema.ROLES):
-            continue  # incomplete wire - not routable
-        world = {}
-        for role, entity in record["points"].items():
-            point = _world_point(entity, occ)
-            if point is None:
-                break
-            world[role] = point
-        if len(world) != len(schema.ROLES):
-            continue
-        record["world"] = world
-        del record["points"]
-        data["wires"][record["pin"]] = record
-
-    if not data["wires"]:
-        data["error"] = (
-            f"No complete Define Wires data found on '{comp.name}'. Run "
-            "Define Wires on the connector part first."
-        )
-    return data
-
-
-def _component_manifest_value(comp) -> str:
-    """The component's connector-manifest attribute value ("" when absent)."""
-    try:
-        attr = comp.attributes.itemByName(schema.ATTR_GROUP, schema.MANIFEST_NAME)
-        return attr.value if attr else ""
-    except Exception:
-        return ""  # tolerant read - a missing manifest is not an error
-
-
-def _iter_component_points(comp):
-    """Yield every construction point and sketch point of *comp* (native)."""
-    try:
-        for index in range(comp.constructionPoints.count):
-            yield comp.constructionPoints.item(index)
-    except Exception:
-        ptutil.log(f"{CMD_NAME}: construction point scan failed on {comp.name}.")
-    try:
-        for sketch_index in range(comp.sketches.count):
-            sketch = comp.sketches.item(sketch_index)
-            for point_index in range(sketch.sketchPoints.count):
-                yield sketch.sketchPoints.item(point_index)
-    except Exception:
-        ptutil.log(f"{CMD_NAME}: sketch point scan failed on {comp.name}.")
-
-
-def _cable_attrs_on(entity) -> list:
-    """``(name, parsed_payload)`` for the entity's PowerTools.Cable attributes."""
-    results = []
-    try:
-        attrs = entity.attributes
-        for index in range(attrs.count):
-            attribute = attrs.item(index)
-            if attribute.groupName != schema.ATTR_GROUP:
-                continue
-            results.append((attribute.name, schema.parse_payload(attribute.value)))
-    except Exception:
-        ptutil.log(f"{CMD_NAME}: attribute read failed on an entity - skipped.")
-    return results
-
-
-def _world_point(entity, occ):
-    """The entity's position in root (world) space via its occurrence proxy."""
-    try:
-        proxy = entity.createForAssemblyContext(occ)
-        construction_point = adsk.fusion.ConstructionPoint.cast(proxy)
-        if construction_point:
-            return construction_point.geometry
-        sketch_point = adsk.fusion.SketchPoint.cast(proxy)
-        if sketch_point:
-            return sketch_point.worldGeometry
-    except Exception:
-        ptutil.log(f"{CMD_NAME}: world position unavailable for a wire point.")
-    return None
-
-
-def _occ_path(occ) -> str:
-    """Unique identity for an occurrence (used to reject picking it twice)."""
-    try:
-        return occ.fullPathName or occ.name
-    except Exception:
-        return occ.name
 
 
 # ---------------------------------------------------------------------------
@@ -826,11 +524,6 @@ def _update_preview():
         )
     except Exception:
         ptutil.log(f"{CMD_NAME}: preview draw failed:\n{traceback.format_exc()}")
-
-
-def _as_tuple(point) -> tuple:
-    """Point3D -> (x, y, z) for the pure-logic helpers."""
-    return (point.x, point.y, point.z)
 
 
 def _reset_state():

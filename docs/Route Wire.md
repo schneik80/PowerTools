@@ -24,7 +24,7 @@ Root of the design
                        exit-to-strip, at the sheath diameter
 ```
 
-Each body is a solid circular **Pipe** feature along a 3D-sketch path. The exit-to-exit spline is made tangent to both exit segments (falling back to direction-guided fit points where 3D tangency is unavailable). All timeline items are grouped as **Wire \<name\>**, and the sketches, features, and bodies carry `Wire <name> ...` names. The wire assembly component is stamped with a `PowerTools.Cable` / `route` attribute recording both ends (connector ids, wire ids, pins), the gauge, and the diameter.
+Each body is a solid circular **Pipe** feature along a 3D-sketch path whose points are **linked to the connector geometry** (Include 3D Geometry), so the wire is **associative** — it follows when connectors move. The exit-to-exit spline is made tangent to both exit segments (falling back to direction-guided fit points where 3D tangency is unavailable). All timeline items are grouped as **Wire \<name\>**, and the sketches, features, and bodies carry `Wire <name> ...` names. The wire assembly component is stamped with a `PowerTools.Cable` / `route` attribute recording both ends (connector ids, wire ids, pins, occurrence tokens), the gauge, and the diameter.
 
 ## Prerequisites
 
@@ -40,7 +40,7 @@ Each body is a solid circular **Pipe** feature along a 3D-sketch path. The exit-
 4. Choose the **Gauge (AWG)** — only sizes allowed by both wires are offered. The **Wire diameter** updates to the recommended sheathed size; edit it if needed.
 5. Enter a **Wire name** and click **OK**. The command reports the pins, gauge, and diameter it built.
 
-> **Note:** connector positions are captured at build time — the wire does not yet update when components move. Re-routing after moving connectors means deleting the wire group and routing again.
+> **Note:** the wire follows ordinary connector moves on its own. **Swapping or re-inserting** a connector, or redefining its wire points, breaks the links — run [Update Wire](./Update%20Wire.md) to rebuild the wire from its stored route data.
 
 ## Access
 

@@ -18,20 +18,33 @@ left an open question by Define Wires. Route Wire sidesteps it: the user
 *selects* the two occurrences, so the command scans just those components
 directly — every construction point and sketch point of `occurrence.component`
 is checked for attributes in the `PowerTools.Cable` group
-(`entry._iter_component_points` / `_cable_attrs_on`). This works identically
-for referenced and local components. Only **complete** wires (all three roles
-present, non-empty pin) are offered for routing.
+(`builder.read_connector` in `commands/routewire/builder.py`, shared with
+Update Wire). This works identically for referenced and local components.
+Only **complete** wires (all three roles present, non-empty pin) are offered
+for routing.
 
-World positions come from occurrence proxies:
-`entity.createForAssemblyContext(occ)` then `.geometry` (construction points)
-or `.worldGeometry` (sketch points) — both in root space, however deeply the
-occurrence is nested.
+Each wire point is carried two ways: its occurrence **proxy**
+(`entity.createForAssemblyContext(occ)`, used for the associative includes)
+and its **world position** (`.geometry` for construction points,
+`.worldGeometry` for sketch points — both root space, however deeply the
+occurrence is nested; used for the preview and fallbacks).
 
-## Geometry construction
+## Geometry construction (associative)
 
-All new components are created with identity transforms, so component-local
-coordinates equal root (world) coordinates; every point is still mapped
-through `sketch.modelToSketchSpace` before sketching.
+All geometry building lives in `commands/routewire/builder.py` (shared with
+Update Wire). New components use identity transforms, so component-local
+coordinates equal root (world) coordinates.
+
+**Associativity model.** Each routing sketch is created in root context
+(`Sketches.add` with `occurrenceForCreation` — the API analog of the UI's
+active occurrence) and the wire points are brought in with
+`Sketch.include()` of the connector-point *proxies*. The lines are drawn
+`addByTwoPoints` **between the included points**, so they are fully DEFINED
+by connector geometry: the solver has no freedom on them, and they follow
+when connectors move. When an include refuses, that point is baked at its
+world position and `isFixed` (so the lines stay deterministic), counted in
+the build result and reported in the summary. Connector swap/edit breaking
+the include links is accepted — Update Wire is the recovery path.
 
 - **Conductor** component — one 3D sketch (`Wire <name> conductor paths`)
   with a start-to-strip line per connector; each line becomes a Path
@@ -44,9 +57,10 @@ through `sketch.modelToSketchSpace` before sketching.
   `SketchPoint.merge` (the API's "drag one point onto another" join — a
   point-to-point coincident *constraint* is not supported by
   `addCoincident` and silently forced an earlier version into its fallback
-  every time), the lines are *fixed* (`isFixed`, so the solver bends the
-  spline, not the connector geometry), and tangent constraints are added at
-  both shared points. If a step still refuses, the command falls back to an
+  every time), and tangent constraints are added at both shared points.
+  Because the lines are fully defined by their endpoints, tangency
+  deterministically bends only the spline — including on recompute when
+  connectors move. If a step still refuses, the command falls back to an
   unconstrained spline shaped by directional guide points
   (`logic.spline_guide_points`: interior fit points continuing each
   strip-to-exit direction past the exit by 25% of the exit-to-exit span)
@@ -89,20 +103,25 @@ Stamped on the `Wire <name>` component: group `PowerTools.Cable`, name
 ```json
 {"schema": 1, "name": "PWR1", "awg": 22, "od_mm": 1.54,
  "ends": [
-   {"connector_id": "ConnA-3f9a2b1c", "wire_id": "7c1d2e3f", "pin": "1"},
-   {"connector_id": "ConnB-9ab04d12", "wire_id": "55aa66bb", "pin": "4"}
+   {"connector_id": "ConnA-3f9a2b1c", "wire_id": "7c1d2e3f", "pin": "1",
+    "occ_token": "..."},
+   {"connector_id": "ConnB-9ab04d12", "wire_id": "55aa66bb", "pin": "4",
+    "occ_token": "..."}
  ]}
 ```
 
 This makes routed wires enumerable later (which pins are already consumed,
-re-route/update flows) without parsing geometry.
+re-route/update flows) without parsing geometry. `occ_token` is the
+occurrence's `entityToken`, so Update Wire can re-resolve the exact instance
+even when several occurrences of the same connector exist; `connector_id` is
+its fallback when the token dies (see the Update Wire architecture notes).
 
 ## Known limitations (accepted for the prove-out)
 
-- The wire is **not associative**: connector points are captured as fixed
-  coordinates at build time. Moving a connector strands the wire; the
-  intended follow-up is delete-and-re-route (or a future update command
-  driven by the route attribute).
+- Associativity depends on the include links: connector **swap, re-insert,
+  or redefined wire points** break them (accepted by design). The recovery
+  path is [Update Wire](./Update%20Wire.md), which rebuilds from the route
+  attribute.
 - Pins already consumed by an existing route are still offered.
 - The preview is a straight exit-to-exit line, not the final spline shape.
 - Icons are placeholders copied from `roundsketchdimensions`.
