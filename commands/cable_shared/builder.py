@@ -276,17 +276,21 @@ def build_wire(design, ends, params) -> dict:
         design: The active parametric design.
         ends: Two ``(side_data, wire)`` tuples - side_data from
             :func:`read_connector`, wire one of its ``wires`` records.
-        params: ``{"name": str, "awg": int, "od_mm": float}``.
+        params: ``{"name": str, "awg": int, "od_mm": float}`` plus an
+            optional ``"color"`` (wire color key; defaulted when absent).
 
     Returns:
         ``{"spline_fallback": bool, "baked_points": int}`` - whether the
         sheath spline needed the guide-point fallback, and how many points
         could not be included associatively.
     """
+    color = logic.normalize_wire_color(params.get("color"))
     job = {
         "name": params["name"],
         "conductor_dia_cm": logic.conductor_diameter_mm(params["awg"]) / 10.0,
         "sheath_dia_cm": params["od_mm"] / 10.0,
+        "conductor_appearance": _conductor_appearance(design),
+        "sheath_appearance": _wire_color_appearance(design, color),
         "result": {"spline_fallback": False, "baked_points": 0, "dropped_tangents": 0},
     }
     wires = (ends[0][1], ends[1][1])
@@ -326,6 +330,7 @@ def build_wire(design, ends, params) -> dict:
                 "name": job["name"],
                 "awg": params["awg"],
                 "od_mm": params["od_mm"],
+                "color": color,
                 "ends": [_route_end(side, wire) for side, wire in ends],
             }
         ),
@@ -349,20 +354,29 @@ def build_cable(design, ends, params) -> dict:
             :func:`read_connector` (must carry a ``cable`` point), wires an
             equal-length list of its wire records in paired (pin) order.
         params: ``{"name": str, "awg": int, "od_mm": float,
-            "cable_od_mm": float}``.
+            "cable_od_mm": float}`` plus optional ``"colors"`` (wire color
+            keys in paired order; auto-assigned from the palette sequence
+            when absent or mismatched).
 
     Returns:
         ``{"spline_fallback": bool, "baked_points": int}`` as for
         :func:`build_wire`.
     """
+    (side_a, wires_a), (side_b, wires_b) = ends
+    colors = [
+        logic.normalize_wire_color(color) for color in (params.get("colors") or [])
+    ]
+    if len(colors) != len(wires_a):
+        colors = logic.assign_wire_colors(len(wires_a))
     job = {
         "name": params["name"],
         "conductor_dia_cm": logic.conductor_diameter_mm(params["awg"]) / 10.0,
         "sheath_dia_cm": params["od_mm"] / 10.0,
         "cable_dia_cm": params["cable_od_mm"] / 10.0,
+        "conductor_appearance": _conductor_appearance(design),
+        "jacket_appearance": _wire_color_appearance(design, logic.JACKET_COLOR),
         "result": {"spline_fallback": False, "baked_points": 0, "dropped_tangents": 0},
     }
-    (side_a, wires_a), (side_b, wires_b) = ends
 
     timeline_start = design.timeline.markerPosition
 
@@ -377,10 +391,12 @@ def build_cable(design, ends, params) -> dict:
     # stale, so the many per-wire includes run with the least prior
     # mutation and the jacket's four (which have a decent guide-point
     # fallback) absorb the most.
-    for wire_a, wire_b in zip(wires_a, wires_b, strict=True):
+    for index, (wire_a, wire_b) in enumerate(zip(wires_a, wires_b, strict=True)):
         wire_occ = cable_comp.occurrences.addNewComponent(identity)
         wire_occ.component.name = f"Wire {wire_a['pin']}"
         _stamp_member(wire_occ.component, schema.MEMBER_WIRE, wire_a["pin"])
+        # Each wire's sheathed segments carry its own assigned color.
+        job["sheath_appearance"] = _wire_color_appearance(design, colors[index])
         _build_cable_wire(
             wire_occ.component,
             _root_context_occurrence(wire_occ, cable_occ),
@@ -401,6 +417,7 @@ def build_cable(design, ends, params) -> dict:
                 "awg": params["awg"],
                 "od_mm": params["od_mm"],
                 "cable_od_mm": params["cable_od_mm"],
+                "colors": colors,
                 "ends": [
                     _cable_route_end(side_a, wires_a),
                     _cable_route_end(side_b, wires_b),
@@ -556,7 +573,13 @@ def _build_conductor_bodies(comp, ctx_occ, wires, job):
         )
         line = sketch.sketchCurves.sketchLines.addByTwoPoints(start_point, strip_point)
         path = comp.features.createPath(line, False)
-        _add_pipe(comp, path, job["conductor_dia_cm"], f"Wire {name} conductor {index}")
+        _add_pipe(
+            comp,
+            path,
+            job["conductor_dia_cm"],
+            f"Wire {name} conductor {index}",
+            appearance=job.get("conductor_appearance"),
+        )
 
 
 def _build_sheath_body(comp, ctx_occ, wires, job):
@@ -582,7 +605,13 @@ def _build_sheath_body(comp, ctx_occ, wires, job):
     curves.add(spline)
     curves.add(line_b)
     path = comp.features.createPath(curves, False)
-    _add_pipe(comp, path, job["sheath_dia_cm"], f"Wire {name} sheath")
+    _add_pipe(
+        comp,
+        path,
+        job["sheath_dia_cm"],
+        f"Wire {name} sheath",
+        appearance=job.get("sheath_appearance"),
+    )
 
 
 def _constrained_spline(sketch, start_point, end_point, tangent_lines, label):
@@ -706,7 +735,13 @@ def _build_jacket(comp, ctx_occ, ends, job):
         )
         spline = _guide_spline(sketch, guides, job)
     path = comp.features.createPath(spline, False)
-    _add_pipe(comp, path, job["cable_dia_cm"], f"Cable {name} jacket")
+    _add_pipe(
+        comp,
+        path,
+        job["cable_dia_cm"],
+        f"Cable {name} jacket",
+        appearance=job.get("jacket_appearance"),
+    )
 
 
 def _build_cable_wire(comp, ctx_occ, pair, job):
@@ -744,6 +779,7 @@ def _build_cable_wire(comp, ctx_occ, pair, job):
             conductor_path,
             job["conductor_dia_cm"],
             f"{label} conductor {suffix}",
+            appearance=job.get("conductor_appearance"),
         )
 
         exit_line = lines.addByTwoPoints(strip_point, exit_point)
@@ -752,7 +788,13 @@ def _build_cable_wire(comp, ctx_occ, pair, job):
         curves.add(exit_line)
         curves.add(fan_line)
         sheath_path = comp.features.createPath(curves, False)
-        _add_pipe(comp, sheath_path, job["sheath_dia_cm"], f"{label} sheath {suffix}")
+        _add_pipe(
+            comp,
+            sheath_path,
+            job["sheath_dia_cm"],
+            f"{label} sheath {suffix}",
+            appearance=job.get("sheath_appearance"),
+        )
 
 
 def _sketch_is_sick(sketch) -> bool:
@@ -778,7 +820,155 @@ def _centroid(points) -> adsk.core.Point3D:
     )
 
 
-def _add_pipe(comp, path, dia_cm: float, label: str):
+# ---------------------------------------------------------------------------
+# Appearances (wire colors, copper conductors, black jackets)
+# ---------------------------------------------------------------------------
+# Library names: the appearance library was renamed in newer Fusion builds,
+# so both known names are tried before falling back to scanning every
+# installed library. Appearance resolution is always best-effort - a build
+# must never fail because a library was renamed or an appearance removed.
+_APPEARANCE_LIBRARY_NAMES = (
+    "Fusion Appearance Library",
+    "Fusion 360 Appearance Library",
+)
+# Paint appearances carry a plain modifiable "Color" ColorProperty - the
+# documented recipe for custom solid colors is addByCopy + set that
+# property (not all appearance types expose one).
+_COLOR_BASE_NAMES = (
+    "Paint - Enamel Glossy (Yellow)",
+    "Paint - Enamel Glossy (Red)",
+    "Plastic - Matte (Yellow)",
+)
+_COPPER_NAMES = ("Copper - Polished", "Copper - Satin", "Copper")
+_COPPER_APPEARANCE = "PowerTools Conductor Copper"
+_WIRE_APPEARANCE_PREFIX = "PowerTools Wire "
+
+
+def _appearance_libraries() -> list:
+    """Installed material libraries, the known appearance libraries first."""
+    ordered: list = []
+    seen: set = set()
+    try:
+        libraries = adsk.core.Application.get().materialLibraries
+        for preferred in _APPEARANCE_LIBRARY_NAMES:
+            try:
+                library = libraries.itemByName(preferred)
+            except Exception:
+                library = None
+            if library is not None and preferred not in seen:
+                ordered.append(library)
+                seen.add(preferred)
+        for index in range(libraries.count):
+            library = libraries.item(index)
+            try:
+                name = library.name
+            except Exception:
+                continue
+            if name not in seen:
+                ordered.append(library)
+                seen.add(name)
+    except Exception:
+        ptutil.log(f"{_LOG_NAME}: material library scan failed.")
+    return ordered
+
+
+def _library_appearance(names: tuple):
+    """The first library appearance matching one of *names* (else None)."""
+    for library in _appearance_libraries():
+        for name in names:
+            try:
+                appearance = library.appearances.itemByName(name)
+            except Exception:
+                appearance = None
+            if appearance is not None:
+                return appearance
+    return None
+
+
+def _color_base_appearance():
+    """A library appearance whose color can be modified (else None)."""
+    base = _library_appearance(_COLOR_BASE_NAMES)
+    if base is not None:
+        return base
+    # Last resort: the first library appearance carrying a Color property.
+    for library in _appearance_libraries():
+        try:
+            appearances = library.appearances
+            for index in range(appearances.count):
+                appearance = appearances.item(index)
+                try:
+                    if appearance.appearanceProperties.itemByName("Color"):
+                        return appearance
+                except Exception:
+                    continue
+        except Exception:
+            continue
+    return None
+
+
+def _tinted_appearance(design, name: str, rgb: tuple):
+    """The design's *name* appearance, created from a paint base plus RGB.
+
+    Created once per design and reused on later builds
+    (``design.appearances.itemByName`` first). Returns None when no
+    color-capable base exists; callers skip coloring rather than fail.
+    """
+    try:
+        existing = design.appearances.itemByName(name)
+        if existing is not None:
+            return existing
+    except Exception:
+        pass  # itemByName can raise instead of returning None
+    base = _color_base_appearance()
+    if base is None:
+        ptutil.log(f"{_LOG_NAME}: no color-capable base appearance found.")
+        return None
+    try:
+        appearance = design.appearances.addByCopy(base, name)
+        color_prop = adsk.core.ColorProperty.cast(
+            appearance.appearanceProperties.itemByName("Color")
+        )
+        color_prop.value = adsk.core.Color.create(rgb[0], rgb[1], rgb[2], 255)
+        return appearance
+    except Exception:
+        ptutil.log(
+            f"{_LOG_NAME}: could not create appearance '{name}':\n"
+            f"{traceback.format_exc()}"
+        )
+        return None
+
+
+def _wire_color_appearance(design, color_key: str):
+    """The design-cached appearance for one wire color key (else None)."""
+    key = logic.normalize_wire_color(color_key)
+    return _tinted_appearance(
+        design, f"{_WIRE_APPEARANCE_PREFIX}{key}", logic.wire_color_rgb(key)
+    )
+
+
+def _conductor_appearance(design):
+    """Copper for conductor bodies.
+
+    Prefers the appearance library's real copper (copied into the design
+    once, keyed by its own name); falls back to a copper-tinted paint
+    appearance so conductors read as copper even if the library changes.
+    """
+    copper = _library_appearance(_COPPER_NAMES)
+    if copper is not None:
+        try:
+            existing = design.appearances.itemByName(copper.name)
+            if existing is not None:
+                return existing
+        except Exception:
+            pass
+        try:
+            return design.appearances.addByCopy(copper, copper.name)
+        except Exception:
+            ptutil.log(f"{_LOG_NAME}: library copper copy failed.")
+    return _tinted_appearance(design, _COPPER_APPEARANCE, logic.CONDUCTOR_RGB)
+
+
+def _add_pipe(comp, path, dia_cm: float, label: str, appearance=None):
     """Solid circular pipe of *dia_cm* along *path*, named *label*."""
     pipes = comp.features.pipeFeatures
     pipe_input = pipes.createInput(
@@ -792,9 +982,12 @@ def _add_pipe(comp, path, dia_cm: float, label: str):
     pipe.name = label
     try:
         if pipe.bodies.count > 0:
-            pipe.bodies.item(0).name = label
+            body = pipe.bodies.item(0)
+            body.name = label
+            if appearance is not None:
+                body.appearance = appearance
     except Exception:
-        ptutil.log(f"{_LOG_NAME}: could not rename body for '{label}'.")
+        ptutil.log(f"{_LOG_NAME}: could not name/color the body for '{label}'.")
     return pipe
 
 

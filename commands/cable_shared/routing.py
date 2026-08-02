@@ -61,6 +61,32 @@ _BUNDLE_FACTORS = {
 CABLE_JACKET_WALL_MM = 0.6
 CABLE_LAY_FACTOR = 1.03  # twist/lay allowance over the ideal packed bundle
 
+# Wire insulation colors offered when routing (key -> sRGB). The tuple
+# order IS the assignment sequence for multi-conductor cables: wires are
+# colored in paired-pin order, cycling when a cable has more than twelve.
+WIRE_COLORS = (
+    ("red", (192, 32, 32)),
+    ("black", (25, 25, 25)),
+    ("white", (235, 235, 235)),
+    ("grey", (128, 128, 128)),
+    ("brown", (121, 68, 32)),
+    ("yellow", (235, 200, 40)),
+    ("dark blue", (24, 48, 128)),
+    ("light blue", (96, 168, 224)),
+    ("purple", (112, 48, 160)),
+    ("pink", (232, 128, 168)),
+    ("light green", (112, 200, 96)),
+    ("dark green", (24, 112, 48)),
+)
+WIRE_COLOR_KEYS = tuple(key for key, _rgb in WIRE_COLORS)
+DEFAULT_WIRE_COLOR = WIRE_COLOR_KEYS[0]
+_WIRE_COLOR_RGB = dict(WIRE_COLORS)
+
+# Cable jackets are always black; conductor bodies are always copper (the
+# builder prefers the library's polished copper, tinting this as fallback).
+JACKET_COLOR = "black"
+CONDUCTOR_RGB = (184, 115, 51)
+
 Vec = tuple[float, float, float]
 
 
@@ -98,6 +124,31 @@ def cable_od_mm(
     """
     bundle = wire_od_mm * bundle_factor(count) * CABLE_LAY_FACTOR
     return bundle + 2.0 * jacket_wall_mm
+
+
+def wire_color_rgb(key: str) -> tuple[int, int, int]:
+    """sRGB for a wire color key (the default color's when unknown)."""
+    return _WIRE_COLOR_RGB.get(str(key), _WIRE_COLOR_RGB[DEFAULT_WIRE_COLOR])
+
+
+def normalize_wire_color(value: object) -> str:
+    """A valid wire color key (:data:`DEFAULT_WIRE_COLOR` when *value* is not).
+
+    Tolerant of case and stray whitespace so hand-edited route payloads
+    still resolve to a color instead of failing a rebuild.
+    """
+    key = str(value or "").strip().lower()
+    return key if key in _WIRE_COLOR_RGB else DEFAULT_WIRE_COLOR
+
+
+def assign_wire_colors(count: int) -> list[str]:
+    """Cable wire colors in paired order: the palette sequence, cycling.
+
+    Mirrors multi-conductor cable practice - conductors follow a standard
+    color sequence - so a cable's wires are told apart without per-wire
+    input in the dialog.
+    """
+    return [WIRE_COLOR_KEYS[index % len(WIRE_COLOR_KEYS)] for index in range(count)]
 
 
 def sort_pins(pins: Iterable[str]) -> list[str]:
@@ -247,8 +298,10 @@ def build_route_payload(fields: dict) -> str:
             per-connector dicts, stored verbatim: single-wire routes carry
             ``connector_id``/``wire_id``/``pin``/``occ_token``; cable routes
             carry ``connector_id``/``occ_token``/``pins``/``wire_ids``),
-            optional ``kind`` (:data:`KIND_SINGLE` when omitted), and
-            optional ``cable_od_mm`` (cable jacket OD, cable routes only).
+            optional ``kind`` (:data:`KIND_SINGLE` when omitted), optional
+            ``cable_od_mm`` (cable jacket OD, cable routes only), optional
+            ``color`` (single-wire insulation color key), and optional
+            ``colors`` (cable wire color keys in paired order).
 
     Returns:
         A JSON string in the PowerTools.Cable schema (parse with
@@ -262,8 +315,9 @@ def build_route_payload(fields: dict) -> str:
         "od_mm": fields["od_mm"],
         "ends": fields["ends"],
     }
-    if "cable_od_mm" in fields:
-        payload["cable_od_mm"] = fields["cable_od_mm"]
+    for optional in ("cable_od_mm", "color", "colors"):
+        if optional in fields:
+            payload[optional] = fields[optional]
     return json.dumps(payload)
 
 

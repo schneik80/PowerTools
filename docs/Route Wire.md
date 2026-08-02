@@ -11,6 +11,7 @@ The Route Wire command connects two connectors that carry [Define Wires](./Defin
 - Pick two **connector occurrences**; each is scanned for Define Wires points and its available **pins** are listed.
 - Choose a **gauge** from the AWG sizes allowed by *both* selected wires (the intersection of their min/max ranges).
 - Get a **recommended wire diameter** (bare conductor for the chosen AWG plus insulation walls) that you can edit before building.
+- Pick a **wire color** for a single wire from 12 standard insulation colors; a cable's wires are colored automatically in the standard sequence.
 - See a **preview line** as soon as the route is defined — between the two exit points (single wire) or the two cable points (cable).
 - Name the route; everything created is labeled with it.
 
@@ -40,6 +41,8 @@ Root of the design
 
 One gauge governs the whole cable (the AWG list is the intersection across every paired wire). The **cable diameter** defaults to the standard cable-design recommendation — packed wire bundle (per-count packing factor), a lay allowance, plus jacket walls — and stays editable.
 
+Bodies are colored realistically: **conductors are copper**, sheaths carry the chosen **wire color**, and **cable jackets are black**. Cable wires are colored per pair in the standard sequence — red, black, white, grey, brown, yellow, dark blue, light blue, purple, pink, light green, dark green — repeating for larger cables, so every wire is identifiable at a glance.
+
 Each body is a solid circular **Pipe** feature along a 3D-sketch path whose points are **linked to the connector geometry** (Include 3D Geometry), so wires and cables are **associative** — they follow when connectors move. Splines are made tangent to their neighboring segments (falling back to direction-guided fit points where 3D tangency is unavailable, reported in the summary). All timeline items are grouped as **Wire \<name\>** or **Cable \<name\>**, with matching sketch, feature, and body names. The built assembly component is stamped with a `PowerTools.Cable` / `route` attribute recording both ends (connector ids, wire ids, pins, occurrence tokens), the gauge, and the diameters.
 
 ## Prerequisites
@@ -54,7 +57,7 @@ Each body is a solid circular **Pipe** feature along a 3D-sketch path whose poin
 2. On the **Utilities** tab, open the **Power Tools** panel and click **Route Wire**.
 3. Choose the **Route type**. Pick **Connector 1** and **Connector 2** in the canvas or browser; each shows its component name and available pins.
 4. **Single wire**: pick a **Pin** for each side. **Cable**: pins are hidden — every pin connects, paired in sorted order.
-5. Choose the **Gauge (AWG)** — only sizes the wires allow are offered. The **Wire diameter** (and for cables the **Cable diameter**) updates to the recommendation; edit if needed.
+5. Choose the **Gauge (AWG)** — only sizes the wires allow are offered. The **Wire diameter** (and for cables the **Cable diameter**) updates to the recommendation; edit if needed. For a single wire, pick the **Wire color** (cables color every wire automatically).
 6. Enter a name and click **OK**. The command reports the pins, gauge, and diameters it built.
 
 > **Note:** wires and cables follow ordinary connector moves on their own. **Swapping or re-inserting** a connector, or redefining its wire points, breaks the links — run [Update Wire](./Update%20Wire.md) to rebuild the wire or cable from its stored route data.

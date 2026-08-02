@@ -175,6 +175,36 @@ def test_sort_pins_numeric_aware() -> None:
     assert logic.sort_pins([]) == []
 
 
+def test_wire_color_palette_has_twelve_unique_keys() -> None:
+    assert len(logic.WIRE_COLOR_KEYS) == 12
+    assert len(set(logic.WIRE_COLOR_KEYS)) == 12
+    for _key, rgb in logic.WIRE_COLORS:
+        assert len(rgb) == 3
+        assert all(0 <= channel <= 255 for channel in rgb)
+
+
+def test_wire_color_rgb_and_default() -> None:
+    assert logic.wire_color_rgb("black") == (25, 25, 25)
+    assert logic.wire_color_rgb("nonsense") == logic.wire_color_rgb(
+        logic.DEFAULT_WIRE_COLOR
+    )
+
+
+def test_normalize_wire_color() -> None:
+    assert logic.normalize_wire_color("Dark Blue") == "dark blue"
+    assert logic.normalize_wire_color("  red ") == "red"
+    assert logic.normalize_wire_color("chartreuse") == logic.DEFAULT_WIRE_COLOR
+    assert logic.normalize_wire_color(None) == logic.DEFAULT_WIRE_COLOR
+
+
+def test_assign_wire_colors_follows_palette_and_cycles() -> None:
+    assert logic.assign_wire_colors(3) == ["red", "black", "white"]
+    colors = logic.assign_wire_colors(14)
+    assert colors[:12] == list(logic.WIRE_COLOR_KEYS)
+    assert colors[12:] == ["red", "black"]
+    assert logic.assign_wire_colors(0) == []
+
+
 def test_sort_pins_unicode_digits_never_crash() -> None:
     # Superscript/circled digits pass str.isdigit() but int() raises
     # ValueError - they must sort lexically instead of crashing the dialog.
@@ -273,6 +303,38 @@ def test_route_payload_cable_kind() -> None:
     assert payload["kind"] == "cable"
     assert payload["cable_od_mm"] == pytest.approx(4.33)
     assert payload["ends"] == ends
+
+
+def test_route_payload_carries_colors() -> None:
+    single = schema.parse_payload(
+        logic.build_route_payload(
+            {"name": "W", "awg": 22, "od_mm": 1.5, "ends": [], "color": "pink"}
+        )
+    )
+    assert single is not None
+    assert single["color"] == "pink"
+    cable = schema.parse_payload(
+        logic.build_route_payload(
+            {
+                "kind": logic.KIND_CABLE,
+                "name": "C",
+                "awg": 24,
+                "od_mm": 1.4,
+                "cable_od_mm": 5.0,
+                "colors": ["red", "black"],
+                "ends": [],
+            }
+        )
+    )
+    assert cable is not None
+    assert cable["colors"] == ["red", "black"]
+    # Colors stay optional - a legacy payload omits them entirely.
+    legacy = schema.parse_payload(
+        logic.build_route_payload({"name": "L", "awg": 22, "od_mm": 1.5, "ends": []})
+    )
+    assert legacy is not None
+    assert "color" not in legacy
+    assert "colors" not in legacy
 
 
 # ---------------------------------------------------------------------------

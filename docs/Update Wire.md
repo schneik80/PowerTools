@@ -11,7 +11,7 @@ The Update Wire command rebuilds a wire or multi-conductor cable created by [Rou
 - Lists every **routed wire and cable** in the design (components stamped with the `PowerTools.Cable` / `route` attribute).
 - Resolves each end of the selected route back to a connector occurrence — by the stored **occurrence token** first (survives renames and tells apart multiple instances of the same connector), then by unique **connector id** (survives a dead token after re-insertion). The dialog shows how each end matched.
 - Finds each wire by its stored **wire id**, falling back to the **pin** when the wire was redefined. Cables reconstruct their **original pairing** from the stored ordered pin lists — even after pins were renamed — and require the cable point on both connectors.
-- On **Rebuild**: deletes the old `Wire <name>` / `Cable <name>` timeline group (or, when the group was renamed or contains items the command did not create, just the assembly occurrence) and rebuilds with the stored name, gauge, and diameters.
+- On **Rebuild**: deletes the old `Wire <name>` / `Cable <name>` timeline group (or, when the group was renamed or contains items the command did not create, just the assembly occurrence) and rebuilds with the stored name, gauge, diameters, and wire color(s).
 
 ## When resolution fails
 

@@ -81,6 +81,7 @@ INPUT_INFO_C2 = "rw_conn2_info"
 INPUT_PIN2 = "rw_pin2"
 INPUT_AWG = "rw_awg"
 INPUT_DIA = "rw_dia"
+INPUT_COLOR = "rw_color"
 INPUT_NAME = "rw_name"
 
 # Per-side input ids, indexed by side (0, 1).
@@ -235,6 +236,18 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         )
         _ui_refs["dia"] = dia
 
+        color_dd = inputs.addDropDownCommandInput(
+            INPUT_COLOR, "Wire color", adsk.core.DropDownStyles.TextListDropDownStyle
+        )
+        for index, key in enumerate(logic.WIRE_COLOR_KEYS):
+            color_dd.listItems.add(key.capitalize(), index == 0)
+        color_dd.tooltip = (
+            "Insulation color for the sheathed run. Cable wires are colored "
+            "automatically in the standard palette sequence; conductors are "
+            "always copper and cable jackets always black."
+        )
+        _ui_refs["color"] = color_dd
+
         cable_dia = inputs.addValueInput(
             INPUT_CABLE_DIA,
             "Cable diameter",
@@ -383,6 +396,10 @@ def _apply_kind_visibility():
     cable_dia = _ui_refs.get("cable_dia")
     if cable_dia is not None:
         cable_dia.isVisible = is_cable
+    color_dd = _ui_refs.get("color")
+    if color_dd is not None:
+        # Cable wires are colored automatically in palette-sequence order.
+        color_dd.isVisible = not is_cable
 
 
 def _on_connector_changed(side: int, sel):
@@ -528,10 +545,11 @@ def _execute_single(design, name: str, awg: int, sheath_dia_cm: float):
     if not wire_a or not wire_b:
         ui.messageBox(f"{CMD_NAME}: route is incomplete.", CMD_NAME, 0, 2)
         return
+    color = _selected_color()
     result = builder.build_wire(
         design,
         ((_sides[0], wire_a), (_sides[1], wire_b)),
-        {"name": name, "awg": awg, "od_mm": sheath_dia_cm * 10.0},
+        {"name": name, "awg": awg, "od_mm": sheath_dia_cm * 10.0, "color": color},
     )
     summary = (
         f"Wire {name} routed.\n\n"
@@ -539,6 +557,7 @@ def _execute_single(design, name: str, awg: int, sheath_dia_cm: float):
         f"Gauge: {awg} AWG "
         f"(conductor {logic.conductor_diameter_mm(awg):.3f} mm)\n"
         f"Sheath diameter: {sheath_dia_cm * 10.0:.3f} mm\n"
+        f"Color: {color}\n"
         "Bodies: 2 conductor stubs + 1 sheath run."
     )
     ui.messageBox(summary + logic.result_notes(result), CMD_NAME)
@@ -551,6 +570,7 @@ def _execute_cable(design, name: str, awg: int, sheath_dia_cm: float):
         ui.messageBox(f"{CMD_NAME}: cable route is incomplete.", CMD_NAME, 0, 2)
         return
     cable_dia_cm = _ui_refs["cable_dia"].value
+    colors = logic.assign_wire_colors(len(wires_a))
     result = builder.build_cable(
         design,
         ((_sides[0], wires_a), (_sides[1], wires_b)),
@@ -559,12 +579,17 @@ def _execute_cable(design, name: str, awg: int, sheath_dia_cm: float):
             "awg": awg,
             "od_mm": sheath_dia_cm * 10.0,
             "cable_od_mm": cable_dia_cm * 10.0,
+            "colors": colors,
         },
+    )
+    color_map = ", ".join(
+        f"{wire['pin']} {color}" for wire, color in zip(wires_a, colors, strict=True)
     )
     summary = (
         f"Cable {name} routed.\n\n"
         f"Wires: {len(wires_a)} "
         f"(pins {', '.join(wire['pin'] for wire in wires_a)})\n"
+        f"Colors: {color_map}\n"
         f"Gauge: {awg} AWG "
         f"(conductor {logic.conductor_diameter_mm(awg):.3f} mm)\n"
         f"Wire diameter: {sheath_dia_cm * 10.0:.3f} mm\n"
@@ -694,6 +719,13 @@ def _selected_awg():
         return int(selected.name)
     except ValueError:
         return None
+
+
+def _selected_color() -> str:
+    """The selected wire color key (the default when nothing is selected)."""
+    dropdown = _ui_refs.get("color")
+    selected = dropdown.selectedItem if dropdown else None
+    return logic.normalize_wire_color(selected.name if selected else None)
 
 
 def _update_dia():

@@ -358,6 +358,15 @@ def _resolve_route(design, route) -> dict:
             problems.append("Stored route data is damaged (cable diameter).")
         else:
             params["cable_od_mm"] = cable_od_mm
+        # Rebuild with the original wire colors when stored (normalized;
+        # the builder re-assigns from the palette on a count mismatch).
+        stored_colors = payload.get("colors")
+        if isinstance(stored_colors, list) and stored_colors:
+            params["colors"] = [
+                route_logic.normalize_wire_color(color) for color in stored_colors
+            ]
+    else:
+        params["color"] = route_logic.normalize_wire_color(payload.get("color"))
 
     ends_payload = payload.get("ends") or []
     if len(ends_payload) != 2:
@@ -525,6 +534,8 @@ def _update_info():
         spec = f"{route['label']}: {params['awg']} AWG, {params['od_mm']:.2f} mm"
         if params.get("cable_od_mm"):
             spec += f" wires, {params['cable_od_mm']:.2f} mm cable"
+        if params.get("color"):
+            spec += f", {params['color']}"
         lines.append(spec + ".")
     for comp_name, label, how in _resolution["hows"]:
         matched = "entity token" if how == logic.HOW_TOKEN else "connector id"

@@ -190,6 +190,33 @@ prove-out; the timeline group delivers the "one named unit in the timeline"
 behavior.) Grouping requires a parametric design, which command_created
 enforces.
 
+## Colors and appearances
+
+Bodies are colored with design-local appearances resolved in `builder.py`
+(`_appearance_libraries` through `_conductor_appearance`) — always
+best-effort, a build never fails over a missing appearance:
+
+- **Wire colors** — the 12-color palette lives in
+  `cable_shared/routing.py` (`WIRE_COLORS`; the tuple order IS the cable
+  assignment sequence, cycling past twelve wires). Each color becomes a
+  design-local appearance named `PowerTools Wire <key>` via the documented
+  recipe: `Appearances.addByCopy` of a library paint appearance
+  ("Paint - Enamel Glossy (Yellow)", with fallbacks — paint appearances
+  carry a plain modifiable `Color` `ColorProperty`; not all appearance
+  types do), then setting that property. Created once per design and
+  reused by name on later builds.
+- **Conductors are copper**: the library's real copper
+  ("Copper - Polished", candidate-name ladder) copied into the design; a
+  copper-tinted paint appearance is the fallback.
+- **Cable jackets** use the black wire appearance.
+- The appearance library is found by name ("Fusion Appearance Library",
+  with the older "Fusion 360 Appearance Library" as fallback, then a scan
+  of every installed library) — library and appearance names are
+  localization-sensitive, hence the ladders.
+- The chosen color(s) are stored in the route payload (`color` /
+  `colors`, additive v1 fields) so Update Wire rebuilds with the original
+  colors; legacy routes without them rebuild with defaults.
+
 ## Route attribute (schema v1 addition)
 
 Stamped on the `Wire <name>` component: group `PowerTools.Cable`, name
