@@ -223,6 +223,13 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 # Input changed
 # ---------------------------------------------------------------------------
 def command_input_changed(args: adsk.core.InputChangedEventArgs):
+    # The mute flag is held across each WHOLE mutation block: every
+    # programmatic change below (dropdown items, textbox text, the diameter
+    # value) re-fires inputChanged, and reacting to our own events while
+    # still mutating is how a dialog hangs Fusion's UI thread. Events Fusion
+    # re-delivers after this handler returns hit rebuilds that are
+    # idempotent (_set_list_items compares first), so they no-op.
+    global _loading
     try:
         if _loading:
             return
@@ -230,20 +237,35 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
 
         if changed_id in SIDE_SEL_IDS:
             side = SIDE_SEL_IDS.index(changed_id)
-            _on_connector_changed(
-                side, adsk.core.SelectionCommandInput.cast(args.input)
-            )
-            _rebuild_awg_dropdown()
-            _update_preview()
-            _update_status()
+            _loading = True
+            try:
+                _on_connector_changed(
+                    side, adsk.core.SelectionCommandInput.cast(args.input)
+                )
+                _refresh_route_options()
+            finally:
+                _loading = False
         elif changed_id in (INPUT_PIN1, INPUT_PIN2):
-            _rebuild_awg_dropdown()
-            _update_preview()
-            _update_status()
+            _loading = True
+            try:
+                _refresh_route_options()
+            finally:
+                _loading = False
         elif changed_id == INPUT_AWG:
-            _update_dia()
+            _loading = True
+            try:
+                _update_dia()
+            finally:
+                _loading = False
     except Exception:
         ptutil.handle_error(f"{CMD_NAME} inputChanged")
+
+
+def _refresh_route_options():
+    """Recompute the AWG options, recommended diameter, preview, and status."""
+    _rebuild_awg_dropdown()
+    _update_preview()
+    _update_status()
 
 
 def _on_connector_changed(side: int, sel):
@@ -619,10 +641,23 @@ def _occ_path(occ) -> str:
 # ---------------------------------------------------------------------------
 # Dropdowns, info, status, preview
 # ---------------------------------------------------------------------------
-def _clear_list_items(dropdown):
-    """Empty a dropdown (ListItems has no documented clear; delete items)."""
-    while dropdown.listItems.count > 0:
-        dropdown.listItems.item(0).deleteMe()
+def _set_list_items(dropdown, names: list):
+    """Replace a dropdown's items with *names* (first item selected).
+
+    Idempotent: when the list already matches, nothing is touched (so an
+    event Fusion re-delivers after a rebuild converges instead of churning,
+    and a user's selection within an unchanged list survives). Clearing uses
+    the documented ListItems.clear() - a prior delete-first-item loop here
+    could spin forever when Fusion refused to delete the selected item,
+    hard-hanging the UI thread.
+    """
+    items = dropdown.listItems
+    current = [items.item(index).name for index in range(items.count)]
+    if current == names:
+        return
+    items.clear()
+    for index, name in enumerate(names):
+        items.add(name, index == 0)
 
 
 def _sorted_pins(wires: dict) -> list:
@@ -634,39 +669,31 @@ def _sorted_pins(wires: dict) -> list:
 
 
 def _rebuild_pin_dropdown(side: int):
-    global _loading
+    """Refresh a side's pin list from its connector data (idempotent)."""
     dropdown = _ui_refs.get(SIDE_PIN_KEYS[side])
     if dropdown is None:
         return
-    _loading = True
-    try:
-        _clear_list_items(dropdown)
-        data = _sides[side]
-        if data and data["wires"]:
-            for index, pin in enumerate(_sorted_pins(data["wires"])):
-                dropdown.listItems.add(pin, index == 0)
-    finally:
-        _loading = False
+    data = _sides[side]
+    names = _sorted_pins(data["wires"]) if data and data["wires"] else []
+    _set_list_items(dropdown, names)
 
 
 def _rebuild_awg_dropdown():
-    global _loading
+    """Refresh the AWG options from the two selected wires (idempotent)."""
     dropdown = _ui_refs.get("awg")
     if dropdown is None:
         return
     wire_a, wire_b = _selected_wire(0), _selected_wire(1)
-    _loading = True
-    try:
-        _clear_list_items(dropdown)
-        if wire_a and wire_b:
-            sizes = logic.awg_overlap(
+    names = []
+    if wire_a and wire_b:
+        names = [
+            str(size)
+            for size in logic.awg_overlap(
                 (wire_a["awg_min"], wire_a["awg_max"]),
                 (wire_b["awg_min"], wire_b["awg_max"]),
             )
-            for index, size in enumerate(sizes):
-                dropdown.listItems.add(str(size), index == 0)
-    finally:
-        _loading = False
+        ]
+    _set_list_items(dropdown, names)
     _update_dia()
 
 
