@@ -9,6 +9,7 @@
 #  AUTODESK, INC. DOES NOT WARRANT THAT THE OPERATION OF THE PROGRAM WILL BE
 #  UNINTERRUPTED OR ERROR FREE.
 
+import datetime
 import os
 import subprocess
 import time
@@ -26,9 +27,52 @@ try:
 
     DEBUG = getattr(config, "DEBUG", False)
     PERF_TRACE = getattr(config, "PERF_TRACE", False)
+    _CACHE_PATH = getattr(config, "CACHE_PATH", "")
 except Exception:
     DEBUG = False
     PERF_TRACE = False
+    _CACHE_PATH = ""
+
+# Persistent debug log (only written when DEBUG is on). The Text Commands
+# window is not saved to disk and Fusion's own app log only receives our
+# error-level entries, so without this file there is nothing to inspect
+# after the fact.
+_DEBUG_LOG_MAX_BYTES = 5_000_000
+
+
+def debug_log_path() -> str:
+    """Path of the PowerTools debug log file ("" when no cache path)."""
+    if not _CACHE_PATH:
+        return ""
+    return os.path.join(_CACHE_PATH, "powertools-debug.log")
+
+
+def _level_tag(level) -> str:
+    try:
+        if level == adsk.core.LogLevels.ErrorLogLevel:
+            return "ERROR"
+        if level == adsk.core.LogLevels.WarningLogLevel:
+            return "WARN"
+    except Exception:
+        pass
+    return "INFO"
+
+
+def _append_debug_file(message: str, level) -> None:
+    """Append one timestamped line to the debug log (size-capped)."""
+    path = debug_log_path()
+    if not path:
+        return
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    mode = "a"
+    try:
+        if os.path.getsize(path) > _DEBUG_LOG_MAX_BYTES:
+            mode = "w"  # start over rather than grow without bound
+    except OSError:
+        pass  # file does not exist yet
+    stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(path, mode, encoding="utf-8") as handle:
+        handle.write(f"{stamp} [{_level_tag(level)}] {message}\n")
 
 
 def log(
@@ -54,6 +98,13 @@ def log(
 
     # Goes to the attached debugger / IDE stdout only.
     print(message)
+
+    # Persist every entry to the PowerTools debug log file so diagnostics
+    # survive the session (the Text Commands window is not saved to disk).
+    try:
+        _append_debug_file(message, level)
+    except Exception:
+        pass  # the logger must never take the add-in down with it
 
     # Errors are also persisted to the Fusion log file.
     if level == adsk.core.LogLevels.ErrorLogLevel:
