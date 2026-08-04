@@ -62,13 +62,30 @@ def test_summarize_cable_longest_wire_sets_cable_length() -> None:
         "3": pytest.approx(35.0),
     }
     assert entry["cable_cm"] == pytest.approx(36.5)
-    assert entry["longest_pin"] == "2"
+    # No labels supplied - they fall back to the pins.
+    assert entry["longest_label"] == "2"
+    assert [wire["label"] for wire in entry["wires"]] == ["1", "2", "3"]
+
+
+def test_summarize_cable_prefers_wire_labels_over_pins() -> None:
+    entry = logic.summarize_cable(
+        {
+            "name": "HARN1",
+            "jacket_cm": 30.0,
+            "wires": [
+                {"pin": "1", "label": "J3.1", "extra_cm": 4.0},
+                {"pin": "1", "label": "J4.1", "extra_cm": 6.5},
+            ],
+        }
+    )
+    assert [wire["label"] for wire in entry["wires"]] == ["J3.1", "J4.1"]
+    assert entry["longest_label"] == "J4.1"
 
 
 def test_summarize_cable_without_wires_falls_back_to_jacket() -> None:
     entry = logic.summarize_cable({"name": "H", "jacket_cm": 12.0, "wires": []})
     assert entry["cable_cm"] == pytest.approx(12.0)
-    assert entry["longest_pin"] == ""
+    assert entry["longest_label"] == ""
 
 
 def test_summarize_routes_rollup() -> None:

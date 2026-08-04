@@ -236,7 +236,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
         if is_cable:
             result = builder.build_cable(design, tuple(resolution["ends"]), params)
-            wire_count = len(resolution["ends"][0][1])
+            wire_count = len(resolution["ends"][0])
             headline = f"Cable {params['name']} rebuilt ({wire_count} wires).\n\n"
             sizes = (
                 f"\nGauge: {params['awg']} AWG, wire {params['od_mm']:.3f} mm, "
@@ -333,7 +333,8 @@ def _resolve_route(design, route) -> dict:
     "hows": [(comp_name, label, how)], "problems": [str]}`` - empty
     problems and two ends means the route is rebuildable. For single
     routes each end is ``(side_data, wire)``; for cable routes each end is
-    ``(side_data, [wire, ...])`` in the stored (paired) order.
+    a list of ``(side_data, wire)`` pairs in the stored (paired) order -
+    an end may span several connectors, each resolved on its own.
     """
     payload = route["payload"]
     kind = payload.get("kind", route_logic.KIND_SINGLE)
@@ -365,6 +366,11 @@ def _resolve_route(design, route) -> dict:
             params["colors"] = [
                 route_logic.normalize_wire_color(color) for color in stored_colors
             ]
+        # Rebuild with the original cable-unique wire labels when stored
+        # (the builder falls back to end-A pins on a count mismatch).
+        stored_labels = payload.get("wire_labels")
+        if isinstance(stored_labels, list) and stored_labels:
+            params["labels"] = [str(label) for label in stored_labels]
     else:
         params["color"] = route_logic.normalize_wire_color(payload.get("color"))
 
@@ -398,45 +404,62 @@ def _resolve_route(design, route) -> dict:
     used_paths: set = set()
     for end in ends_payload:
         label = _end_label(end, kind)
-        _mark_token_matches(design, candidates, candidate_paths, end)
-        index, how = logic.choose_end_occurrence(candidates, end)
-        if index is None:
-            if how == logic.REASON_AMBIGUOUS:
-                problems.append(
-                    f"{label}: several instances of that connector exist - "
-                    "cannot tell which one this route used."
-                )
-            else:
-                problems.append(f"{label}: connector occurrence not found.")
-            continue
-        occ = candidate_occs[index]
-        path = builder.occ_path(occ)
-        if path in used_paths:
-            problems.append("Both ends resolve to the same occurrence.")
-            continue
-        used_paths.add(path)
-        side = builder.read_connector(occ)
-        if side["error"]:
-            problems.append(f"{label}: {side['error']}")
-            continue
         if kind == route_logic.KIND_CABLE:
-            if side["cable"] is None:
-                problems.append(
-                    f"{label}: '{side['comp_name']}' has no cable point - "
-                    "re-run Define Wires on the connector part."
+            entries = route_logic.end_connectors(end)
+            sides: list = []
+            failed = False
+            for number, entry in enumerate(entries, start=1):
+                entry_label = (
+                    f"{label}, connector {number}" if len(entries) > 1 else label
                 )
+                resolved = _resolve_connector(
+                    design,
+                    entry,
+                    entry_label,
+                    (candidates, candidate_occs, candidate_paths),
+                    used_paths,
+                    problems,
+                )
+                if resolved is None:
+                    failed = True
+                    continue
+                side, how = resolved
+                if side["cable"] is None:
+                    problems.append(
+                        f"{entry_label}: '{side['comp_name']}' has no cable "
+                        "point - re-run Define Wires on the connector part."
+                    )
+                    failed = True
+                    continue
+                sides.append(side)
+                hows.append((side["comp_name"], entry_label, how))
+            if failed or not sides:
                 continue
-            records, missing = logic.match_cable_wires(
-                side["wires"], end.get("wire_ids"), end.get("pins")
+            pairs, missing = logic.match_multi_cable_wires(
+                [side["wires"] for side in sides],
+                end.get("wire_ids"),
+                end.get("pins"),
+                end.get("wire_connectors"),
             )
             if missing:
                 problems.append(
                     f"{label}: wire(s) {', '.join(missing)} no longer "
-                    f"defined on '{side['comp_name']}'."
+                    "defined on the resolved connector(s)."
                 )
                 continue
-            ends.append((side, records))
+            ends.append([(sides[index], record) for index, record in pairs])
         else:
+            resolved = _resolve_connector(
+                design,
+                end,
+                label,
+                (candidates, candidate_occs, candidate_paths),
+                used_paths,
+                problems,
+            )
+            if resolved is None:
+                continue
+            side, how = resolved
             wire = logic.find_wire(
                 side["wires"],
                 str(end.get("wire_id") or ""),
@@ -448,14 +471,19 @@ def _resolve_route(design, route) -> dict:
                 )
                 continue
             ends.append((side, wire))
-        hows.append((side["comp_name"], label, how))
+            hows.append((side["comp_name"], label, how))
 
     if kind == route_logic.KIND_CABLE and len(ends) == 2:
-        count_a, count_b = len(ends[0][1]), len(ends[1][1])
+        count_a, count_b = len(ends[0]), len(ends[1])
         if count_a != count_b or count_a == 0:
             problems.append(
                 f"Resolved wire counts differ ({count_a} vs {count_b}) - "
                 "cable pairing cannot be reconstructed."
+            )
+        elif _cable_anchors_degenerate(ends):
+            problems.append(
+                "The two cable end anchor points coincide - the jacket "
+                "cannot be rebuilt."
             )
     if len(ends) != 2 and not problems:
         problems.append("Could not resolve both ends of the route.")
@@ -466,6 +494,61 @@ def _resolve_route(design, route) -> dict:
         "hows": hows,
         "problems": problems,
     }
+
+
+def _resolve_connector(design, entry, label, candidate_data, used_paths, problems):
+    """One stored connector identity -> ``(side_data, how)`` or None.
+
+    *entry* carries ``connector_id``/``occ_token`` (a whole legacy end or
+    one entry of a multi-connector end). Every occurrence may serve only
+    one connector of the route (*used_paths*).
+    """
+    candidates, candidate_occs, candidate_paths = candidate_data
+    _mark_token_matches(design, candidates, candidate_paths, entry)
+    index, how = logic.choose_end_occurrence(candidates, entry)
+    if index is None:
+        if how == logic.REASON_AMBIGUOUS:
+            problems.append(
+                f"{label}: several instances of that connector exist - "
+                "cannot tell which one this route used."
+            )
+        else:
+            problems.append(f"{label}: connector occurrence not found.")
+        return None
+    occ = candidate_occs[index]
+    path = builder.occ_path(occ)
+    if path in used_paths:
+        problems.append(
+            f"{label}: resolves to a connector occurrence already used by "
+            "another end of this route."
+        )
+        return None
+    used_paths.add(path)
+    side = builder.read_connector(occ)
+    if side["error"]:
+        problems.append(f"{label}: {side['error']}")
+        return None
+    return side, how
+
+
+def _cable_anchors_degenerate(ends) -> bool:
+    """True when the two resolved cable end anchors would coincide."""
+    worlds = []
+    for pairs in ends:
+        distinct: dict = {}
+        for side, _ in pairs:
+            distinct.setdefault(side["path"], side)
+        worlds.append(
+            [
+                (
+                    side["cable"]["world"].x,
+                    side["cable"]["world"].y,
+                    side["cable"]["world"].z,
+                )
+                for side in distinct.values()
+            ]
+        )
+    return bool(route_logic.cable_end_anchors(worlds[0], worlds[1])["degenerate"])
 
 
 def _mark_token_matches(design, candidates: list, paths: list, end: dict):
@@ -501,7 +584,11 @@ def _end_label(end: dict, kind: str) -> str:
     """Display label for one stored route end ("Pin 4" / "Pins 1, 2, 3")."""
     if kind == route_logic.KIND_CABLE:
         pins = ", ".join(str(pin) for pin in end.get("pins") or [])
-        return f"Pins {pins}" if pins else "Pins ?"
+        label = f"Pins {pins}" if pins else "Pins ?"
+        connector_count = len(route_logic.end_connectors(end))
+        if connector_count > 1:
+            label += f" ({connector_count} connectors)"
+        return label
     return f"Pin {end.get('pin') or '?'}"
 
 

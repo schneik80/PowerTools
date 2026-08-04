@@ -573,7 +573,10 @@ def _execute_cable(design, name: str, awg: int, sheath_dia_cm: float):
     colors = logic.assign_wire_colors(len(wires_a))
     result = builder.build_cable(
         design,
-        ((_sides[0], wires_a), (_sides[1], wires_b)),
+        (
+            [(_sides[0], wire) for wire in wires_a],
+            [(_sides[1], wire) for wire in wires_b],
+        ),
         {
             "name": name,
             "awg": awg,

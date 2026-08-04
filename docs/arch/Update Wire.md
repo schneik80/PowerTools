@@ -22,7 +22,7 @@ redefined, or includes that fell back to baked positions.
    `tests/test_updatewire_logic.py`):
    - Candidates: every occurrence in the design except the wire's own tree
      (filtered by `fullPathName` prefix).
-   - Each stored end resolves by **entity token** first
+   - Each stored connector resolves by **entity token** first
      (disambiguates multiple instances of one connector part), else by
      **unique connector id** (token died — document copied or connector
      re-inserted). An ambiguous connector-id match (several instances, dead
@@ -30,13 +30,21 @@ redefined, or includes that fell back to baked positions.
      `Design.findEntityByToken` and matched to candidates by occurrence
      path — **never by comparing token strings**, which the API documents
      as invalid (the same entity can return different token strings over
-     time).
+     time). A cable end may list SEVERAL connectors
+     (`routing.end_connectors` normalizes legacy single-connector ends to
+     a one-entry list); each entry runs the ladder on its own, and every
+     resolved occurrence may serve only one connector of the route
+     (path-set disjointness within and across ends).
    - The wire record on the resolved connector is found by **wire id**,
      falling back to **pin** (wire redefined by Define Wires). Cable ends
-     resolve their whole stored wire list the same way in stored order
-     (`logic.match_cable_wires` — original pairing survives pin renames),
-     require the connector's cable point, and both ends must resolve
-     matching wire counts.
+     resolve their whole stored wire list the same way in stored order —
+     `logic.match_cable_wires` for legacy ends,
+     `logic.match_multi_cable_wires` when `wire_connectors` maps each wire
+     to its own connector (original pairing survives pin renames) —
+     require every connector's cable point, and both ends must resolve
+     matching wire counts with non-coincident end anchors
+     (`routing.cable_end_anchors`). Stored `wire_labels` are passed back
+     to the builder so rebuilt components keep their names.
    - Stored name/gauge/diameter are validated by
      `logic.coerce_route_params` (plus `logic.coerce_cable_od_mm` for
      cables); damaged payloads refuse to rebuild.

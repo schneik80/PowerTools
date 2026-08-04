@@ -178,11 +178,15 @@ def test_cable_group_pairs_row_by_row_and_flips_reversed_rows() -> None:
     (group,) = result["groups"]
     assert group["kind"] == "cable"
     assert group["name"] == "HARN1"
-    assert group["from_ref"] == "J1"
-    assert group["to_ref"] == "J3"
+    assert group["from_refs"] == ["J1"]
+    assert group["to_refs"] == ["J3"]
     assert [(w["from_pin"], w["to_pin"]) for w in group["wires"]] == [
         ("1", "5"),
         ("2", "6"),
+    ]
+    assert [(w["from_ref"], w["to_ref"]) for w in group["wires"]] == [
+        ("J1", "J3"),
+        ("J1", "J3"),
     ]
     assert group["cable_od_mm"] == pytest.approx(6.2)
     assert group["keys"][1] == connectivity.route_key("J1", "2", "J3", "6")
@@ -214,8 +218,9 @@ def test_cable_group_defaults_colors_from_palette_sequence() -> None:
             (
                 "HARN1,1,J1,1,J3,1,,24,,,",
                 "HARN1,2,J1,2,J4,2,,24,,,",
+                "HARN1,3,J3,2,J4,3,,24,,,",  # bridges end B - unbuildable
             ),
-            "the cable runs",
+            "same end of the cable",
         ),
         (
             (
@@ -229,7 +234,7 @@ def test_cable_group_defaults_colors_from_palette_sequence() -> None:
                 "HARN1,1,J1,1,J3,1,,24,,,",
                 "HARN1,2,J1,1,J3,2,,24,,,",
             ),
-            "pin is used by two rows",
+            "is used by two rows",
         ),
         (
             (
@@ -244,6 +249,76 @@ def test_cable_group_validation_problems(rows, needle) -> None:
     result = connectivity.parse_wire_list(_csv(*rows))
     assert result["groups"] == []
     assert any(needle in problem for problem in result["problems"])
+
+
+def test_cable_group_spans_connectors_on_one_end() -> None:
+    result = connectivity.parse_wire_list(
+        _csv(
+            "HARN1,,J1,1,J3,5,red,24,,6.2,",
+            "HARN1,,J1,2,J4,1,black,24,,,",
+        )
+    )
+    assert result["problems"] == []
+    (group,) = result["groups"]
+    assert group["from_refs"] == ["J1"]
+    assert group["to_refs"] == ["J3", "J4"]
+    assert [
+        (w["from_ref"], w["from_pin"], w["to_ref"], w["to_pin"]) for w in group["wires"]
+    ] == [
+        ("J1", "1", "J3", "5"),
+        ("J1", "2", "J4", "1"),
+    ]
+    assert group["keys"] == [
+        connectivity.route_key("J1", "1", "J3", "5"),
+        connectivity.route_key("J1", "2", "J4", "1"),
+    ]
+    # End A is one connector, so default labels stay bare pins.
+    assert [w["label"] for w in group["wires"]] == ["1", "2"]
+
+
+def test_cable_group_flips_row_onto_the_seeded_ends() -> None:
+    result = connectivity.parse_wire_list(
+        _csv(
+            "HARN1,,J1,1,J3,5,,24,,,",
+            "HARN1,,J4,1,J1,2,,24,,,",  # written B -> A; must flip
+        )
+    )
+    assert result["problems"] == []
+    (group,) = result["groups"]
+    assert group["from_refs"] == ["J1"]
+    assert group["to_refs"] == ["J3", "J4"]
+    wire = group["wires"][1]
+    assert (wire["from_ref"], wire["from_pin"]) == ("J1", "2")
+    assert (wire["to_ref"], wire["to_pin"]) == ("J4", "1")
+
+
+def test_cable_group_scopes_pin_uniqueness_per_connector() -> None:
+    result = connectivity.parse_wire_list(
+        _csv(
+            "HARN1,,J1,1,J3,1,,24,,,",
+            "HARN1,,J1,2,J4,1,,24,,,",  # pin 1 again, but on J4 - legal
+        )
+    )
+    assert result["problems"] == []
+    (group,) = result["groups"]
+    assert [(w["to_ref"], w["to_pin"]) for w in group["wires"]] == [
+        ("J3", "1"),
+        ("J4", "1"),
+    ]
+
+
+def test_cable_group_qualifies_default_labels_on_multi_connector_end_a() -> None:
+    result = connectivity.parse_wire_list(
+        _csv(
+            "HARN1,,J1,1,J3,1,,24,,,",
+            "HARN1,,J2,1,J3,2,,24,,,",
+        )
+    )
+    assert result["problems"] == []
+    (group,) = result["groups"]
+    assert group["from_refs"] == ["J1", "J2"]
+    assert group["to_refs"] == ["J3"]
+    assert [w["label"] for w in group["wires"]] == ["J1.1", "J2.1"]
 
 
 def test_groups_keep_file_order_and_bad_groups_do_not_block_good_ones() -> None:

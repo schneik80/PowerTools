@@ -184,8 +184,12 @@ def _build_group(design, group, designators, existing_keys, side_cache, problems
     cannot be built.
     """
     label = f"{'Cable' if group['kind'] == 'cable' else 'Wire'} '{group['name']}'"
-    sides = []
-    for ref in (group["from_ref"], group["to_ref"]):
+    if group["kind"] == "cable":
+        refs = list(group["from_refs"]) + list(group["to_refs"])
+    else:
+        refs = [group["from_ref"], group["to_ref"]]
+    sides_by_ref: dict = {}
+    for ref in refs:
         occ = designators.get(ref.strip().lower())
         if occ is None:
             problems.append(f"{label}: no connector has the designator '{ref}'.")
@@ -194,10 +198,13 @@ def _build_group(design, group, designators, existing_keys, side_cache, problems
         if side["error"]:
             problems.append(f"{label}: connector '{ref}': {side['error']}")
             return None
-        sides.append(side)
+        sides_by_ref[ref.strip().lower()] = side
 
     if group["kind"] == "cable":
-        return _build_cable_group(design, group, sides, existing_keys, problems, label)
+        return _build_cable_group(
+            design, group, sides_by_ref, existing_keys, problems, label
+        )
+    sides = [sides_by_ref[ref.strip().lower()] for ref in refs]
     return _build_single_group(design, group, sides, existing_keys, problems, label)
 
 
@@ -226,8 +233,8 @@ def _build_single_group(design, group, sides, existing_keys, problems, label):
     return result
 
 
-def _build_cable_group(design, group, sides, existing_keys, problems, label):
-    """Preflight and build one cable group."""
+def _build_cable_group(design, group, sides_by_ref, existing_keys, problems, label):
+    """Preflight and build one cable group (its ends may span connectors)."""
     matched = [key in existing_keys for key in group["keys"]]
     if all(matched):
         return "existing"
@@ -237,38 +244,54 @@ def _build_cable_group(design, group, sides, existing_keys, problems, label):
             "overlap manually (nothing was built)."
         )
         return None
-    side_a, side_b = sides
-    for ref, side in ((group["from_ref"], side_a), (group["to_ref"], side_b)):
-        if side["cable"] is None:
+    for ref in list(group["from_refs"]) + list(group["to_refs"]):
+        if sides_by_ref[ref.strip().lower()]["cable"] is None:
             problems.append(
                 f"{label}: connector '{ref}' has no cable point - re-run "
                 "Define Wires on the part."
             )
             return None
-    wires_a = []
-    wires_b = []
+    end_a = []
+    end_b = []
     for wire in group["wires"]:
-        wire_a = _pin_wire(side_a, group["from_ref"], wire["from_pin"], problems, label)
-        wire_b = _pin_wire(side_b, group["to_ref"], wire["to_pin"], problems, label)
+        side_a = sides_by_ref[wire["from_ref"].strip().lower()]
+        side_b = sides_by_ref[wire["to_ref"].strip().lower()]
+        wire_a = _pin_wire(side_a, wire["from_ref"], wire["from_pin"], problems, label)
+        wire_b = _pin_wire(side_b, wire["to_ref"], wire["to_pin"], problems, label)
         if wire_a is None or wire_b is None:
             return None
-        wires_a.append(wire_a)
-        wires_b.append(wire_b)
-    if not _gauge_ok(wires_a + wires_b, group["awg"], problems, label):
+        end_a.append((side_a, wire_a))
+        end_b.append((side_b, wire_b))
+    records = [wire for _, wire in end_a] + [wire for _, wire in end_b]
+    if not _gauge_ok(records, group["awg"], problems, label):
+        return None
+    anchors = route_logic.cable_end_anchors(
+        [_cable_xyz(sides_by_ref[ref.strip().lower()]) for ref in group["from_refs"]],
+        [_cable_xyz(sides_by_ref[ref.strip().lower()]) for ref in group["to_refs"]],
+    )
+    if anchors["degenerate"]:
+        problems.append(f"{label}: the two cable end anchor points coincide.")
         return None
     result = builder.build_cable(
         design,
-        ((side_a, wires_a), (side_b, wires_b)),
+        (end_a, end_b),
         {
             "name": group["name"],
             "awg": group["awg"],
             "od_mm": group["od_mm"],
             "cable_od_mm": group["cable_od_mm"],
             "colors": [wire["color"] for wire in group["wires"]],
+            "labels": [wire["label"] for wire in group["wires"]],
         },
     )
     existing_keys.update(group["keys"])
     return result
+
+
+def _cable_xyz(side) -> tuple:
+    """A connector's cable-point world position as an xyz tuple."""
+    point = side["cable"]["world"]
+    return (point.x, point.y, point.z)
 
 
 def _pin_wire(side, ref, pin, problems, label):
@@ -329,23 +352,35 @@ def _existing_route_keys(design, connectors) -> set:
         ends = payload.get("ends") or []
         if len(ends) != 2:
             continue
-        refs = []
+        end_refs = []
         for end in ends:
-            occ = builder.resolve_end_occurrence(design, end, connectors)
-            refs.append(builder.occurrence_designator(occ) if occ else "")
-        if not refs[0] or not refs[1]:
+            refs = []
+            for entry in route_logic.end_connectors(end):
+                occ = builder.resolve_end_occurrence(design, entry, connectors)
+                refs.append(builder.occurrence_designator(occ) if occ else "")
+            end_refs.append(refs)
+        if not all(all(refs) for refs in end_refs):
             continue  # unresolved or unassigned - cannot be matched
         if payload.get("kind") == route_logic.KIND_CABLE:
             pins_a = [str(pin) for pin in ends[0].get("pins") or []]
             pins_b = [str(pin) for pin in ends[1].get("pins") or []]
-            for pin_a, pin_b in zip(pins_a, pins_b, strict=False):
-                keys.add(connectivity.route_key(refs[0], pin_a, refs[1], pin_b))
+            wc_a = route_logic.end_wire_connectors(ends[0], len(pins_a))
+            wc_b = route_logic.end_wire_connectors(ends[1], len(pins_b))
+            for index, (pin_a, pin_b) in enumerate(zip(pins_a, pins_b, strict=False)):
+                keys.add(
+                    connectivity.route_key(
+                        end_refs[0][wc_a[index]],
+                        pin_a,
+                        end_refs[1][wc_b[index]],
+                        pin_b,
+                    )
+                )
         else:
             keys.add(
                 connectivity.route_key(
-                    refs[0],
+                    end_refs[0][0],
                     str(ends[0].get("pin") or ""),
-                    refs[1],
+                    end_refs[1][0],
                     str(ends[1].get("pin") or ""),
                 )
             )

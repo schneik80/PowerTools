@@ -12,12 +12,13 @@ The Import Connectivity command reads a connectivity **CSV wire list** (written 
 - **Tolerant** — an invalid row or cable group is reported and skipped; it never blocks the rest of the file. The summary lists everything built, skipped, and refused, with reasons.
 - Connectors are matched by their **reference designators** ([Assign Designators](./Assign%20Designators.md)).
 - Cable rows pair pins **row by row** — the pairing you write is the pairing that gets built.
+- A cable's rows may span **more than two connectors** (e.g. J1 breaking out to J3 and J4). Each row names its own From/To; the rows are split into the cable's two ends automatically. A multi-connector end fans its wires out to an **implied breakout point** computed between the connectors — that point is not linked to geometry, so after moving those connectors run [Update Wire](./Update%20Wire.md) to recompute it.
 
 ## What is validated per row/cable
 
 - Both designators exist (and are unique) in the assembly.
 - Every referenced pin is defined on its connector, and the gauge is inside every wire's allowed AWG range.
-- Cables: at least two rows, one gauge, both connectors have cable points, no pin used twice on one side.
+- Cables: at least two rows, one gauge, every involved connector has a cable point, no (connector, pin) used twice, no row connecting two connectors on the same end, and unique wire labels (blank labels default to the From pin, prefixed like `J1.1` when several connectors share that end).
 - Colors are normalized to the 12 standard wire colors (blank = default for single wires, the standard sequence for cable wires); blank diameters use the standard recommendations.
 
 ## Prerequisites

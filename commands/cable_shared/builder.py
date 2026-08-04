@@ -172,7 +172,7 @@ def _route_payload_of(comp):
         return None  # tolerant read - not a routed assembly
 
 
-def _stamp_member(comp, role: str, pin: str | None = None):
+def _stamp_member(comp, role: str, pin: str | None = None, label: str | None = None):
     """Stamp a member attribute so reports can identify this child by data.
 
     Best-effort: a stamp failure must never fail the build - the Wire
@@ -182,7 +182,7 @@ def _stamp_member(comp, role: str, pin: str | None = None):
         comp.attributes.add(
             schema.ATTR_GROUP,
             schema.MEMBER_NAME,
-            schema.build_member_payload(role, pin),
+            schema.build_member_payload(role, pin, label),
         )
     except Exception:
         ptutil.log(f"{_LOG_NAME}: could not stamp the {role} member attribute.")
@@ -330,16 +330,19 @@ def member_child_length_cm(comp, role: str, name_prefix: str) -> float:
 
 
 def measure_cable_wires(comp, payload) -> list:
-    """Per-wire out-of-jacket lengths, labeled with the most reliable pin.
+    """Per-wire out-of-jacket lengths, labeled as reliably as possible.
 
     Children are found by their stamped member attribute (role "wire",
-    which also carries the pin - immune to renames and Fusion's uniqueness
-    suffixes). For assemblies built before members were stamped, the
-    fallbacks are the old ladder: name-prefix discovery, pins by creation
-    order against the payload (build order = paired pin order), then
-    component-name parsing when the counts disagree.
+    which also carries the pin and - since multi-connector ends made pins
+    ambiguous - the cable-unique display label; immune to renames and
+    Fusion's uniqueness suffixes). For assemblies built before members were
+    stamped, the fallbacks are the old ladder: name-prefix discovery, pins
+    by creation order against the payload (build order = paired pin order),
+    then component-name parsing when the counts disagree. The label ladder
+    is stamped label, stamped pin, payload ``wire_labels``, then whatever
+    the pin ladder produced.
     """
-    children = []  # (component, stamped pin or None)
+    children = []  # (component, stamped pin or None, stamped label or None)
     try:
         for index in range(comp.occurrences.count):
             child = comp.occurrences.item(index)
@@ -347,19 +350,22 @@ def measure_cable_wires(comp, payload) -> list:
             if member is not None:
                 if member.get("role") == schema.MEMBER_WIRE:
                     pin = str(member.get("pin") or "")
-                    children.append((child.component, pin or None))
+                    label = str(member.get("label") or "")
+                    children.append((child.component, pin or None, label or None))
                 continue
             if child.component.name.startswith("Wire "):
-                children.append((child.component, None))
+                children.append((child.component, None, None))
     except Exception:
         ptutil.log(f"{_LOG_NAME}: cable child scan failed on {comp.name}.")
     payload_pins = []
     ends = payload.get("ends") or []
     if ends and isinstance(ends[0], dict):
         payload_pins = [str(pin) for pin in ends[0].get("pins") or []]
+    payload_labels = [str(label) for label in payload.get("wire_labels") or []]
     use_payload = len(payload_pins) == len(children)
+    use_labels = len(payload_labels) == len(children)
     wires = []
-    for index, (child, stamped_pin) in enumerate(children):
+    for index, (child, stamped_pin, stamped_label) in enumerate(children):
         if stamped_pin:
             pin = stamped_pin
         elif use_payload:
@@ -368,7 +374,17 @@ def measure_cable_wires(comp, payload) -> list:
             pin = child.name[len("Wire ") :]
         else:
             pin = child.name
-        wires.append({"pin": pin, "extra_cm": own_curve_length_cm(child)})
+        if stamped_label:
+            label = stamped_label
+        elif stamped_pin:
+            label = stamped_pin
+        elif use_labels:
+            label = payload_labels[index]
+        else:
+            label = pin
+        wires.append(
+            {"pin": pin, "label": label, "extra_cm": own_curve_length_cm(child)}
+        )
     return wires
 
 
@@ -508,30 +524,55 @@ def build_cable(design, ends, params) -> dict:
     """Build a complete multi-conductor cable assembly.
 
     Tree: a ``Cable <name>`` component at the root owning the jacket body
-    (cable point to cable point), with one nested ``Wire <pin>`` component
+    (end anchor to end anchor), with one nested ``Wire <label>`` component
     per paired wire holding its 4 bodies (2 conductor stubs + 2 sheathed
-    end segments from strip via exit to the cable point).
+    end segments from strip via exit to the end's anchor point).
 
     Args:
         design: The active parametric design.
-        ends: Two ``(side_data, wires)`` tuples - side_data from
-            :func:`read_connector` (must carry a ``cable`` point), wires an
-            equal-length list of its wire records in paired (pin) order.
+        ends: Two equal-length lists of ``(side_data, wire_record)`` tuples,
+            index-paired across the lists - side_data from
+            :func:`read_connector` (must carry a ``cable`` point) and may
+            repeat within a list. An end whose entries span ONE connector
+            anchors on its published cable point (associative include); an
+            end spanning SEVERAL connectors gets an IMPLIED static anchor -
+            the centroid of their cable points pulled
+            :data:`routing.CABLE_END_PULL` of the way toward the cable
+            run's midpoint (published anchors never move).
         params: ``{"name": str, "awg": int, "od_mm": float,
             "cable_od_mm": float}`` plus optional ``"colors"`` (wire color
             keys in paired order; auto-assigned from the palette sequence
-            when absent or mismatched).
+            when absent or mismatched) and optional ``"labels"``
+            (cable-unique wire display labels; end-A pins when absent or
+            mismatched).
 
     Returns:
         ``{"spline_fallback": bool, "baked_points": int}`` as for
-        :func:`build_wire`.
+        :func:`build_wire`, plus ``implied_ends`` (how many ends anchor on
+        a computed static point).
     """
-    (side_a, wires_a), (side_b, wires_b) = ends
+    end_a, end_b = ends
     colors = [
         logic.normalize_wire_color(color) for color in (params.get("colors") or [])
     ]
-    if len(colors) != len(wires_a):
-        colors = logic.assign_wire_colors(len(wires_a))
+    if len(colors) != len(end_a):
+        colors = logic.assign_wire_colors(len(end_a))
+    labels = params.get("labels")
+    if not (
+        isinstance(labels, list)
+        and len(labels) == len(end_a)
+        and all(isinstance(label, str) and label for label in labels)
+    ):
+        labels = [wire["pin"] for _, wire in end_a]
+
+    sides_a = _unique_sides([side for side, _ in end_a])
+    sides_b = _unique_sides([side for side, _ in end_b])
+    anchors = logic.cable_end_anchors(
+        [_as_tuple(side["cable"]["world"]) for side in sides_a],
+        [_as_tuple(side["cable"]["world"]) for side in sides_b],
+    )
+    anchor_a = _anchor_spec(anchors["a"], sides_a)
+    anchor_b = _anchor_spec(anchors["b"], sides_b)
     job = {
         "name": params["name"],
         "conductor_dia_cm": logic.conductor_diameter_mm(params["awg"]) / 10.0,
@@ -539,7 +580,12 @@ def build_cable(design, ends, params) -> dict:
         "cable_dia_cm": params["cable_od_mm"] / 10.0,
         "conductor_appearance": _conductor_appearance(design),
         "jacket_appearance": _wire_color_appearance(design, logic.JACKET_COLOR),
-        "result": {"spline_fallback": False, "baked_points": 0, "dropped_tangents": 0},
+        "result": {
+            "spline_fallback": False,
+            "baked_points": 0,
+            "dropped_tangents": 0,
+            "implied_ends": int(anchors["a"]["implied"]) + int(anchors["b"]["implied"]),
+        },
     }
 
     timeline_start = design.timeline.markerPosition
@@ -555,21 +601,32 @@ def build_cable(design, ends, params) -> dict:
     # stale, so the many per-wire includes run with the least prior
     # mutation and the jacket's four (which have a decent guide-point
     # fallback) absorb the most.
-    for index, (wire_a, wire_b) in enumerate(zip(wires_a, wires_b, strict=True)):
+    for index, ((_, wire_a), (_, wire_b)) in enumerate(zip(end_a, end_b, strict=True)):
         wire_occ = cable_comp.occurrences.addNewComponent(identity)
-        wire_occ.component.name = f"Wire {wire_a['pin']}"
-        _stamp_member(wire_occ.component, schema.MEMBER_WIRE, wire_a["pin"])
+        wire_occ.component.name = f"Wire {labels[index]}"
+        _stamp_member(
+            wire_occ.component, schema.MEMBER_WIRE, wire_a["pin"], labels[index]
+        )
         # Each wire's sheathed segments carry its own assigned color.
         job["sheath_appearance"] = _wire_color_appearance(design, colors[index])
         _build_cable_wire(
             wire_occ.component,
             _root_context_occurrence(wire_occ, cable_occ),
-            ((side_a, wire_a), (side_b, wire_b)),
+            ((wire_a, anchor_a), (wire_b, anchor_b)),
+            labels[index],
             job,
         )
 
     # The cable occurrence was created at the root, so it IS root context.
-    _build_jacket(cable_comp, cable_occ, ends, job)
+    _build_jacket(
+        cable_comp,
+        cable_occ,
+        (
+            ([wire for _, wire in end_a], anchor_a),
+            ([wire for _, wire in end_b], anchor_b),
+        ),
+        job,
+    )
 
     cable_comp.attributes.add(
         schema.ATTR_GROUP,
@@ -582,9 +639,10 @@ def build_cable(design, ends, params) -> dict:
                 "od_mm": params["od_mm"],
                 "cable_od_mm": params["cable_od_mm"],
                 "colors": colors,
+                "wire_labels": labels,
                 "ends": [
-                    _cable_route_end(side_a, wires_a),
-                    _cable_route_end(side_b, wires_b),
+                    _payload_end(sides_a, end_a),
+                    _payload_end(sides_b, end_b),
                 ],
             }
         ),
@@ -594,14 +652,39 @@ def build_cable(design, ends, params) -> dict:
     return job["result"]
 
 
-def _cable_route_end(side_data: dict, wires: list) -> dict:
-    """One connector's identity for a cable route attribute payload."""
-    return {
-        "connector_id": side_data["connector_id"],
-        "occ_token": side_data["occ_token"],
-        "pins": [wire["pin"] for wire in wires],
-        "wire_ids": [wire["wire_id"] for wire in wires],
-    }
+def _unique_sides(sides: list) -> list:
+    """Distinct connector side dicts, first appearance first (by occ path)."""
+    seen: dict = {}
+    for side in sides:
+        seen.setdefault(side["path"], side)
+    return list(seen.values())
+
+
+def _anchor_spec(anchor: dict, sides: list) -> dict:
+    """The builder's anchor for one cable end.
+
+    A single-connector end anchors on the published cable point (included,
+    associative); a multi-connector end anchors on the IMPLIED computed
+    position from :func:`routing.cable_end_anchors` - deliberate static
+    geometry, rebuilt by Update Wire after connector moves.
+    """
+    if not anchor["implied"]:
+        return {"kind": "published", "side": sides[0]}
+    return {"kind": "implied", "world": adsk.core.Point3D.create(*anchor["xyz"])}
+
+
+def _payload_end(sides: list, end: list) -> dict:
+    """One end of the route payload from its distinct sides and wire pairs."""
+    index_by_path = {side["path"]: index for index, side in enumerate(sides)}
+    return logic.cable_route_end(
+        [
+            {"connector_id": side["connector_id"], "occ_token": side["occ_token"]}
+            for side in sides
+        ],
+        [wire["pin"] for _, wire in end],
+        [wire["wire_id"] for _, wire in end],
+        [index_by_path[side["path"]] for side, _ in end],
+    )
 
 
 def _route_end(side_data: dict, wire: dict) -> dict:
@@ -708,6 +791,22 @@ def _sketch_point_for(sketch, ref: dict, job):
     except Exception:
         ptutil.log(f"{_LOG_NAME}: could not fix a baked wire point.")
     job["result"]["baked_points"] += 1
+    return point
+
+
+def _static_sketch_point(sketch, world):
+    """A fixed sketch point at a computed world position (never included).
+
+    For IMPLIED cable end anchors - deliberate static geometry (the user
+    accepted Update Wire as the recovery path after connector moves), so
+    NOT counted in the build result's ``baked_points``, which means an
+    associativity failure.
+    """
+    point = sketch.sketchPoints.add(sketch.modelToSketchSpace(world))
+    try:
+        point.isFixed = True
+    except Exception:
+        ptutil.log(f"{_LOG_NAME}: could not fix an implied anchor point.")
     return point
 
 
@@ -854,15 +953,18 @@ def _add_exit_spline(sketch, exit_lines, wires, job):
     return _guide_spline(sketch, guides, job)
 
 
-def _build_jacket(comp, ctx_occ, ends, job):
-    """The cable jacket body: cable point to cable point, at the cable OD.
+def _build_jacket(comp, ctx_occ, end_infos, job):
+    """The cable jacket body: end anchor to end anchor, at the cable OD.
 
-    Fully associative, using the same proven recipe as the single-wire exit
-    spline: per side, a CONSTRUCTION direction line from the first paired
-    wire's included exit point to the included cable point (fully defined
-    by connector geometry), with the jacket spline's ends merged into the
-    cable points and made tangent to those lines. Everything re-solves
-    when a connector moves.
+    A PUBLISHED end (one connector) uses the same proven recipe as the
+    single-wire exit spline: a CONSTRUCTION direction line from the first
+    paired wire's included exit point to the included cable point (fully
+    defined by connector geometry), with the jacket spline's end merged
+    into the cable point and made tangent to that line - it re-solves when
+    the connector moves. An IMPLIED end (several connectors) uses the same
+    recipe on static fixed points: the anchor and the centroid of that
+    end's exit points, trivially satisfiable but deliberately not
+    associative (Update Wire recomputes them).
 
     (An earlier build shaped the jacket with two BAKED interior guide
     points instead. Those are free sketch points at fixed coordinates:
@@ -871,31 +973,39 @@ def _build_jacket(comp, ctx_occ, ends, job):
     jacket pipe's recompute. Baked guides remain only as the constraint
     fallback, which is flagged in the build result.)
     """
-    (side_a, wires_a), (side_b, wires_b) = ends
     name = job["name"]
     sketch = _add_route_sketch(comp, ctx_occ, f"Cable {name} jacket path")
-    cable_a = _sketch_point_for(sketch, _cable_ref(side_a), job)
-    cable_b = _sketch_point_for(sketch, _cable_ref(side_b), job)
-    exit_a = _sketch_point_for(sketch, _point_ref(wires_a[0], schema.ROLE_EXIT), job)
-    exit_b = _sketch_point_for(sketch, _point_ref(wires_b[0], schema.ROLE_EXIT), job)
     lines = sketch.sketchCurves.sketchLines
-    direction_a = lines.addByTwoPoints(exit_a, cable_a)
-    direction_b = lines.addByTwoPoints(exit_b, cable_b)
-    try:
-        direction_a.isConstruction = True
-        direction_b.isConstruction = True
-    except Exception:
-        ptutil.log(f"{_LOG_NAME}: could not mark jacket direction lines.")
+    anchor_points = []
+    direction_lines = []
+    guide_seed = []  # per end: (exits centroid xyz, anchor xyz) for the fallback
+    for wires, anchor in end_infos:
+        exit_centroid = _centroid([w["world"][schema.ROLE_EXIT] for w in wires])
+        if anchor["kind"] == "published":
+            anchor_point = _sketch_point_for(sketch, _cable_ref(anchor["side"]), job)
+            exit_point = _sketch_point_for(
+                sketch, _point_ref(wires[0], schema.ROLE_EXIT), job
+            )
+            anchor_world = anchor["side"]["cable"]["world"]
+        else:
+            anchor_point = _static_sketch_point(sketch, anchor["world"])
+            exit_point = _static_sketch_point(sketch, exit_centroid)
+            anchor_world = anchor["world"]
+        direction = lines.addByTwoPoints(exit_point, anchor_point)
+        try:
+            direction.isConstruction = True
+        except Exception:
+            ptutil.log(f"{_LOG_NAME}: could not mark a jacket direction line.")
+        anchor_points.append(anchor_point)
+        direction_lines.append(direction)
+        guide_seed.append((_as_tuple(exit_centroid), _as_tuple(anchor_world)))
 
     spline = _constrained_spline(
-        sketch, cable_a, cable_b, (direction_a, direction_b), "jacket"
+        sketch, anchor_points[0], anchor_points[1], tuple(direction_lines), "jacket"
     )
     if spline is None:
         guides = logic.spline_guide_points(
-            _as_tuple(_centroid([w["world"][schema.ROLE_EXIT] for w in wires_a])),
-            _as_tuple(side_a["cable"]["world"]),
-            _as_tuple(_centroid([w["world"][schema.ROLE_EXIT] for w in wires_b])),
-            _as_tuple(side_b["cable"]["world"]),
+            guide_seed[0][0], guide_seed[0][1], guide_seed[1][0], guide_seed[1][1]
         )
         spline = _guide_spline(sketch, guides, job)
     path = comp.features.createPath(spline, False)
@@ -908,24 +1018,27 @@ def _build_jacket(comp, ctx_occ, ends, job):
     )
 
 
-def _build_cable_wire(comp, ctx_occ, pair, job):
+def _build_cable_wire(comp, ctx_occ, pair, wire_label, job):
     """One paired wire of a cable: 4 bodies in its own component.
 
     Per end: a bare conductor stub (start to strip, AWG diameter) and a
-    sheathed segment strip -> exit -> cable point built from TWO STRAIGHT
+    sheathed segment strip -> exit -> end anchor built from TWO STRAIGHT
     LINES at the wire OD. Lines between included points are the one
     construction that reliably follows connector moves: every
     constraint-correct fan-out SPLINE recipe (merged ends; coincident
     ends + addTangent; the UI-ideal tangent-handle + collinear) built
     without error, yet a Fusion recompute defect left most splines behind
     when a connector actually moved - see docs/arch/Route Wire.md and git
-    history for the full chain. The mid-run between the cable points is
-    represented by the jacket only.
+    history for the full chain. The mid-run between the end anchors is
+    represented by the jacket only. A published anchor (one connector on
+    that end) is the included cable point as always; an implied anchor
+    (several connectors) is a static fixed point at the shared computed
+    position.
     """
-    (side_a, wire_a), (side_b, wire_b) = pair
-    label = f"Cable {job['name']} wire {wire_a['pin']}"
+    (wire_a, anchor_a), (wire_b, anchor_b) = pair
+    label = f"Cable {job['name']} wire {wire_label}"
     sketch = _add_route_sketch(comp, ctx_occ, f"{label} paths")
-    for suffix, side, wire in (("1", side_a, wire_a), ("2", side_b, wire_b)):
+    for suffix, wire, anchor in (("1", wire_a, anchor_a), ("2", wire_b, anchor_b)):
         start_point = _sketch_point_for(
             sketch, _point_ref(wire, schema.ROLE_START), job
         )
@@ -933,7 +1046,10 @@ def _build_cable_wire(comp, ctx_occ, pair, job):
             sketch, _point_ref(wire, schema.ROLE_STRIP), job
         )
         exit_point = _sketch_point_for(sketch, _point_ref(wire, schema.ROLE_EXIT), job)
-        cable_point = _sketch_point_for(sketch, _cable_ref(side), job)
+        if anchor["kind"] == "published":
+            cable_point = _sketch_point_for(sketch, _cable_ref(anchor["side"]), job)
+        else:
+            cable_point = _static_sketch_point(sketch, anchor["world"])
 
         lines = sketch.sketchCurves.sketchLines
         conductor_line = lines.addByTwoPoints(start_point, strip_point)

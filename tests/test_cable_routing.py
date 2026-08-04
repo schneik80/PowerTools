@@ -360,3 +360,154 @@ def test_result_notes_single_flag_only_mentions_itself() -> None:
     assert "3 point(s)" in notes
     assert "guide points" not in notes
     assert "tangency" not in notes
+
+
+def test_result_notes_implied_ends() -> None:
+    notes = logic.result_notes({"implied_ends": 1})
+    assert "1 cable end(s)" in notes
+    assert "Update Wire" in notes
+    assert logic.result_notes({"implied_ends": 0}) == ""
+
+
+# ---------------------------------------------------------------------------
+# Cable end anchors (multi-connector ends)
+# ---------------------------------------------------------------------------
+def test_centroid_xyz() -> None:
+    assert logic.centroid_xyz([(1.0, 2.0, 3.0)]) == (1.0, 2.0, 3.0)
+    assert logic.centroid_xyz(
+        [(0.0, 0.0, 0.0), (2.0, 4.0, 6.0), (4.0, 2.0, 0.0)]
+    ) == pytest.approx((2.0, 2.0, 2.0))
+    with pytest.raises(ValueError):
+        logic.centroid_xyz([])
+
+
+def test_pull_toward_formula() -> None:
+    point, target = (0.0, 0.0, 0.0), (10.0, 20.0, -10.0)
+    assert logic.pull_toward(point, target, 0.0) == pytest.approx(point)
+    assert logic.pull_toward(point, target, 0.1) == pytest.approx((1.0, 2.0, -1.0))
+    assert logic.pull_toward(point, target, 1.0) == pytest.approx(target)
+
+
+def test_cable_end_pull_fraction_is_ten_percent() -> None:
+    assert logic.CABLE_END_PULL == pytest.approx(0.10)
+
+
+def test_cable_end_anchors_single_connector_ends_stay_published() -> None:
+    anchors = logic.cable_end_anchors([(0.0, 0.0, 0.0)], [(10.0, 0.0, 0.0)])
+    assert anchors["a"] == {"xyz": (0.0, 0.0, 0.0), "implied": False}
+    assert anchors["b"] == {"xyz": (10.0, 0.0, 0.0), "implied": False}
+    assert anchors["degenerate"] is False
+
+
+def test_cable_end_anchors_implied_end_pulled_toward_midpoint() -> None:
+    # End A spans two connectors: centroid (1,0,0); end B is published at
+    # (11,0,0). Midpoint (6,0,0); the implied anchor moves 10% of the way.
+    anchors = logic.cable_end_anchors(
+        [(0.0, 0.0, 0.0), (2.0, 0.0, 0.0)], [(11.0, 0.0, 0.0)]
+    )
+    assert anchors["a"]["implied"] is True
+    assert anchors["a"]["xyz"] == pytest.approx((1.5, 0.0, 0.0))
+    assert anchors["b"]["implied"] is False
+    assert anchors["b"]["xyz"] == pytest.approx((11.0, 0.0, 0.0))
+    assert anchors["degenerate"] is False
+
+
+def test_cable_end_anchors_both_ends_implied() -> None:
+    anchors = logic.cable_end_anchors(
+        [(0.0, 0.0, 0.0), (0.0, 2.0, 0.0)],
+        [(10.0, 0.0, 0.0), (10.0, 2.0, 0.0)],
+    )
+    assert anchors["a"]["xyz"] == pytest.approx((0.5, 1.0, 0.0))
+    assert anchors["b"]["xyz"] == pytest.approx((9.5, 1.0, 0.0))
+    assert anchors["degenerate"] is False
+
+
+def test_cable_end_anchors_degenerate_when_anchors_coincide() -> None:
+    same = [(1.0, 1.0, 1.0)]
+    assert logic.cable_end_anchors(same, list(same))["degenerate"] is True
+    # Two implied ends whose centroids coincide collapse onto the midpoint.
+    crossed = logic.cable_end_anchors(
+        [(0.0, 0.0, 0.0), (2.0, 0.0, 0.0)],
+        [(1.0, 1.0, 0.0), (1.0, -1.0, 0.0)],
+    )
+    assert crossed["degenerate"] is True
+
+
+# ---------------------------------------------------------------------------
+# Route payload end helpers (single vs multi-connector shapes)
+# ---------------------------------------------------------------------------
+def test_cable_route_end_single_connector_keeps_legacy_shape() -> None:
+    end = logic.cable_route_end(
+        [{"connector_id": "A", "occ_token": "t1"}], ["1", "2"], ["w1", "w2"], [0, 0]
+    )
+    assert end == {
+        "connector_id": "A",
+        "occ_token": "t1",
+        "pins": ["1", "2"],
+        "wire_ids": ["w1", "w2"],
+    }
+
+
+def test_cable_route_end_multi_connector_shape() -> None:
+    end = logic.cable_route_end(
+        [{"connector_id": "A", "occ_token": "t1"}, {"connector_id": "B"}],
+        ["1", "1"],
+        ["w1", "w2"],
+        [0, 1],
+    )
+    assert end["connectors"] == [
+        {"connector_id": "A", "occ_token": "t1"},
+        {"connector_id": "B", "occ_token": ""},
+    ]
+    assert end["pins"] == ["1", "1"]
+    assert end["wire_ids"] == ["w1", "w2"]
+    assert end["wire_connectors"] == [0, 1]
+    # No legacy top-level identity: old readers must skip, not misread.
+    assert "connector_id" not in end
+    assert "occ_token" not in end
+
+
+def test_end_connectors_normalizes_both_shapes() -> None:
+    legacy = {"connector_id": "A", "occ_token": "t1", "pins": ["1"]}
+    assert logic.end_connectors(legacy) == [{"connector_id": "A", "occ_token": "t1"}]
+    multi = {"connectors": [{"connector_id": "A"}, {"occ_token": "t2"}, "junk"]}
+    assert logic.end_connectors(multi) == [
+        {"connector_id": "A", "occ_token": ""},
+        {"connector_id": "", "occ_token": "t2"},
+    ]
+    assert logic.end_connectors({}) == [{"connector_id": "", "occ_token": ""}]
+
+
+def test_end_wire_connectors_defaults_and_tolerance() -> None:
+    legacy = {"connector_id": "A"}
+    assert logic.end_wire_connectors(legacy, 3) == [0, 0, 0]
+    multi = {
+        "connectors": [{"connector_id": "A"}, {"connector_id": "B"}],
+        "wire_connectors": [1, "junk", 9, 0, 1],
+    }
+    # junk and out-of-range coerce to 0; extras truncate; short lists pad.
+    assert logic.end_wire_connectors(multi, 4) == [1, 0, 0, 0]
+    assert logic.end_wire_connectors(multi, 6) == [1, 0, 0, 0, 1, 0]
+
+
+def test_route_payload_carries_wire_labels() -> None:
+    cable = schema.parse_payload(
+        logic.build_route_payload(
+            {
+                "kind": logic.KIND_CABLE,
+                "name": "C",
+                "awg": 24,
+                "od_mm": 1.4,
+                "cable_od_mm": 5.0,
+                "wire_labels": ["J3.1", "J4.1"],
+                "ends": [],
+            }
+        )
+    )
+    assert cable is not None
+    assert cable["wire_labels"] == ["J3.1", "J4.1"]
+    legacy = schema.parse_payload(
+        logic.build_route_payload({"name": "L", "awg": 22, "od_mm": 1.5, "ends": []})
+    )
+    assert legacy is not None
+    assert "wire_labels" not in legacy

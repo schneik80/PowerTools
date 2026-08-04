@@ -190,27 +190,31 @@ def _measure_route(design, route) -> dict:
 
 
 def _end_info(design, end: dict, kind: str) -> dict:
-    """Display info for one route end: connector label and pin list.
+    """Display info for one route end: connector label(s) and pin list.
 
-    The connector label prefers the assigned reference designator ("J1")
-    over the occurrence name.
+    Each connector label prefers the assigned reference designator ("J1")
+    over the occurrence name; a cable end spanning several connectors
+    joins them as "J2 + J3".
     """
-    connector = str(end.get("connector_id") or "unknown")
-    token = end.get("occ_token") or ""
-    if token:
-        try:
-            for entity in design.findEntityByToken(token) or []:
-                occ = adsk.fusion.Occurrence.cast(entity)
-                if occ:
-                    connector = builder.occurrence_designator(occ) or occ.name
-                    break
-        except Exception:
-            ptutil.log(f"{CMD_NAME}: connector token lookup failed.")
+    labels = []
+    for entry in route_logic.end_connectors(end):
+        connector = str(entry.get("connector_id") or "unknown")
+        token = entry.get("occ_token") or ""
+        if token:
+            try:
+                for entity in design.findEntityByToken(token) or []:
+                    occ = adsk.fusion.Occurrence.cast(entity)
+                    if occ:
+                        connector = builder.occurrence_designator(occ) or occ.name
+                        break
+            except Exception:
+                ptutil.log(f"{CMD_NAME}: connector token lookup failed.")
+        labels.append(connector)
     if kind == route_logic.KIND_CABLE:
         pins = ", ".join(str(pin) for pin in end.get("pins") or [])
     else:
         pins = str(end.get("pin") or "?")
-    return {"connector": connector, "pins": pins}
+    return {"connector": " + ".join(labels), "pins": pins}
 
 
 # ---------------------------------------------------------------------------
@@ -265,9 +269,9 @@ def _display_single(design, entry: dict) -> dict:
 def _display_cable(design, entry: dict) -> dict:
     rows = [
         {
-            "label": f"Wire {wire['pin']} path",
+            "label": f"Wire {wire['label']} path",
             "value": _len_value(design, wire["path_cm"]),
-            "highlight": wire["pin"] == entry["longest_pin"],
+            "highlight": wire["label"] == entry["longest_label"],
         }
         for wire in entry["wires"]
     ]
@@ -286,8 +290,8 @@ def _display_cable(design, entry: dict) -> dict:
         "rows": rows,
         "total": {
             "label": (
-                f"Cable length (longest wire path, pin {entry['longest_pin']})"
-                if entry["longest_pin"]
+                f"Cable length (longest wire path, wire {entry['longest_label']})"
+                if entry["longest_label"]
                 else "Cable length"
             ),
             "value": _len_value(design, entry["cable_cm"]),

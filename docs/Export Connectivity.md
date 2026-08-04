@@ -21,6 +21,7 @@ Connectors are identified by their **reference designators**; the export refuses
 - Open it in Excel or any text editor. Lines starting with `#` and the `Length` column are ignored on import.
 - Add a **single wire**: leave `Cable` empty, name it in `Wire`, fill both ends, `Color` (one of the 12 standard colors; blank = default), and `Gauge`.
 - Add a **cable**: give every wire row the same `Cable` value — one row per wire, pins paired per row, one gauge for the whole cable. Blank diameters use the standard recommendations.
+- A cable may span **more than two connectors**: each row names its own From/To (e.g. `J1-J3` and `J1-J4` rows in one cable) and the import splits the connectors into the cable's two ends automatically. A row connecting two connectors on the same end is refused.
 
 ## Prerequisites
 

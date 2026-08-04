@@ -209,6 +209,17 @@ def test_member_payload_round_trip_with_pin() -> None:
     assert payload is not None
     assert payload["role"] == "wire"
     assert payload["pin"] == "4"
+    assert "label" not in payload
+
+
+def test_member_payload_round_trip_with_label() -> None:
+    payload = logic.parse_payload(
+        logic.build_member_payload(logic.MEMBER_WIRE, pin="1", label="J3.1")
+    )
+    assert payload is not None
+    assert payload["role"] == "wire"
+    assert payload["pin"] == "1"
+    assert payload["label"] == "J3.1"
 
 
 def test_member_roles_are_distinct() -> None:

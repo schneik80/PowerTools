@@ -18,23 +18,28 @@ jacket's tangency direction lines — is excluded.
 - Single wire: `Conductor` child component (both bare stubs) +
   `Sheath` child component (line + spline + line) = **total wire length**.
 - Cable: the `Cable <name>` component's own sketch = jacket run; each
-  `Wire <pin>` child = that wire's out-of-jacket length (stubs, exit
+  `Wire <label>` child = that wire's out-of-jacket length (stubs, exit
   lines, fan-out lines). A wire's full path = its own length + the
   jacket; the **cable length = max over wires** (`logic.summarize_cable`
   in `commands/wirereport/logic.py`, unit-tested) — every wire in a
   manufactured cable is cut to the same length, so the longest path
-  governs.
+  governs. Wires display by their cable-unique **label** (end-A pin
+  unless the CSV assigned one; pins can collide across a multi-connector
+  end).
 
 Children are identified by the builder's stamped **member attributes**
 (`PowerTools.Cable` / `member`: role conductor/sheath/wire, wire members
-carrying their pin) — immune to renames and Fusion's uniqueness suffixes.
+carrying their pin and label) — immune to renames and Fusion's
+uniqueness suffixes.
 For assemblies built before the stamps existed, the fallbacks are the old
 ladder: name-prefix discovery, pins by creation order against the route
 payload, then component-name parsing; a total miss is logged instead of
 silently reporting a zero length.
 
 Connector display names resolve from the route ends' occurrence tokens
-(`design.findEntityByToken`), falling back to the stored connector id.
+(`design.findEntityByToken`), falling back to the stored connector id. A
+cable end spanning several connectors (`routing.end_connectors`) shows
+them joined, e.g. `J3 + J4`.
 
 Each length travels to the page as **raw cm plus a pre-formatted
 document-units string** (`UnitsManager.formatInternalValue`, mm fallback).

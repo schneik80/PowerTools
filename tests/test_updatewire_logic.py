@@ -200,3 +200,65 @@ def test_match_cable_wires_mismatched_list_lengths() -> None:
     records, missing = logic.match_cable_wires(_CABLE_WIRES, ["w-one", "w-two"], ["1"])
     assert missing == []
     assert [record["pin"] for record in records] == ["1", "2"]
+
+
+# ---------------------------------------------------------------------------
+# match_multi_cable_wires (a cable end spanning several connectors)
+# ---------------------------------------------------------------------------
+_OTHER_WIRES = {
+    "1": {"wire_id": "x-one", "pin": "1"},
+    "5": {"wire_id": "x-five", "pin": "5"},
+}
+
+
+def test_match_multi_cable_wires_interleaved_connectors_keep_stored_order() -> None:
+    pairs, missing = logic.match_multi_cable_wires(
+        [_CABLE_WIRES, _OTHER_WIRES],
+        ["w-three", "x-one", "w-one"],
+        ["3", "1", "1"],
+        [0, 1, 0],
+    )
+    assert missing == []
+    assert [(index, record["wire_id"]) for index, record in pairs] == [
+        (0, "w-three"),
+        (1, "x-one"),
+        (0, "w-one"),
+    ]
+
+
+def test_match_multi_cable_wires_pin_fallback_on_own_connector() -> None:
+    pairs, missing = logic.match_multi_cable_wires(
+        [_CABLE_WIRES, _OTHER_WIRES], ["w-dead", "x-dead"], ["1", "5"], [0, 1]
+    )
+    assert missing == []
+    assert [record["wire_id"] for _, record in pairs] == ["w-one", "x-five"]
+
+
+def test_match_multi_cable_wires_reports_missing() -> None:
+    pairs, missing = logic.match_multi_cable_wires(
+        [_CABLE_WIRES, _OTHER_WIRES], ["w-one", "x-gone"], ["1", "9"], [0, 1]
+    )
+    assert [record["pin"] for _, record in pairs] == ["1"]
+    assert missing == ["9"]
+
+
+def test_match_multi_cable_wires_out_of_range_index_is_missing() -> None:
+    pairs, missing = logic.match_multi_cable_wires(
+        [_CABLE_WIRES], ["w-one", "w-two"], ["1", "2"], [0, 5]
+    )
+    assert [record["pin"] for _, record in pairs] == ["1"]
+    assert missing == ["2"]
+
+
+def test_match_multi_cable_wires_legacy_end_defaults_to_first_connector() -> None:
+    # No wire_connectors list (legacy single-connector payload) - every
+    # wire resolves on connector 0, matching match_cable_wires exactly.
+    pairs, missing = logic.match_multi_cable_wires(
+        [_CABLE_WIRES], ["w-three", "w-one"], ["3", "1"], []
+    )
+    records, legacy_missing = logic.match_cable_wires(
+        _CABLE_WIRES, ["w-three", "w-one"], ["3", "1"]
+    )
+    assert missing == legacy_missing == []
+    assert [record for _, record in pairs] == records
+    assert all(index == 0 for index, _ in pairs)

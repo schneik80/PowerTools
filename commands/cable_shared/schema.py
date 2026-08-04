@@ -193,7 +193,9 @@ def build_designator_payload(designator: str) -> str:
     return json.dumps({"schema": SCHEMA_VERSION, "designator": designator})
 
 
-def build_member_payload(role: str, pin: str | None = None) -> str:
+def build_member_payload(
+    role: str, pin: str | None = None, label: str | None = None
+) -> str:
     """Serialize the member attribute stamped on a built child component.
 
     The builder stamps every component it creates inside a wire or cable
@@ -205,10 +207,14 @@ def build_member_payload(role: str, pin: str | None = None) -> str:
     Args:
         role: One of the member role constants.
         pin: The wire's pin, for :data:`MEMBER_WIRE` members.
+        label: The wire's cable-unique display label, when it differs from
+            the pin (pins can collide across a multi-connector cable end).
     """
     payload: dict = {"schema": SCHEMA_VERSION, "role": role}
     if pin is not None:
         payload["pin"] = pin
+    if label is not None:
+        payload["label"] = label
     return json.dumps(payload)
 
 

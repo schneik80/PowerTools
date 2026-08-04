@@ -199,11 +199,14 @@ def _route_rows(design, connectors) -> tuple:
         if len(ends) != 2:
             notes.append(f"Skipped '{name}': stored route data is damaged.")
             continue
-        refs = []
+        end_refs = []
         for end in ends:
-            occ = builder.resolve_end_occurrence(design, end, connectors)
-            refs.append(builder.occurrence_designator(occ) if occ else "")
-        if not refs[0] or not refs[1]:
+            refs = []
+            for entry in route_logic.end_connectors(end):
+                occ = builder.resolve_end_occurrence(design, entry, connectors)
+                refs.append(builder.occurrence_designator(occ) if occ else "")
+            end_refs.append(refs)
+        if not all(all(refs) for refs in end_refs):
             notes.append(
                 f"Skipped '{name}': a connector could not be resolved to a "
                 "designator (swapped or removed - run Update Wire)."
@@ -211,13 +214,13 @@ def _route_rows(design, connectors) -> tuple:
             continue
         kind = payload.get("kind", route_logic.KIND_SINGLE)
         if kind == route_logic.KIND_CABLE:
-            rows.extend(_cable_rows(route, refs))
+            rows.extend(_cable_rows(route, end_refs))
         else:
-            rows.append(_single_row(route, refs))
+            rows.append(_single_row(route, end_refs))
     return rows, notes
 
 
-def _single_row(route, refs: list) -> dict:
+def _single_row(route, end_refs: list) -> dict:
     """One wire-list row for a single-wire route."""
     payload = route["payload"]
     ends = payload["ends"]
@@ -228,9 +231,9 @@ def _single_row(route, refs: list) -> dict:
     return {
         "cable": "",
         "wire": str(payload.get("name") or ""),
-        "from_ref": refs[0],
+        "from_ref": end_refs[0][0],
         "from_pin": str(ends[0].get("pin") or ""),
-        "to_ref": refs[1],
+        "to_ref": end_refs[1][0],
         "to_pin": str(ends[1].get("pin") or ""),
         "color": str(payload.get("color") or ""),
         "awg": payload.get("awg"),
@@ -240,29 +243,33 @@ def _single_row(route, refs: list) -> dict:
     }
 
 
-def _cable_rows(route, refs: list) -> list:
-    """One wire-list row per wire of a cable route."""
+def _cable_rows(route, end_refs: list) -> list:
+    """One wire-list row per wire of a cable route (each row's own refs)."""
     payload = route["payload"]
     ends = payload["ends"]
     comp = route["occ"].component
     pins_a = [str(pin) for pin in ends[0].get("pins") or []]
     pins_b = [str(pin) for pin in ends[1].get("pins") or []]
+    wc_a = route_logic.end_wire_connectors(ends[0], len(pins_a))
+    wc_b = route_logic.end_wire_connectors(ends[1], len(pins_b))
+    labels = [str(label) for label in payload.get("wire_labels") or []]
     colors = [str(color) for color in payload.get("colors") or []]
     jacket_cm = builder.own_curve_length_cm(comp)
-    extra_by_pin = {
-        wire["pin"]: wire["extra_cm"]
+    extra_by_label = {
+        wire["label"]: wire["extra_cm"]
         for wire in builder.measure_cable_wires(comp, payload)
     }
     rows = []
     for index, (pin_a, pin_b) in enumerate(zip(pins_a, pins_b, strict=False)):
-        length_cm = jacket_cm + extra_by_pin.get(pin_a, 0.0)
+        label = labels[index] if index < len(labels) else pin_a
+        length_cm = jacket_cm + extra_by_label.get(label, 0.0)
         rows.append(
             {
                 "cable": str(payload.get("name") or ""),
-                "wire": pin_a,
-                "from_ref": refs[0],
+                "wire": label,
+                "from_ref": end_refs[0][wc_a[index]],
                 "from_pin": pin_a,
-                "to_ref": refs[1],
+                "to_ref": end_refs[1][wc_b[index]],
                 "to_pin": pin_b,
                 "color": colors[index] if index < len(colors) else "",
                 "awg": payload.get("awg"),

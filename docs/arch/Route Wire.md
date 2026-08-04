@@ -96,25 +96,46 @@ the recovery path.
 
 ### Cable routes (multi-conductor)
 
-`builder.build_cable` builds the `Cable <name>` component (owning the
-jacket body) with one nested `Wire <pin>` component per paired wire:
+`builder.build_cable` takes two equal-length lists of
+`(side_data, wire_record)` tuples (index-paired across the ends; a list's
+side may repeat when the end spans connectors) and builds the
+`Cable <name>` component (owning the jacket body) with one nested
+`Wire <label>` component per paired wire:
 
-- **Jacket** — a fitted spline between the two included cable points
-  (`cablepoint` attribute from Define Wires), fully associative: per side
-  a CONSTRUCTION direction line runs from the first paired wire's included
-  exit point to the included cable point, and the spline (ends merged into
-  the cable points) is tangent to those lines — the same recipe as the
-  single-wire exit spline, so it re-solves when connectors move. (An
-  earlier baked-guide-point shape kinked and failed the pipe recompute
-  after moves; baked guides remain only as the constraint fallback,
-  flagged in the summary.) Swept as a Pipe at the cable diameter.
+- **End anchors** — an end whose wires all sit on ONE connector anchors on
+  its published cable point (`cablepoint` attribute from Define Wires,
+  associative include). An end spanning SEVERAL connectors gets an
+  **implied anchor**: the centroid of those connectors' cable points,
+  pulled `routing.CABLE_END_PULL` (10%) of the way toward the midpoint of
+  the segment joining the two ends' base points (published points never
+  move) — `routing.cable_end_anchors`, pure and unit-tested. Implied
+  anchors are **static fixed sketch points by design** (an averaged
+  position is not expressible as an associative include); the build result
+  counts them in `implied_ends` (informational — NOT `baked_points`,
+  which means an associativity *failure*) and the summary tells the user
+  to run Update Wire after moving those connectors. Only Import
+  Connectivity can author multi-connector ends; Route Wire's dialog stays
+  two-connector.
+- **Jacket** — a fitted spline between the two end anchors, per end: a
+  CONSTRUCTION direction line runs from the exit to the anchor (published
+  end: the first paired wire's included exit point to the included cable
+  point, fully associative; implied end: a static point at the centroid of
+  that end's exits to the static anchor), and the spline (ends merged into
+  the anchors) is tangent to those lines — the same recipe as the
+  single-wire exit spline, so published ends re-solve when connectors
+  move. (An earlier baked-guide-point shape kinked and failed the pipe
+  recompute after moves; baked guides remain only as the constraint
+  fallback, flagged in the summary.) Swept as a Pipe at the cable
+  diameter.
 - **Per wire, per end** — a conductor stub (start-to-strip line, AWG
   diameter) and a sheathed end segment built from **two straight lines**:
   strip-to-exit and exit-to-cable-point, both drawn with
   `addByTwoPoints` directly between the included points, swept together
   as one Pipe at the wire diameter — 4 bodies per wire, grouped in that
-  wire's component. The mid-run between cable points is represented by
-  the jacket only. Lines between included points are the one construction
+  wire's component. The exit-to-anchor line lands on the included cable
+  point (published end) or that wire sketch's own static copy of the
+  implied anchor. The mid-run between the anchors is represented by the
+  jacket only. Lines between included points are the one construction
   that reliably follows connector moves.
   **Why not a smooth fan-out spline — the full record:** an early
   misdiagnosis ("point-to-point `addCoincident` is unsupported") drove a
@@ -141,8 +162,14 @@ jacket body) with one nested `Wire <pin>` component per paired wire:
   3 -> 2.155, 4 -> 2.414, ... , `1.155*sqrt(n)` beyond 12), x1.03 lay
   allowance, + 2 x 0.6 mm jacket walls. Shown as the editable Cable
   diameter default.
-- Pins pair in `logic.sort_pins` order (numeric-aware); counts must match;
-  one AWG (`logic.awg_overlap_many` across every paired wire) governs all.
+- Pins pair in `logic.sort_pins` order (numeric-aware) in Route Wire, or
+  row by row from the CSV in Import Connectivity; counts must match; one
+  AWG (`logic.awg_overlap_many` across every paired wire) governs all.
+- **Wire labels** — every cable wire has a display label, unique within
+  the cable and defaulting to its end-A pin (pins can collide across a
+  multi-connector end: J3 pin 1 and J4 pin 1). The label names the wire
+  component, rides the member stamp and the payload's `wire_labels`, and
+  is the CSV `Wire` column on export/import.
 - **Build order: wires first, jacket last** — every operation before a
   sketch's includes is a chance for dialog-time proxies to stale, so the
   many per-wire includes run with the least prior mutation and the
@@ -168,14 +195,16 @@ Root
 Root
   Cable <name>    component, stamped with the route attribute; owns the
                   jacket body "Cable <name> jacket"
-    Wire <pin>    per pair: bodies "Cable <name> wire <pin> conductor 1|2"
-                  and "... sheath 1|2"
+    Wire <label>  per pair: bodies "Cable <name> wire <label> conductor
+                  1|2" and "... sheath 1|2" (label = end-A pin unless the
+                  CSV assigned one)
 ```
 
 Every child component the builder creates is additionally stamped with a
 **member** attribute (`PowerTools.Cable` / `member`, JSON
-`{"schema": 1, "role": "conductor"|"sheath"|"wire", "pin": ...}` — pin on
-wire members only, built by `schema.build_member_payload`). The Wire
+`{"schema": 1, "role": "conductor"|"sheath"|"wire", "pin": ..., "label":
+...}` — pin and cable-unique label on wire members only, built by
+`schema.build_member_payload`). The Wire
 Report identifies and labels children by these stamps instead of display
 names, which users can rename and Fusion suffixes for uniqueness; name
 matching survives only as its fallback for assemblies built before the
@@ -238,16 +267,34 @@ occurrence's `entityToken`, so Update Wire can re-resolve the exact instance
 even when several occurrences of the same connector exist; `connector_id` is
 its fallback when the token dies (see the Update Wire architecture notes).
 
-Cable routes use `"kind": "cable"`, add `"cable_od_mm"`, and their ends
-carry the whole pin set instead of a single wire:
+Cable routes use `"kind": "cable"`, add `"cable_od_mm"` and
+`"wire_labels"` (display labels, index-paired with `pins`/`colors`), and
+their ends carry the whole pin set instead of a single wire. A
+single-connector end keeps the legacy flat shape:
 
 ```json
 {"connector_id": "ConnA-3f9a2b1c", "occ_token": "...",
  "pins": ["1", "2", "3"], "wire_ids": ["7c1d2e3f", "9ab04d12", "55aa66bb"]}
 ```
 
-(Single-wire payloads carry `"kind": "single"`; older payloads without the
-field parse as single.)
+An end spanning several connectors lists them, with a per-wire index into
+that list — and deliberately OMITS the top-level identity keys, so an old
+add-in build skips the route with a note instead of misreading it as
+two-connector:
+
+```json
+{"connectors": [{"connector_id": "ConnA-...", "occ_token": "..."},
+                {"connector_id": "ConnB-...", "occ_token": "..."}],
+ "pins": ["1", "1"], "wire_ids": ["7c1d2e3f", "55aa66bb"],
+ "wire_connectors": [0, 1]}
+```
+
+Both shapes are emitted by `routing.cable_route_end` and read back through
+the normalizing helpers `routing.end_connectors` /
+`routing.end_wire_connectors` (legacy ends read as the one-connector
+case), which Update Wire, Wire Report, and Export/Import Connectivity all
+share. (Single-wire payloads carry `"kind": "single"`; older payloads
+without the field parse as single.)
 
 ## Known limitations (accepted for the prove-out)
 
@@ -260,6 +307,10 @@ field parse as single.)
   cable-point-to-cable-point for cables), not the final spline shape.
 - Cable fan-out pipes overlap the jacket where they converge (no trim), and
   one gauge governs every wire in a cable.
+- Implied (multi-connector) end anchors are static computed points: moving
+  one of those connectors deforms the fan-out lines (their connector-side
+  points are still included) but leaves the anchor and jacket in place
+  until Update Wire rebuilds the cable.
 
 ---
 

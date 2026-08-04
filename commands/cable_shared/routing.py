@@ -40,6 +40,10 @@ WALL_MM_DEFAULT = 0.45
 # as a fraction of the exit-to-exit distance.
 GUIDE_FRACTION = 0.25
 
+# How far an implied (multi-connector) cable end anchor is pulled from the
+# connectors' cable-point centroid toward the midpoint of the cable run.
+CABLE_END_PULL = 0.10
+
 # Bundle diameter factors for n identical round wires (standard cable-design
 # circle-packing table, cf. Standard Wire & Cable / Glenair bundle charts);
 # bundle OD = wire OD * factor. Beyond the table the dense-packing
@@ -258,6 +262,58 @@ def fanout_guide_points(
     return [tuple(exit_pt), guide, tuple(cable_pt)]
 
 
+def centroid_xyz(points: Iterable[Vec]) -> Vec:
+    """Component-wise average of one or more xyz tuples.
+
+    Raises:
+        ValueError: If *points* is empty.
+    """
+    items = [tuple(point) for point in points]
+    if not items:
+        raise ValueError("centroid_xyz needs at least one point")
+    count = float(len(items))
+    return (
+        sum(point[0] for point in items) / count,
+        sum(point[1] for point in items) / count,
+        sum(point[2] for point in items) / count,
+    )
+
+
+def pull_toward(point: Vec, target: Vec, fraction: float) -> Vec:
+    """*point* moved *fraction* of the way toward *target* (``P + f*(T-P)``)."""
+    return _add(point, _scale(_sub(target, point), fraction))
+
+
+def cable_end_anchors(
+    worlds_a: list[Vec], worlds_b: list[Vec], fraction: float = CABLE_END_PULL
+) -> dict:
+    """Final cable trunk anchor points for the two ends of a cable.
+
+    Each end is the list of its connectors' cable-point positions. A
+    single-connector end keeps its published point untouched; a
+    multi-connector end gets an IMPLIED anchor: the centroid of its cable
+    points, pulled *fraction* of the way toward the midpoint of the segment
+    joining the two ends' base points (published points are never moved).
+
+    Returns:
+        ``{"a": {"xyz": Vec, "implied": bool}, "b": {...},
+        "degenerate": bool}`` — degenerate when the two final anchors
+        coincide (within 1e-6 cm), which cannot be built.
+    """
+    base_a = tuple(worlds_a[0]) if len(worlds_a) == 1 else centroid_xyz(worlds_a)
+    base_b = tuple(worlds_b[0]) if len(worlds_b) == 1 else centroid_xyz(worlds_b)
+    midpoint = pull_toward(base_a, base_b, 0.5)
+    implied_a = len(worlds_a) > 1
+    implied_b = len(worlds_b) > 1
+    anchor_a = pull_toward(base_a, midpoint, fraction) if implied_a else base_a
+    anchor_b = pull_toward(base_b, midpoint, fraction) if implied_b else base_b
+    return {
+        "a": {"xyz": anchor_a, "implied": implied_a},
+        "b": {"xyz": anchor_b, "implied": implied_b},
+        "degenerate": _norm(_sub(anchor_b, anchor_a)) < 1e-6,
+    }
+
+
 def result_notes(result: dict) -> str:
     """Builder-result notes for a summary message box ("" when clean).
 
@@ -286,6 +342,12 @@ def result_notes(result: dict) -> str:
             "those wires stay associative but are not exactly tangent at "
             "the exit."
         )
+    if result.get("implied_ends"):
+        notes += (
+            f"\n\nNote: {result['implied_ends']} cable end(s) span several "
+            "connectors; their anchor points are computed, not linked - run "
+            "Update Wire after moving those connectors."
+        )
     return notes
 
 
@@ -295,13 +357,17 @@ def build_route_payload(fields: dict) -> str:
     Args:
         fields: Route fields — ``name``, ``awg`` (chosen size), ``od_mm``
             (per-wire sheathed outer diameter), ``ends`` (a list of two
-            per-connector dicts, stored verbatim: single-wire routes carry
-            ``connector_id``/``wire_id``/``pin``/``occ_token``; cable routes
-            carry ``connector_id``/``occ_token``/``pins``/``wire_ids``),
-            optional ``kind`` (:data:`KIND_SINGLE` when omitted), optional
-            ``cable_od_mm`` (cable jacket OD, cable routes only), optional
-            ``color`` (single-wire insulation color key), and optional
-            ``colors`` (cable wire color keys in paired order).
+            per-end dicts, stored verbatim: single-wire routes carry
+            ``connector_id``/``wire_id``/``pin``/``occ_token``; cable ends
+            use :func:`cable_route_end` — one connector keeps the legacy
+            flat ``connector_id``/``occ_token``/``pins``/``wire_ids`` shape,
+            several connectors carry ``connectors``/``pins``/``wire_ids``/
+            ``wire_connectors`` instead), optional ``kind``
+            (:data:`KIND_SINGLE` when omitted), optional ``cable_od_mm``
+            (cable jacket OD, cable routes only), optional ``color``
+            (single-wire insulation color key), optional ``colors`` (cable
+            wire color keys in paired order), and optional ``wire_labels``
+            (cable wire display labels, index-paired with ``colors``).
 
     Returns:
         A JSON string in the PowerTools.Cable schema (parse with
@@ -315,10 +381,88 @@ def build_route_payload(fields: dict) -> str:
         "od_mm": fields["od_mm"],
         "ends": fields["ends"],
     }
-    for optional in ("cable_od_mm", "color", "colors"):
+    for optional in ("cable_od_mm", "color", "colors", "wire_labels"):
         if optional in fields:
             payload[optional] = fields[optional]
     return json.dumps(payload)
+
+
+def cable_route_end(
+    connectors: list[dict],
+    pins: list[str],
+    wire_ids: list[str],
+    wire_connectors: list[int],
+) -> dict:
+    """One cable end for the route payload's ``ends`` list.
+
+    *connectors* holds one ``{"connector_id", "occ_token"}`` dict per
+    distinct connector on this end; ``wire_connectors[i]`` indexes the
+    connector wire *i* attaches to. A single-connector end is emitted in
+    the legacy flat shape (no ``connectors``/``wire_connectors`` keys) so
+    existing payload readers keep working; a multi-connector end omits the
+    legacy top-level identity keys on purpose - old add-in builds then skip
+    the route with a note instead of misreading it as two-connector.
+    """
+    if len(connectors) == 1:
+        return {
+            "connector_id": connectors[0].get("connector_id") or "",
+            "occ_token": connectors[0].get("occ_token") or "",
+            "pins": list(pins),
+            "wire_ids": list(wire_ids),
+        }
+    return {
+        "connectors": [
+            {
+                "connector_id": entry.get("connector_id") or "",
+                "occ_token": entry.get("occ_token") or "",
+            }
+            for entry in connectors
+        ],
+        "pins": list(pins),
+        "wire_ids": list(wire_ids),
+        "wire_connectors": [int(index) for index in wire_connectors],
+    }
+
+
+def end_connectors(end: dict) -> list[dict]:
+    """Normalize a route-payload end to its list of connector identities.
+
+    Multi-connector ends return their ``connectors`` entries (dicts only);
+    legacy single-connector ends (and damaged ``connectors`` values) return
+    a one-entry list built from the flat ``connector_id``/``occ_token``
+    keys. Every entry carries both keys as strings.
+    """
+    raw = end.get("connectors")
+    entries = [entry for entry in raw if isinstance(entry, dict)] if raw else []
+    if not entries:
+        entries = [end]
+    return [
+        {
+            "connector_id": str(entry.get("connector_id") or ""),
+            "occ_token": str(entry.get("occ_token") or ""),
+        }
+        for entry in entries
+    ]
+
+
+def end_wire_connectors(end: dict, wire_count: int) -> list[int]:
+    """Per-wire connector indices for a route-payload end, always valid.
+
+    Missing/short lists pad with 0, junk and out-of-range entries coerce to
+    0, extras are truncated - a legacy single-connector end yields all
+    zeros, which indexes its only connector.
+    """
+    limit = len(end_connectors(end))
+    raw = end.get("wire_connectors")
+    values = list(raw) if isinstance(raw, list) else []
+    indices = []
+    for slot in range(wire_count):
+        try:
+            index = int(values[slot]) if slot < len(values) else 0
+        except (TypeError, ValueError):
+            index = 0
+        indices.append(index if 0 <= index < limit else 0)
+    return indices
 
 
 def _sub(a: Vec, b: Vec) -> Vec:

@@ -23,6 +23,10 @@ Format rules (documented in ``docs/arch/Export Connectivity.md``):
 - An empty ``Cable`` cell makes the row a SINGLE wire (``Wire`` is the
   route name). Rows sharing a ``Cable`` value become one multi-conductor
   cable: one row per wire, pins paired row by row, one gauge per cable.
+- A cable's rows may span more than two connectors: each row names its own
+  From/To, and refs are split into the cable's two ends by a seeded
+  2-coloring in file order (see :func:`_cable_group`). Each (connector,
+  pin) may carry only one wire of the cable.
 - Blank ``Wire OD (mm)`` falls back to the gauge recommendation; a
   cable's ``Cable OD (mm)`` is read from the group's first non-empty cell,
   else recommended from wire OD and count.
@@ -174,6 +178,8 @@ def connector_reference_lines(connectors: Iterable[dict]) -> list[str]:
         "# Connectivity. '#' lines and the Length column are ignored on",
         "# import. Rows sharing a Cable value become one multi-conductor",
         "# cable (one row per wire, pins paired per row, one gauge).",
+        "# A cable's rows may span several connectors: each row names its",
+        "# own From/To, and the rows are split into the cable's two ends.",
         "# Connectors:",
     ]
     for connector in connectors:
@@ -218,10 +224,12 @@ def parse_wire_list(text: str) -> dict:
         ``{"groups": [...], "problems": [...]}``. Single group:
         ``{"kind": "single", "name", "from_ref", "from_pin", "to_ref",
         "to_pin", "color", "awg", "od_mm", "key"}``. Cable group:
-        ``{"kind": "cable", "name", "from_ref", "to_ref", "awg", "od_mm",
-        "cable_od_mm", "wires": [{"label", "from_pin", "to_pin", "color"}],
-        "keys": [...]}``. Problems are human-readable reasons for every
-        row/group that did not survive.
+        ``{"kind": "cable", "name", "from_refs", "to_refs" (per-end
+        designator lists, first-appearance order), "awg", "od_mm",
+        "cable_od_mm", "wires": [{"label", "from_ref", "from_pin",
+        "to_ref", "to_pin", "color"}] (oriented A -> B), "keys": [...]
+        (from each row's own refs)}``. Problems are human-readable reasons
+        for every row/group that did not survive.
     """
     problems: list[str] = []
     data_lines = [
@@ -361,7 +369,14 @@ def _single_group(row: dict, problems: list) -> dict | None:
 
 
 def _cable_group(cable_name: str, rows: list[dict], problems: list) -> dict | None:
-    """One cable build group from its rows; None (with problems) if invalid."""
+    """One cable build group from its rows; None (with problems) if invalid.
+
+    Rows may span several connectors. Refs split into the cable's two ends
+    by a seeded 2-coloring in file order: row 1's From/To seed end A/end B,
+    a row with a known ref orients (or flips) to match, and a row with
+    neither ref known reads its columns as A -> B. A row whose refs land on
+    the same end cannot be built and rejects the group.
+    """
     group_problems: list[str] = []
     if len(rows) < 2:
         group_problems.append(f"Cable '{cable_name}': needs at least two wire rows.")
@@ -371,47 +386,92 @@ def _cable_group(cable_name: str, rows: list[dict], problems: list) -> dict | No
             f"Cable '{cable_name}': all rows must share one gauge "
             f"(found {', '.join(str(g) for g in gauges)} AWG)."
         )
-    first = rows[0]
-    pair = {first["from_ref"].lower(), first["to_ref"].lower()}
+
+    # Pass 1: partition refs into the two ends; orient every row A -> B.
+    assign: dict[str, str] = {}  # lowercased ref -> "A" | "B"
+    end_refs: dict[str, list[str]] = {"A": [], "B": []}  # first-appearance order
+    oriented: list[dict] = []
+
+    def _assign(ref: str, end: str) -> None:
+        key = ref.lower()
+        if key not in assign:
+            assign[key] = end
+            end_refs[end].append(ref)
+
+    for row in rows:
+        from_end = assign.get(row["from_ref"].lower())
+        to_end = assign.get(row["to_ref"].lower())
+        if from_end is not None and from_end == to_end:
+            group_problems.append(
+                f"Cable '{cable_name}': row {row['n']} connects "
+                f"'{row['from_ref']}' and '{row['to_ref']}' but both are on "
+                "the same end of the cable."
+            )
+            continue
+        if from_end is None:
+            from_end = "A" if to_end in (None, "B") else "B"
+        _assign(row["from_ref"], from_end)
+        _assign(row["to_ref"], "B" if from_end == "A" else "A")
+        if from_end == "A":
+            a_ref, a_pin, b_ref, b_pin = (
+                row["from_ref"],
+                row["from_pin"],
+                row["to_ref"],
+                row["to_pin"],
+            )
+        else:  # flipped row
+            a_ref, a_pin, b_ref, b_pin = (
+                row["to_ref"],
+                row["to_pin"],
+                row["from_ref"],
+                row["from_pin"],
+            )
+        oriented.append(
+            {"row": row, "a_ref": a_ref, "a_pin": a_pin, "b_ref": b_ref, "b_pin": b_pin}
+        )
+
+    # Pass 2: wires, labels, keys - end-A multiplicity decides the label
+    # default, so it must wait for the full partition.
+    multi_a = len(end_refs["A"]) > 1
     wires: list[dict] = []
     keys: list[tuple] = []
     labels: set = set()
+    slots: set = set()
     default_colors = routing.assign_wire_colors(len(rows))
-    for index, row in enumerate(rows):
-        refs = {row["from_ref"].lower(), row["to_ref"].lower()}
-        if refs != pair:
-            group_problems.append(
-                f"Cable '{cable_name}': row {row['n']} connects "
-                f"{row['from_ref']}-{row['to_ref']} but the cable runs "
-                f"{first['from_ref']}-{first['to_ref']}."
-            )
-            continue
-        if row["from_ref"].lower() == first["from_ref"].lower():
-            from_pin, to_pin = row["from_pin"], row["to_pin"]
-        else:
-            from_pin, to_pin = row["to_pin"], row["from_pin"]  # flipped row
-        label = row["wire"] or from_pin
+    for index, entry in enumerate(oriented):
+        row = entry["row"]
+        label = row["wire"] or (
+            f"{entry['a_ref']}.{entry['a_pin']}" if multi_a else entry["a_pin"]
+        )
         if label.lower() in labels:
             group_problems.append(
                 f"Cable '{cable_name}': duplicate wire label '{label}'."
             )
         labels.add(label.lower())
+        for ref, pin in (
+            (entry["a_ref"], entry["a_pin"]),
+            (entry["b_ref"], entry["b_pin"]),
+        ):
+            slot = (ref.lower(), pin)
+            if slot in slots:
+                group_problems.append(
+                    f"Cable '{cable_name}': pin '{pin}' on '{ref}' is used by two rows."
+                )
+            slots.add(slot)
         wires.append(
             {
                 "label": label,
-                "from_pin": from_pin,
-                "to_pin": to_pin,
+                "from_ref": entry["a_ref"],
+                "from_pin": entry["a_pin"],
+                "to_ref": entry["b_ref"],
+                "to_pin": entry["b_pin"],
                 "color": row["color"] or default_colors[index],
             }
         )
-        keys.append(route_key(first["from_ref"], from_pin, first["to_ref"], to_pin))
-    for side, key in (("From", "from_pin"), ("To", "to_pin")):
-        pins = [wire[key] for wire in wires]
-        if len(set(pins)) != len(pins):
-            group_problems.append(
-                f"Cable '{cable_name}': a {side} pin is used by two rows."
-            )
-    awg = first["awg"]
+        keys.append(
+            route_key(entry["a_ref"], entry["a_pin"], entry["b_ref"], entry["b_pin"])
+        )
+    awg = rows[0]["awg"]
     od_mm = next((row["wire_od"] for row in rows if row["wire_od"]), None)
     od_mm = od_mm or routing.recommended_od_mm(awg)
     cable_od = next((row["cable_od"] for row in rows if row["cable_od"]), None)
@@ -430,8 +490,8 @@ def _cable_group(cable_name: str, rows: list[dict], problems: list) -> dict | No
     return {
         "kind": "cable",
         "name": cable_name,
-        "from_ref": first["from_ref"],
-        "to_ref": first["to_ref"],
+        "from_refs": end_refs["A"],
+        "to_refs": end_refs["B"],
         "awg": awg,
         "od_mm": od_mm,
         "cable_od_mm": cable_od,

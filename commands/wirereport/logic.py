@@ -51,22 +51,27 @@ def summarize_cable(route: dict) -> dict:
 
     Args:
         route: ``{"name", "awg", "od_mm", "cable_od_mm", "ends",
-            "jacket_cm", "wires": [{"pin", "extra_cm"}]}`` - ``extra_cm``
-            is a wire's measured length OUTSIDE the jacket (both ends'
-            conductor stubs, exit lines, and fan-out segments).
+            "jacket_cm", "wires": [{"pin", "label", "extra_cm"}]}`` -
+            ``extra_cm`` is a wire's measured length OUTSIDE the jacket
+            (both ends' conductor stubs, exit lines, and fan-out
+            segments); ``label`` is the cable-unique display label (pins
+            can collide across a multi-connector end) and falls back to
+            the pin when absent.
 
     Returns:
         The route fields plus per-wire ``path_cm`` (extra + jacket),
         ``cable_cm`` = the LONGEST wire path (this sets the cable cut
-        length), and ``longest_pin`` naming the governing wire.
+        length), and ``longest_label`` naming the governing wire.
     """
     jacket_cm = float(route.get("jacket_cm") or 0.0)
     wires = []
     for wire in route.get("wires") or []:
         extra_cm = float(wire.get("extra_cm") or 0.0)
+        pin = str(wire.get("pin") or "")
         wires.append(
             {
-                "pin": str(wire.get("pin") or ""),
+                "pin": pin,
+                "label": str(wire.get("label") or "") or pin,
                 "extra_cm": extra_cm,
                 "path_cm": extra_cm + jacket_cm,
             }
@@ -82,7 +87,7 @@ def summarize_cable(route: dict) -> dict:
         "jacket_cm": jacket_cm,
         "wires": wires,
         "cable_cm": longest["path_cm"] if longest else jacket_cm,
-        "longest_pin": longest["pin"] if longest else "",
+        "longest_label": longest["label"] if longest else "",
     }
 
 

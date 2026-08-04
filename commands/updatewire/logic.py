@@ -124,6 +124,51 @@ def match_cable_wires(wires: dict, wire_ids: list, pins: list) -> tuple[list, li
     return records, missing
 
 
+def match_multi_cable_wires(
+    sides_wires: list, wire_ids: list, pins: list, wire_connectors: list
+) -> tuple[list, list]:
+    """Resolve a cable end's stored wires when the end spans connectors.
+
+    Args:
+        sides_wires: One ``{pin: record}`` dict (from
+            ``builder.read_connector``) per resolved connector of the end,
+            in stored connector order.
+        wire_ids: The route payload's ordered wire-id list for this end.
+        pins: The payload's ordered pin list (index-paired with wire_ids).
+        wire_connectors: Per-wire connector indices (index-paired); a
+            missing entry defaults to connector 0 (the legacy
+            single-connector shape), junk or out-of-range entries make
+            that wire missing.
+
+    Each stored wire resolves via :func:`find_wire` on ITS OWN connector's
+    wires (wire id preferred, pin fallback).
+
+    Returns:
+        ``(pairs, missing)`` - ``(connector_index, record)`` tuples in
+        stored order, and display labels for wires that no longer resolve.
+    """
+    pairs: list = []
+    missing: list = []
+    ids = [str(wire_id) for wire_id in (wire_ids or [])]
+    pin_list = [str(pin) for pin in (pins or [])]
+    indices = list(wire_connectors or [])
+    for index in range(max(len(ids), len(pin_list))):
+        wire_id = ids[index] if index < len(ids) else ""
+        pin = pin_list[index] if index < len(pin_list) else ""
+        try:
+            connector = int(indices[index]) if index < len(indices) else 0
+        except (TypeError, ValueError):
+            connector = -1
+        record = None
+        if 0 <= connector < len(sides_wires):
+            record = find_wire(sides_wires[connector], wire_id, pin)
+        if record is None:
+            missing.append(pin or wire_id or f"#{index + 1}")
+        else:
+            pairs.append((connector, record))
+    return pairs, missing
+
+
 def coerce_route_params(payload: dict) -> dict | None:
     """Extract validated build parameters from a route payload.
 
