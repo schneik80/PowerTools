@@ -75,6 +75,12 @@ _pending_run: dict | None = None
 # Resume state computed in command_created and re-checked in command_execute.
 resume_plan: dict = {}
 
+# Component picks captured while the dialog is open. A SelectionCommandInput
+# cannot be read from command_execute - Fusion may already have released it
+# (see lib/ptAddInUtils/selection_utils.py) - and this command defers its
+# work past the dialog entirely, so the picks must be captured up front.
+_picks: dict = {}
+
 
 # Executed when add-in is run.
 def start():
@@ -240,6 +246,7 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
     try:
         changed_input = args.input
         inputs = args.inputs
+        ptutil.capture_selections(inputs, _picks, "occurrence_sel")
 
         if changed_input.id == "externalize_all":
             bool_input = adsk.core.BoolValueCommandInput.cast(changed_input)
@@ -356,9 +363,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
             existing_sub = _find_existing_subfolder(cloud_folder, active_data_file.name)
             target_folder = existing_sub if existing_sub is not None else cloud_folder
 
-        pending = _build_pending_list(
-            design, externalize_all, replace_all_instances, inputs
-        )
+        pending = _build_pending_list(design, externalize_all, replace_all_instances)
         if pending is None:
             return  # user-facing message already shown
         if not pending:
@@ -696,7 +701,7 @@ def _snapshot_local_component_names():
     return names
 
 
-def _build_pending_list(design, externalize_all, replace_all_instances, inputs):
+def _build_pending_list(design, externalize_all, replace_all_instances):
     """Build the per-component run list for the run.
 
     Each entry groups every occurrence to replace for a single component::
@@ -719,12 +724,14 @@ def _build_pending_list(design, externalize_all, replace_all_instances, inputs):
         # component, so grouping here implicitly replaces all instances.
         return _group_local_occurrences(design, root, name_filter=None)
 
-    sel_input = adsk.core.SelectionCommandInput.cast(inputs.itemById("occurrence_sel"))
-    if sel_input.selectionCount == 0:
+    # The pick comes from the capture store, never from the live selection
+    # input: this runs in command_execute, by which point Fusion may have
+    # released the input (see lib/ptAddInUtils/selection_utils.py).
+    entity = ptutil.picked_one(_picks, "occurrence_sel")
+    if entity is None:
         ui.messageBox("No component selected.", CMD_NAME)
         return None
 
-    entity = sel_input.selection(0).entity
     if isinstance(entity, adsk.fusion.Occurrence):
         occ = entity
     elif hasattr(entity, "assemblyContext") and entity.assemblyContext:
@@ -1065,6 +1072,7 @@ def _analyze_resume_state(log_path, fusion_client_version, current_pending_names
 # Called when the command is destroyed (dialog closed).
 def command_destroy(args: adsk.core.CommandEventArgs):
     ptutil.log(f"{CMD_NAME} Command Destroy Event")
-    global local_handlers, resume_plan
+    global local_handlers, resume_plan, _picks
     local_handlers = []
     resume_plan = {}
+    _picks = {}
