@@ -71,6 +71,7 @@ Most commands appear in **Design › Tools › Power Tools**. Some appear in oth
 | [Favorites](./docs/Favorites.md) | Design › Tools › Power Tools | Manage favorite documents and folders. |
 | [Open Recent](./docs/Open%20Recent.md) | File › Open Recent | Reopen a recently used document from a File-menu flyout, with location and thumbnail tooltips. |
 | [Show In Location](./docs/Show%20In%20Location.md) | File › PowerTools Settings | Open the active document's location in the data panel. |
+| [Close All Documents](./docs/Close%20All%20Documents.md) | File | Close every open document, saving or discarding unsaved changes as a group. |
 | [Toggle Data Pane](./docs/Toggle%20Data%20Pane.md) | Navigation bar | Toggle the visibility of the data panel. |
 | [Recovery Save](./docs/Recovery%20Save.md) | Design › Tools › Power Tools | Periodic recovery autosave for the active document. |
 
