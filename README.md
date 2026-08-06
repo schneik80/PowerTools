@@ -94,6 +94,12 @@ Most commands appear in **Design › Tools › Power Tools**. Some appear in oth
 | [Hide Objects](./docs/HideObjects.md) | Design › Tools | Quickly hide selected objects. |
 | [Timeline Compute Times](./docs/Timeline%20Compute%20Times.md) | Design › Solid | Measure per-feature timeline compute times. |
 
+### Animation
+
+| Command | Location | Description |
+| --- | --- | --- |
+| [Save Named View](./docs/Animation%20Named%20View.md) | Animation › Power Tools | Save the Animation viewport camera as a named view on the design, named from the active storyboard. Panel sits after **View**, before **Publish**. |
+
 ### Related Data
 
 | Command | Location | Description |

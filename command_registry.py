@@ -88,6 +88,17 @@ GROUPS = [
         ],
     },
     {
+        "key": "animation",
+        "label": "Animation",
+        # Commands that surface in Fusion's Animation environment. The Animation
+        # workspace ID is not published by Fusion, so these resolve it at
+        # runtime (see config.resolve_animation_workspace_id) and skip their UI
+        # on a build that has no Animation environment.
+        "commands": [
+            _cmd("animationnamedview", "Animation Named View.md"),
+        ],
+    },
+    {
         "key": "related",
         "label": "Related Data",
         # The Related Data group owns the "Hub Settings" preferences section

@@ -98,6 +98,154 @@ manage_panel_name = "Power Tools"
 manage_panel_after = ""
 
 # ---------------------------------------------------------------------------
+# 3c. Animation workspace — target for commands that run inside the Animation
+# environment. Unlike every other workspace above, none of these IDs are
+# published: not the workspace, not its built-in tab, not its panels. They are
+# absent from the API docs and from the shipped binaries, so everything here is
+# resolved at runtime and logged, and the IDs found can be read out of the debug
+# log. The workspace is matched by ID candidates then by name; the tab and the
+# neighbouring panel are matched by display name.
+#
+# Our panel goes on Fusion's own Animation tab, immediately after its View
+# panel (and so before Publish). We never create or delete that tab — the same
+# rule as FusionDocTab and ManageTab above; we only add and remove our own
+# panel on it. resolve_animation_workspace_id() returns None on a build with no
+# Animation environment, in which case the command skips its UI.
+# ---------------------------------------------------------------------------
+
+animation_workspace_candidates = (
+    "FusionAnimationEnvironment",
+    "AnimationEnvironment",
+    "NaAnimationEnvironment",
+)
+animation_panel_id = "PT_AnimationPowerTools"
+animation_panel_name = "Power Tools"
+
+# Display name of the built-in panel our panel is inserted directly after. The
+# Publish panel follows View, so inserting after View also places us before
+# Publish.
+animation_after_panel_names = ("View",)
+
+
+def resolve_animation_workspace_id():
+    """Find the ID of Fusion's Animation workspace on this build.
+
+    Tries ``animation_workspace_candidates`` first, then falls back to scanning
+    every workspace for a Design-product workspace whose name mentions
+    "animation". The full workspace list is logged on the fallback path so the
+    real ID can be read out of the debug log and pinned into the candidate
+    tuple.
+
+    Returns:
+        The workspace ID string, or None when no Animation workspace exists.
+    """
+    workspaces = adsk.core.Application.get().userInterface.workspaces
+    for candidate in animation_workspace_candidates:
+        try:
+            if workspaces.itemById(candidate) is not None:
+                return candidate
+        except Exception:
+            continue
+
+    ptutil.log("Animation workspace not found by ID; scanning workspaces.")
+    fallback = None
+    for workspace in workspaces:
+        try:
+            workspace_id, name = workspace.id, workspace.name
+        except Exception:
+            continue
+        ptutil.log(f"  workspace id={workspace_id!r} name={name!r}")
+        if fallback is None and "animation" in (name or "").lower():
+            fallback = workspace_id
+    return fallback
+
+
+def _panel_id_by_name(tab, names):
+    """Return the ID of the first panel on *tab* whose display name matches.
+
+    Every panel is logged, so a build that names them differently can be fixed
+    by reading the debug log rather than by guesswork.
+
+    Args:
+        tab: A Fusion ``ToolbarTab``.
+        names: Display names to accept, compared case-insensitively.
+
+    Returns:
+        The matching panel ID, or "" when none matches.
+    """
+    wanted = {name.lower() for name in names}
+    match = ""
+    for panel in tab.toolbarPanels:
+        try:
+            panel_id, panel_name = panel.id, panel.name
+        except Exception:
+            continue
+        ptutil.log(f"    animation panel id={panel_id!r} name={panel_name!r}")
+        if not match and (panel_name or "").strip().lower() in wanted:
+            match = panel_id
+    return match
+
+
+def _find_animation_tab(workspace):
+    """Return Fusion's built-in Animation tab, or None.
+
+    Prefers the tab that actually carries the panel we want to sit next to,
+    rather than assuming a position, and falls back to the first tab so a build
+    that renames its panels still gets the command somewhere usable.
+    """
+    fallback = None
+    for tab in workspace.toolbarTabs:
+        try:
+            tab_id, tab_name = tab.id, tab.name
+        except Exception:
+            continue
+        ptutil.log(f"  animation tab id={tab_id!r} name={tab_name!r}")
+        if fallback is None:
+            fallback = tab
+        if _panel_id_by_name(tab, animation_after_panel_names):
+            return tab
+    return fallback
+
+
+def get_or_create_animation_panel(workspace_id):
+    """Find or create the PowerTools panel on Fusion's Animation tab.
+
+    The panel is placed immediately after the built-in View panel, which puts it
+    before Publish. ``ToolbarPanels.add`` takes the anchor panel's ID and an
+    ``isBefore`` flag, so this passes ``False`` to insert after it. With no
+    anchor found, the panel is appended rather than skipped.
+
+    Args:
+        workspace_id: The Animation workspace ID from
+            ``resolve_animation_workspace_id``.
+
+    Returns:
+        A ``(panel, tab_id)`` pair, or ``(None, None)`` when the workspace or
+        its tab cannot be found. The tab ID is returned so teardown can find the
+        panel again without repeating the search.
+    """
+    workspace = adsk.core.Application.get().userInterface.workspaces.itemById(
+        workspace_id
+    )
+    if workspace is None:
+        return None, None
+
+    tab = _find_animation_tab(workspace)
+    if tab is None:
+        return None, None
+
+    existing = tab.toolbarPanels.itemById(animation_panel_id)
+    if existing is not None:
+        return existing, tab.id
+
+    after_id = _panel_id_by_name(tab, animation_after_panel_names)
+    panel = tab.toolbarPanels.add(
+        animation_panel_id, animation_panel_name, after_id, False
+    )
+    return panel, tab.id
+
+
+# ---------------------------------------------------------------------------
 # 4. Shared PowerTools Settings dropdown in the QAT File menu
 # ---------------------------------------------------------------------------
 
