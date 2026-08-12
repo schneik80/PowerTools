@@ -9,7 +9,8 @@ The Bottom-Up Update command traverses the active assembly hierarchy, then opens
 - Automatically process all components in a complex assembly in correct dependency order.
 - Force a complete rebuild of every component to verify they are up to date.
 - Apply design document intent (Part, Assembly, or Hybrid) to each component automatically based on its content.
-- Hide origins, joints, sketches, joint origins, and canvases before saving to produce cleaner component files.
+- Enable the timeline on direct-modeling documents by converting them to parametric.
+- Hide origins, joints, sketches, joint origins, canvases, and user coordinate systems before saving to produce cleaner component files.
 - Skip standard library components to avoid unnecessary processing overhead.
 - **Smart upload confirmation** — the command confirms that each component's cloud upload has completed before opening the next document, instead of using a fixed pause timer.
 - **Resume an interrupted run** — on launch the command inspects the temp log; if the run did not finish and the component list has not changed, it picks up after the last confirmed save+upload checkpoint.
@@ -49,6 +50,7 @@ The Bottom-Up Update dialog is organized into three tabs.
 | **Skip standard components** | Enabled | Skips Standard Components library documents (such as McMaster-Carr or Misumi parts) to avoid unnecessary processing. |
 | **Skip already saved documents** | Disabled | Skips components whose document version already matches the current Fusion client build string. |
 | **Apply Design Doc Intent** | Enabled | Automatically determines and applies the appropriate Fusion document intent to each component. See [Design intent logic](#design-intent-logic) below. |
+| **Enable Timeline** | Disabled | Switches any direct modeling (history off) document to parametric so it captures a timeline. Applies to the root assembly as well as the referenced documents. See [Enable Timeline](#enable-timeline) below. |
 
 #### Advanced group (collapsed by default)
 
@@ -67,6 +69,7 @@ These options hide specific element types in each component before saving. Each 
 | **Hide sketches** | Disabled | Hides all sketches. Sets the Sketches folder to **visible** so new sketches appear automatically. |
 | **Hide joint origins** | Disabled | Hides all joint origin markers. Sets the Joint Origins folder to **visible** so new joint origins appear automatically. |
 | **Hide canvases** | Disabled | Hides all canvases. Sets the Canvases folder to **visible** so new canvases appear automatically. |
+| **Hide user coordinate systems** | Disabled | Hides all user coordinate systems. Fusion exposes no folder visibility switch for these, so each one is hidden individually and new ones appear as created. Requires a Fusion build with user coordinate system support; on older builds the option is a logged no-op. |
 
 ### Logging tab
 
@@ -87,6 +90,7 @@ When you select **OK**, the command performs the following steps:
    - Opens the component document.
    - Calls `updateAllReferences()` to bring references up to date.
    - Activates the Fusion Solid Environment workspace.
+   - Enables the timeline if **Enable Timeline** is enabled and the document is direct modeling.
    - Applies selected visibility options.
    - Applies design intent if enabled.
    - Calls `computeAll()` to rebuild if **Rebuild all** is enabled.
@@ -126,6 +130,19 @@ When **Apply Design Doc Intent** is enabled, the command analyzes each component
 | **Part** | Component has no child occurrences (leaf node) | `Fusion.setDocumentExperience Part` |
 | **Assembly** | Component has child occurrences but no sketches or bodies | `Fusion.setDocumentExperience xrefAssembly` |
 | **Hybrid Assembly** | Component has child occurrences AND contains sketches or bodies | `Fusion.setDocumentExperience xrefAssembly hybridAssembly` |
+
+## Enable Timeline
+
+When **Enable Timeline** is enabled, each document is checked before its visibility and intent options are applied:
+
+| Document design type | Action |
+|---|---|
+| Direct modeling (**Do not capture design history**) | Switched to parametric. Fusion captures the existing geometry as a base feature at the top of the new timeline. Logged as `Timeline enabled (direct modeling converted to parametric)`. |
+| Parametric (timeline already present) | Left untouched. Logged as `Timeline already enabled`. |
+
+The root assembly is saved at the end of the run rather than in the component loop, so it is converted separately just before its final save.
+
+The switch is one-way — this option never turns a timeline off, and the resulting base feature cannot be unwound by re-running the command. Because the conversion is saved as a new version of the document, run it on a small assembly first if you have not used it before.
 
 ## Upload confirmation
 
