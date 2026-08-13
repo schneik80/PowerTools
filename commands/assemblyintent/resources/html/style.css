@@ -362,6 +362,29 @@ input[type="text"]:focus, select:focus {
 }
 .filter-row input { cursor: pointer; }
 
+/* Footer of the insert card: text links to insert paths that are not documents.
+   flex-shrink: 0 keeps it pinned while .tab-panes takes the leftover height. */
+.insert-footer {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-top: 1px dashed var(--border-color);
+    margin-top: 8px;
+    padding-top: 8px;
+}
+
+/* Text link that hands off to another command's dialog. Mirrors the Preferences
+   palette's a.doc link; the trailing glyph marks "opens another dialog". */
+.link-action {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 12px;
+    white-space: nowrap;
+}
+.link-action:hover { color: var(--accent-hover); text-decoration: underline; }
+.link-action .link-glyph { text-decoration: none; font-size: 11px; }
+
 /* Thin, themed scrollbar (WebKit/CEF). */
 .tab-panes::-webkit-scrollbar { width: 6px; }
 .tab-panes::-webkit-scrollbar-track { background: transparent; }

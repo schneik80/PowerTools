@@ -59,7 +59,11 @@ HIDE_JOINTS_ID = "hide_joints"  # Checkbox to hide joint elements in the model
 HIDE_SKETCHES_ID = "hide_sketches"  # Checkbox to hide component sketches
 HIDE_JOINTORIGINS_ID = "hide_jointorigins"  # Checkbox to hide joint origin markers
 HIDE_CANVASES_ID = "hide_canvases"  # Checkbox to hide canvases
+HIDE_UCS_ID = "hide_ucs"  # Checkbox to hide user coordinate systems
 APPLY_INTENT_ID = "apply_intent"  # Checkbox to apply design intent before saving
+ENABLE_TIMELINE_ID = (
+    "enable_timeline"  # Checkbox to enable the timeline on direct-modeling documents
+)
 PAUSE_TIME_ID = (
     "pause_time"  # Text input for upload completion poll interval in seconds
 )
@@ -197,6 +201,15 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     )
     apply_intent_input.tooltip = "Applies design intent (Part, Assembly, or Hybrid) to the document's root component."
 
+    enable_timeline_input = main_inputs.addBoolValueInput(
+        ENABLE_TIMELINE_ID, "Enable Timeline", True, "", False
+    )
+    enable_timeline_input.tooltip = (
+        "Switches any direct modeling (history off) design document to parametric so "
+        "it captures a timeline.\n \nExisting geometry is captured as a base feature. "
+        "Documents that already have a timeline are left alone."
+    )
+
     resume_status_input = main_inputs.addTextBoxCommandInput(
         RESUME_STATUS_ID,
         "Run status",
@@ -243,6 +256,11 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         HIDE_CANVASES_ID, "Hide canvases", True, "", False
     )
     hide_canvases_input.tooltip = "Hides each canvas in the document's root component before saving.\n \nSet the Canvases Folder visibility On to show any new Canvases created."
+
+    hide_ucs_input = vis_inputs.addBoolValueInput(
+        HIDE_UCS_ID, "Hide user coordinate systems", True, "", False
+    )
+    hide_ucs_input.tooltip = "Hides each user coordinate system in the document's root component before saving.\n \nUser coordinate systems have no folder visibility switch, so new ones appear as created."
 
     # Logging tab
     log_tab = inputs.addTabCommandInput("logTab", "Logging")
@@ -689,6 +707,103 @@ def hide_canvases_in_document(document):
         return f"Error hiding canvases: {str(e)}"
 
 
+def hide_user_coordinate_systems_in_document(document):
+    """
+    Hide all user coordinate systems in the specified document.
+
+    Unlike sketches / joints / canvases, user coordinate systems have no folder
+    light bulb property, so only the individual UCS light bulbs are switched off.
+    The collection itself is in preview state in the Fusion API, so builds without
+    it are reported rather than treated as an error.
+
+    :param document: The Fusion document to process
+    :return: A log string describing what was hidden
+    """
+    try:
+        app = adsk.core.Application.get()
+
+        # Get the active design
+        design = adsk.fusion.Design.cast(app.activeProduct)
+        if not design:
+            return "No active design found"
+
+        # Use Fusion API to directly control user coordinate system visibility
+        try:
+            component = design.activeComponent
+            if not hasattr(component, "userCoordinateSystems"):
+                return (
+                    "   User coordinate systems are not supported by this Fusion build"
+                )
+
+            # Check if there are user coordinate systems to hide
+            user_coordinate_systems = component.userCoordinateSystems
+            if user_coordinate_systems.count > 0:
+                hidden_count = 0
+                # Iterate over each user coordinate system and try to hide it
+                for i in range(user_coordinate_systems.count):
+                    user_coordinate_system = user_coordinate_systems.item(i)
+                    try:
+                        # Try to use the light bulb property if available
+                        if (
+                            hasattr(user_coordinate_system, "isLightBulbOn")
+                            and user_coordinate_system.isLightBulbOn
+                        ):
+                            user_coordinate_system.isLightBulbOn = False
+                            hidden_count += 1
+                    except Exception:
+                        # If individual control fails, continue to next
+                        continue
+
+                if hidden_count > 0:
+                    return f"   user coordinate systems hidden ({hidden_count})"
+                else:
+                    return "   Attempted to hide user coordinate systems - individual visibility control may be limited"
+            else:
+                return "   No user coordinate systems found in document"
+
+        except Exception as api_e:
+            return (
+                f"Error using Fusion API to hide user coordinate systems: {str(api_e)}"
+            )
+
+    except Exception as e:
+        return f"Error hiding user coordinate systems: {str(e)}"
+
+
+def enable_timeline_in_document(document):
+    """
+    Enable the timeline on a direct-modeling document by switching it to parametric.
+
+    Documents that already capture design history are left untouched; the switch is
+    one-way, so only DirectDesignType documents are converted. Fusion captures the
+    existing geometry as a base feature at the top of the new timeline.
+
+    :param document: The Fusion document to process
+    :return: A log string describing what changed
+    """
+    try:
+        app = adsk.core.Application.get()
+
+        # Get the active design
+        design = adsk.fusion.Design.cast(app.activeProduct)
+        if not design:
+            return "No active design found"
+
+        # Use Fusion API to read and set the document's design type
+        try:
+            if design.designType != adsk.fusion.DesignTypes.DirectDesignType:
+                return "   Timeline already enabled"
+
+            design.designType = adsk.fusion.DesignTypes.ParametricDesignType
+            return "   Timeline enabled (direct modeling converted to parametric)"
+
+        except Exception as api_e:
+            return f"Error using Fusion API to enable the timeline: {str(api_e)}"
+
+    except Exception as e:
+        return f"Error enabling the timeline: {str(e)}"
+
+
 def execute_command_with_timeout(
     command_definition,
     command_label,
@@ -945,6 +1060,12 @@ def command_execute(args: adsk.core.CommandEventArgs):
         hide_canvases = adsk.core.BoolValueCommandInput.cast(
             inputs.itemById(HIDE_CANVASES_ID)
         ).value
+        hide_ucs = adsk.core.BoolValueCommandInput.cast(
+            inputs.itemById(HIDE_UCS_ID)
+        ).value
+        enable_timeline = adsk.core.BoolValueCommandInput.cast(
+            inputs.itemById(ENABLE_TIMELINE_ID)
+        ).value
 
         # Read and validate upload poll interval
         pause_time_input = inputs.itemById(PAUSE_TIME_ID)
@@ -1044,6 +1165,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
                     fh.write(f"Active Document ID: {doc_id}\n")
                     fh.write("Command Options:\n")
                     fh.write(f"  Rebuild all: {rebuild_all}\n")
+                    fh.write(f"  Enable timeline: {enable_timeline}\n")
                     fh.write(f"  Create log file: {create_log}\n")
                     fh.write(f"  Open live log viewer: {open_log_view}\n")
                     fh.write(f"  Skip standard components: {skip_standard}\n")
@@ -1254,6 +1376,17 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 workspace.activate()
             des = adsk.fusion.Design.cast(app.activeProduct)
 
+            # Enable the timeline on direct-modeling documents if option is enabled
+            if enable_timeline:
+                timeline_log = enable_timeline_in_document(opened_doc)
+                ptutil.log(f"   Enable timeline for {component_name}: {timeline_log}")
+                write_log_entry(
+                    f"   Enable timeline for {component_name}: {timeline_log}"
+                )
+                # The design type switch rebuilds the document's feature data, so
+                # drop the pre-switch handle rather than reuse it below.
+                des = adsk.fusion.Design.cast(app.activeProduct)
+
             # Hide origins if option is enabled
             if hide_origins:
                 hide_log = hide_origins_in_document(opened_doc)
@@ -1292,6 +1425,16 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 ptutil.log(f"   Hide canvases for {component_name}: {hide_canvas_log}")
                 write_log_entry(
                     f"   Hide canvases for {component_name}: {hide_canvas_log}"
+                )
+
+            # Hide user coordinate systems if option is enabled
+            if hide_ucs:
+                hide_ucs_log = hide_user_coordinate_systems_in_document(opened_doc)
+                ptutil.log(
+                    f"   Hide user coordinate systems for {component_name}: {hide_ucs_log}"
+                )
+                write_log_entry(
+                    f"   Hide user coordinate systems for {component_name}: {hide_ucs_log}"
                 )
 
             # Apply design intent if option is enabled
@@ -1478,6 +1621,16 @@ def command_execute(args: adsk.core.CommandEventArgs):
         ptutil.log("Saving active document after updating references...")
         write_log_entry("Saving active document after updating references...")
         main_doc = app.activeDocument
+
+        # The root assembly is saved here rather than in the loop, so enable its
+        # timeline too when the option is on.
+        if enable_timeline:
+            main_timeline_log = enable_timeline_in_document(main_doc)
+            ptutil.log(f"   Enable timeline for main assembly: {main_timeline_log}")
+            write_log_entry(
+                f"   Enable timeline for main assembly: {main_timeline_log}"
+            )
+
         main_pre_save_version = None
         try:
             if main_doc.dataFile and hasattr(main_doc.dataFile, "versionNumber"):

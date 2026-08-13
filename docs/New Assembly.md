@@ -11,6 +11,7 @@ The New Assembly command opens a docked quick-start palette that helps you popul
 - **Insert an open document** — the **Open** tab shows a thumbnail gallery of your currently-open Part/Hybrid/Assembly documents. Click a card to insert that document into the active design as a referenced component (`addByInsert`).
 - **Show only what you opened** — by default the Open tab lists only **top-level documents** (the ones you opened directly). Tick **Show referenced children** to also list the sub-assemblies and parts that Fusion loaded as references of an open assembly.
 - **Insert a recent document** — the **Recent** tab shows a gallery of recently-touched Part/Hybrid/Assembly documents that are **not** currently open, backed by a small local cache that grows as you work.
+- **Insert a fastener** — the **Fasteners ↗** link below the galleries hands off to Fusion's own Fasteners dialog, so bolts and screws come from the Fusion fastener library rather than the document galleries.
 - **Thumbnail previews everywhere** — each card renders the component's thumbnail. Thumbnails are cached on disk so the Recent gallery can show them even when the document is closed.
 - Palette theme follows the Fusion UI theme — light, dark, or **match OS device theme** — and is correct on first paint.
 
@@ -30,9 +31,12 @@ The New Assembly command opens a docked quick-start palette that helps you popul
 3. **To insert an open document:** switch to the **Open** tab and click a thumbnail card. The document is inserted as a referenced component at the origin.
    - Tick **Show referenced children** if you also want to see (and insert) the sub-assemblies and parts loaded as references of an open assembly.
 4. **To insert a recent document:** switch to the **Recent** tab and click a card. Recently-used documents that are not currently open are listed newest-first.
-5. **To design a hierarchy or manage parameters:** select **Assembly Builder…** or **Global Parameters…**. The palette hides and the chosen command opens.
+5. **To insert a fastener:** select the **Fasteners ↗** link at the bottom of the insert card. The palette hides and Fusion's Fasteners dialog opens. The trailing **↗** marks a link that opens another dialog.
+6. **To design a hierarchy or manage parameters:** select **Assembly Builder…** or **Global Parameters…**. The palette hides and the chosen command opens.
 
 > **Note:** A document you insert during a palette session is removed from both galleries on the next refresh, so a second click cannot silently create a duplicate occurrence. Use the **↻** refresh button to re-scan open and recent documents at any time.
+
+> **Note:** Fusion itself disables Fasteners for part-intent and direct-modeling designs, in the Form environment, for library and AnyCAD-derived components, and when the document is not on a Fusion hub. When that is the case the link reports why instead of hiding the palette on a click that would do nothing.
 
 > **Note:** `addNewExternalComponent` requires an Autodesk Hub folder, so the active project's root folder is used as the destination for new components. You can move the generated documents afterward in the Data Panel.
 
