@@ -59,6 +59,12 @@ _RECENT_LIMIT = recents.RECENT_LIMIT
 # Commands we hand off to from the palette.
 _ASSEMBLY_BUILDER_CMD_ID = "PTAT_AssemblyBuilder"
 _GLOBAL_PARAMETERS_CMD_ID = "PTAT_globalParameters"
+# Fusion's own Fasteners command — the ASSEMBLY > INSERT panel button, defined by
+# Fusion as FusionFastenersCommand in its ribbon and command-definition
+# resources. There is no public insert API (FastenerOccurrenceDefinition only
+# exposes updateSize on existing occurrences), so executing the command
+# definition is the only route.
+_FASTENERS_CMD_ID = "FusionFastenersCommand"
 
 # Toolbar button that manually launches the palette. Lives in the Assembly
 # Insert panel, directly below the Insert STEP command. The palette also pops
@@ -731,6 +737,15 @@ def _palette_incoming(html_args: adsk.core.HTMLEventArgs):
         html_args.returnData = "OK"
         return
 
+    if action == "launchFasteners":
+        # Hides the palette itself only when the command can actually start, so
+        # the message below is not delivered to a dismissed palette.
+        msg = _action_launch_fasteners(palette)
+        if msg:
+            ui.messageBox(msg, CMD_NAME)
+        html_args.returnData = "OK"
+        return
+
     if action == "insertDoc":
         msg = _action_insert_doc(data)
         if msg:
@@ -782,6 +797,40 @@ def _execute_command(cmd_id: str) -> None:
 def _active_design_or_none() -> adsk.fusion.Design | None:
     product = app.activeProduct
     return adsk.fusion.Design.cast(product) if product else None
+
+
+def _action_launch_fasteners(palette) -> str:
+    """Hand off to Fusion's Fasteners dialog.
+
+    Unlike the two PowerTools handoffs, this one can be legitimately unavailable:
+    Fusion disables Fasteners for part-intent and direct-modeling designs, in the
+    Form environment, for library and AnyCAD-derived components, and when the
+    document is not on a Fusion hub. A disabled command definition executes as a
+    silent no-op, which from the palette looks like a dead link, so the state is
+    checked first and reported instead.
+
+    :return: An empty string once the command has started, else a message to show
+    """
+    cmd_def = ui.commandDefinitions.itemById(_FASTENERS_CMD_ID)
+    if cmd_def is None:
+        return "Fasteners is not available in this version of Fusion."
+
+    try:
+        is_enabled = cmd_def.controlDefinition.isEnabled
+    except Exception:
+        # Older builds may not expose the control definition; let Fusion decide.
+        is_enabled = True
+    if not is_enabled:
+        return (
+            "Fusion has Fasteners disabled for this document.\n\n"
+            "It needs an assembly or hybrid design saved to a Fusion hub, with "
+            "design history captured, in the Solid or Sheet Metal environment."
+        )
+
+    _hide_palette(palette)
+    cmd_def.execute()
+    ptutil.log(f"{CMD_NAME}: handed off to {_FASTENERS_CMD_ID}.")
+    return ""
 
 
 # Target-folder + project-label resolution now live in ptAddInUtils

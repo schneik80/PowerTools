@@ -56,7 +56,7 @@ C4Component
     Component(recent, "Recent enumerator", "_list_recent_docs", "Cache filtered to not-open + not-inserted; newest-first; dedup")
     Component(thumbs, "Thumbnail engine", "_thumbnail_for_open_doc", "Component.createThumbnail -> PNG cache -> data URL")
     Component(project, "Target-project resolver", "cache.resolve_target_folder", "Saved doc's folder -> activeProject.rootFolder; None -> no-project banner + Create disabled")
-    Component(actions, "Action router", "_palette_incoming", "createComponent / insertDoc / setShowChildren / launch handoffs / refresh / recheckProject")
+    Component(actions, "Action router", "_palette_incoming", "createComponent / insertDoc / setShowChildren / launch handoffs / launchFasteners / refresh / recheckProject")
   }
 
   System_Ext(fusion, "Fusion API")
@@ -116,6 +116,15 @@ sequenceDiagram
         User->>Palette: Assembly Builder… / Global Parameters…
         Palette->>Python: fusionSendData('launch…')
         Python->>Fusion: commandDefinition.execute()
+    else Fasteners
+        User->>Palette: Fasteners ↗
+        Palette->>Python: fusionSendData('launchFasteners')
+        Python->>Fusion: itemById('FusionFastenersCommand').controlDefinition.isEnabled
+        alt Enabled
+            Python->>Fusion: commandDefinition.execute()
+        else Disabled for this document
+            Python->>User: messageBox explaining why
+        end
     end
 
     Python->>Palette: sendInfoToHTML refresh (open + recent)
@@ -140,6 +149,9 @@ The recents cache (`cache/recent_docs.json`) and the per-document thumbnail stor
 
 ### Why a "no target project" banner (and manual re-check)?
 A new external component needs a target `DataFolder` for its eventual save. The backend resolves one via `cache.resolve_target_folder()` — the active document's own folder when it is already saved, otherwise `app.data.activeProject.rootFolder`. That `activeProject` access raises `InternalValidationError('id.size()')` when the Data Panel has no project in context. Because a raise inside the palette's `incomingFromHTML` handler is swallowed by the `DEBUG`-gated `handle_error()`, this previously read to the user as **nothing happening** on *New Component*. The palette now surfaces an unresolved project as a banner and disables *New Component* until one is available. Fusion exposes **no active-project-changed event** (`Data.activeProject` is a plain property with no event), so the palette can't observe the user picking a project: it re-checks on demand instead — via a **Re-check** button on the banner and automatically when the palette page regains focus (a lightweight `recheckProject` message that re-resolves only the target folder). The same resolver and banner back the Assembly Builder's *Create Assembly* gate.
+
+### Why does the Fasteners link execute a native command id, and why the `isEnabled` check?
+Fasteners has no public insert API — `FastenerOccurrenceDefinition` is a preview class exposing only `updateSize()` / `isSizeUpToDate` for occurrences that already exist — so the only route is executing Fusion's own command definition. Its id, `FusionFastenersCommand`, is the button Fusion itself places in the `InsertAssemblePanel` (confirmed in Fusion's shipped `Resources/Toolbar/TabToolbars.xml` and `Resources/CommandDefinitions/CommandDefinitions.xml`); the editing variants use a bare `Fasteners*` prefix instead, so the naming is not symmetric and the insert id should not be guessed from them. Unlike the two PowerTools handoffs, this command is often legitimately **present but disabled** — Fusion blocks it for part-intent and direct-modeling designs, in the Form environment, for library and AnyCAD-derived components, and off-hub. `execute()` on a disabled definition is a silent no-op, which reads as a dead link, so `controlDefinition.isEnabled` is read first and the palette is left open with an explanation when it is false. The check is wrapped in `try/except` and defaults to *enabled* so a build that does not expose the control definition still lets Fusion make the call.
 
 ### Why a per-session "inserted" filter?
 A document inserted from the palette is not "open in a tab," so the next refresh would re-list it under Recent and a second click would silently add a duplicate occurrence. Inserted DataFile ids are tracked for the current palette session and hidden from both galleries; the set is cleared each time the palette is opened so deliberate re-insertion is still possible in a fresh session.

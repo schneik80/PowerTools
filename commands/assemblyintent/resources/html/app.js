@@ -200,6 +200,16 @@
         send('refresh', {});
     });
 
+    // Hands off to Fusion's own Fasteners dialog. href="#" would navigate the
+    // palette page, so the default is always suppressed.
+    var fastenersLink = document.getElementById('linkFasteners');
+    if (fastenersLink) {
+        fastenersLink.addEventListener('click', function (e) {
+            e.preventDefault();
+            send('launchFasteners', {});
+        });
+    }
+
     var recheckBtn = document.getElementById('btnRecheckProject');
     if (recheckBtn) recheckBtn.addEventListener('click', recheckProject);
 
