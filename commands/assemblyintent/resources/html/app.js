@@ -11,6 +11,19 @@
         targetProject: ''
     };
 
+    // Design intents the icon set covers. Anything else — including the ~25% of
+    // documents Fusion records no intent for — gets no badge rather than a
+    // guessed one.
+    var INTENTS = ['part', 'hybrid', 'assembly'];
+
+    // Recent cards rendered at once. The backend sends the whole list so the
+    // filter can search all of it; only this many are in the DOM at a time,
+    // because a few hundred cards is a long scroll in a narrow palette.
+    var RECENT_RENDER_CAP = 40;
+
+    // Full unfiltered Recent list, kept so filtering never round-trips.
+    var recentAll = [];
+
     function applyTheme(theme) {
         document.body.classList.remove('dark', 'light');
         document.body.classList.add(theme === 'light' ? 'light' : 'dark');
@@ -40,47 +53,70 @@
         if (el) el.textContent = n > 0 ? ' (' + n + ')' : '';
     }
 
-    function renderGallery(rootId, emptyId, docs) {
+    function renderGallery(rootId, emptyId, docs, opts) {
+        opts = opts || {};
+        var all = docs || [];
         // Update the corresponding tab count badge alongside the gallery so
-        // the user sees how many items each tab holds without switching.
-        if (rootId === 'openGallery') setTabCount('openCount', (docs || []).length);
-        if (rootId === 'recentGallery') setTabCount('recentCount', (docs || []).length);
+        // the user sees how many items each tab holds without switching. The
+        // Recent badge counts the whole list, not the filtered subset.
+        if (rootId === 'openGallery') setTabCount('openCount', all.length);
+        if (rootId === 'recentGallery') {
+            setTabCount('recentCount', opts.total != null ? opts.total : all.length);
+        }
 
         var root = document.getElementById(rootId);
         if (!root) return;
         // Wipe and rebuild.
         root.innerHTML = '';
-        if (!docs || docs.length === 0) {
+        if (all.length === 0) {
             var empty = document.createElement('div');
             empty.className = 'empty';
             empty.id = emptyId;
-            empty.textContent = (emptyId === 'openEmpty')
+            empty.textContent = opts.emptyText || ((emptyId === 'openEmpty')
                 ? 'No other open documents.'
-                : 'No recent documents yet.';
+                : 'No recent documents yet.');
             root.appendChild(empty);
             return;
         }
-        docs.forEach(function (doc) {
+        var shown = opts.cap ? all.slice(0, opts.cap) : all;
+        shown.forEach(function (doc) {
             var card = document.createElement('div');
             card.className = 'doc-card';
             card.title = 'Insert ' + (doc.name || '');
 
+            // Narrowed to the known set, so it is safe to drop straight into a
+            // class name. Blank means Fusion never recorded an intent for this
+            // document and never will, so no badge is shown rather than guessing
+            // one — coercing to 'part' would mislabel a quarter of the list.
+            var intent = INTENTS.indexOf(doc.intent) >= 0 ? doc.intent : '';
+            var intentLabel = intent
+                ? intent.charAt(0).toUpperCase() + intent.slice(1)
+                : '';
+
+            // The intent class rides on the thumb too: with no thumbnail (or one
+            // that fails to load) `.broken` swaps in this type's 32px icon.
+            var thumbClass = 'doc-thumb' + (intent ? ' ' + intent : '');
             var thumbHtml;
             if (doc.thumbUrl) {
-                thumbHtml = '<div class="doc-thumb">' +
+                thumbHtml = '<div class="' + thumbClass + '">' +
                     '<img src="' + escapeHtml(doc.thumbUrl) + '" alt="" ' +
                     'onerror="this.parentNode.classList.add(\'broken\');this.remove();" />' +
                     '</div>';
             } else {
-                thumbHtml = '<div class="doc-thumb broken"></div>';
+                thumbHtml = '<div class="' + thumbClass + ' broken"></div>';
             }
+
+            var iconHtml = intent
+                ? '<span class="intent-icon ' + intent + '" role="img" ' +
+                  'title="' + intentLabel + '" aria-label="' + intentLabel + '"></span>'
+                : '';
 
             card.innerHTML =
                 thumbHtml +
-                '<span class="badge ' + escapeHtml(doc.intent || 'part') + '">' +
-                escapeHtml(doc.intent || 'part') +
-                '</span>' +
-                '<div class="doc-card-name">' + escapeHtml(doc.name || '') + '</div>';
+                '<div class="doc-card-meta">' +
+                iconHtml +
+                '<div class="doc-card-name">' + escapeHtml(doc.name || '') + '</div>' +
+                '</div>';
             card.addEventListener('click', function () {
                 send('insertDoc', {
                     dataFileId: doc.dataFileId,
@@ -90,6 +126,36 @@
             });
             root.appendChild(card);
         });
+        if (all.length > shown.length) {
+            var note = document.createElement('div');
+            note.className = 'gallery-note';
+            note.textContent = 'Showing ' + shown.length + ' of ' + all.length +
+                ' — filter by name to reach the rest.';
+            root.appendChild(note);
+        }
+    }
+
+    // Repaint the Recent gallery from the full list through the filter box.
+    // Client-side so typing never round-trips to the backend.
+    function renderRecent() {
+        var input = document.getElementById('recentFilter');
+        var query = input ? input.value.trim().toLowerCase() : '';
+        var matches = recentAll;
+        if (query) {
+            matches = recentAll.filter(function (doc) {
+                return (doc.name || '').toLowerCase().indexOf(query) >= 0;
+            });
+        }
+        renderGallery('recentGallery', 'recentEmpty', matches, {
+            cap: RECENT_RENDER_CAP,
+            total: recentAll.length,
+            emptyText: query ? 'No recent document matches that name.' : ''
+        });
+    }
+
+    function setRecentDocs(docs) {
+        recentAll = docs || [];
+        renderRecent();
     }
 
     function updateIntentLabel() {
@@ -149,7 +215,7 @@
     applyTheme(ptInit.theme);
     setDocName(ptInit.docName);
     renderGallery('openGallery', 'openEmpty', ptInit.openDocs);
-    renderGallery('recentGallery', 'recentEmpty', ptInit.recentDocs);
+    setRecentDocs(ptInit.recentDocs);
     updateIntentLabel();
     applyTargetProject({
         hasProject: ptInit.hasTargetProject,
@@ -166,6 +232,14 @@
         showChildren.addEventListener('change', function () {
             send('setShowChildren', { showChildren: showChildren.checked });
         });
+    }
+
+    // Filtering a few hundred names is instant, so this repaints on each
+    // keystroke with no debounce. 'search' also fires on the clear affordance.
+    var recentFilter = document.getElementById('recentFilter');
+    if (recentFilter) {
+        recentFilter.addEventListener('input', renderRecent);
+        recentFilter.addEventListener('search', renderRecent);
     }
 
     // --- Wire actions ---
@@ -258,7 +332,7 @@
                 } else if (action === 'setRecentDocs') {
                     var recent = [];
                     try { recent = JSON.parse(data) || []; } catch (e) { recent = []; }
-                    renderGallery('recentGallery', 'recentEmpty', recent);
+                    setRecentDocs(recent);
                 } else if (action === 'setTargetProject') {
                     applyTargetProject(data);
                 }

@@ -1,0 +1,14 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M13 14H8V24H13H18V14H13Z" fill="#BBBBBB"/>
+<path d="M23.5 14H19V24H23.5H28V14H23.5Z" fill="#BBBBBB"/>
+<path d="M32 20L28 24V14L32 10V20Z" fill="#999999"/>
+<path d="M28 14H19L23 10H32L28 14Z" fill="#D9D9D9"/>
+<path d="M18 4H8V13H18V4Z" fill="#BBBBBB"/>
+<path d="M18 4H8L12 0H22L18 4Z" fill="#D9D9D9"/>
+<path d="M22 10H23L19 14V24H18V14H8V13H18V4L22 0V10Z" fill="#999999"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M22 10H32V20L28 24H8V4L12 0H22V10ZM9 4.41016V23H27.5898L31 19.5898V11H21V1H12.4102L9 4.41016Z" fill="#666666"/>
+<rect y="20" width="12" height="12" fill="#D9D9D9"/>
+<path d="M12 20L16 16V28L12 32V20Z" fill="#BBBBBB"/>
+<path d="M4 16H16L12 20H0L4 16Z" fill="#F3F3F3"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M16 16V28L12 32H0V20L4 16H16ZM1 20.4142V31H11.5858L15 27.5858V17H4.41421L1 20.4142Z" fill="#666666"/>
+</svg>

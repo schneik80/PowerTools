@@ -135,6 +135,13 @@ sequenceDiagram
 ### Why `documentActivated` instead of `documentOpened`?
 `documentOpened` is not reliably emitted for **File > New** across Fusion builds (notably on macOS), while `documentActivated` fires consistently. It also fires on every tab switch, so a `_palette_was_open_for` gate (compared by Python object identity, not `id()`) suppresses re-popping the palette for a document it already handled. `documentOpened` is attached as a harmless backup when the running build exposes it.
 
+### Why doesn't an insert continue into Move/Copy? (parked)
+Fusion's own **Insert Component** is not one command but a chain: `FusionImportCommand` → `CommitCommand` → `SelectCommand` → `FitCommand` → `FusionMoveCommand`. `addByInsert` is only the import and commit, so a palette insert lands the component unselected at the origin and the user positions it themselves.
+
+Replicating the remaining three steps was attempted (`_finish_insert_like_fusion`, plus `_end_active_command` to keep back-to-back inserts safe while the Move/Copy dialog stayed open) and **did not behave as expected in practice**. Both call sites are commented out and the implementation is kept, unreferenced, as the starting point for a second attempt. The three API calls are individually correct and `CommandDefinition.execute` is used the same way by the Fasteners handoff, which works — so the suspects are contextual: running the chain from inside the palette's `incomingFromHTML` handler, and the full palette refresh the caller performs immediately afterwards, which may disturb the selection Move/Copy reads. The `customEvent` deferral documented in `commands/externalize/entry.py` is the next thing to try.
+
+One finding from that work is **retained and live**: `addByInsert` is documented to return **null** rather than raise when the insert fails — most often because the DataFile is in a different project than the host document. That previously read as success, so the palette recorded a recents entry and hid the document from both galleries for the session. The occurrence is now checked and the real reason reported.
+
 ### How are top-level documents told apart from referenced children?
 Fusion answers this directly and instantly: `Document.documentReferences` raises *"Cannot get documentReferences of a non-top-level document"* for a reference-loaded child and returns the reference collection for a top-level document. The Open tab uses that in-memory check (no cloud round-trip) to show only the documents you opened directly. **Show referenced children** simply skips the filter.
 

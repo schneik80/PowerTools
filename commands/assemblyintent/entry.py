@@ -30,6 +30,7 @@ import adsk.fusion
 from ... import config
 from ...lib import ptAddInUtils as ptutil
 from ...lib.ptAddInUtils import cache_utils as cache
+from ...lib.ptAddInUtils import intent_icons
 from ...lib.ptAddInUtils import recents_utils as recents
 
 app = adsk.core.Application.get()
@@ -46,6 +47,11 @@ _HTML_DIR = os.path.join(
 )
 PALETTE_URL = os.path.join(_HTML_DIR, "index.html").replace("\\", "/")
 INIT_JS_PATH = os.path.join(_HTML_DIR, "init.js")
+
+# Design-intent icons, emitted as CSS variables carrying data URIs. Generated
+# from the shared SVGs in lib/ptAddInUtils/assets rather than committed, so the
+# palette and any future consumer stay pinned to one set of glyphs.
+INTENT_ICONS_CSS_PATH = os.path.join(_HTML_DIR, "intent-icons.css")
 
 # The recents cache and the per-document thumbnail store are shared with the
 # Open Recent command; recents_utils owns their format, paths, and helpers so
@@ -65,6 +71,17 @@ _GLOBAL_PARAMETERS_CMD_ID = "PTAT_globalParameters"
 # exposes updateSize on existing occurrences), so executing the command
 # definition is the only route.
 _FASTENERS_CMD_ID = "FusionFastenersCommand"
+
+# Fusion's own Move/Copy command. Inserting a component from the ASSEMBLY >
+# INSERT panel runs a sequence — FusionImportCommand, CommitCommand,
+# SelectCommand, FitCommand, FusionMoveCommand — so the new occurrence arrives
+# selected, framed, and ready to position. ``addByInsert`` only covers the
+# import and commit; _finish_insert_like_fusion adds the rest.
+_MOVE_COPY_CMD_ID = "FusionMoveCommand"
+
+# Fusion reports its idle state as the Select command rather than "nothing
+# running", so these ids mean "no real command is active".
+_IDLE_CMD_IDS = ("", "SelectCommand")
 
 # Toolbar button that manually launches the palette. Lives in the Assembly
 # Insert panel, directly below the Insert STEP command. The palette also pops
@@ -106,6 +123,12 @@ def _diag(msg: str) -> None:
 # refresh (it's not "open" in a tab, so Recent re-includes it) and clicking
 # again would silently insert a second occurrence into the assembly.
 _inserted_in_session: set[str] = set()
+
+# Upper bound on Recent entries handed to the page. The page renders only the
+# newest slice of these and filters across the whole set, so the cap has to be
+# generous — capping here instead would leave the filter unable to find anything
+# it was not sent.
+RECENT_PAYLOAD_LIMIT = 300
 
 # Open-tab filter, toggled from the palette checkbox. Default False → show only
 # top-level (directly-opened) docs. True → also include reference-loaded
@@ -323,6 +346,7 @@ def _show_palette():
         palette = None
 
     _write_init_js(_gather_palette_state())
+    _write_intent_icons_css()
     palette = palettes.add(
         id=PALETTE_ID,
         name=PALETTE_NAME,
@@ -410,6 +434,16 @@ def _write_init_js(state: dict) -> None:
             fh.write(f"window.__ptInit = {payload};\n")
     except Exception as e:
         ptutil.log(f"{CMD_NAME}: could not write init.js — {e}")
+
+
+def _write_intent_icons_css() -> None:
+    """Refresh the generated intent-icon stylesheet the page links.
+
+    Unlike init.js this content never varies, so rewriting it on every open is
+    only about keeping it in step with the SVGs in lib/ptAddInUtils/assets.
+    """
+    if not intent_icons.write_stylesheet(INTENT_ICONS_CSS_PATH):
+        ptutil.log(f"{CMD_NAME}: could not write intent-icons.css")
 
 
 def _send_palette_init(palette: adsk.core.Palette):
@@ -631,53 +665,46 @@ def _remember_recent_if_eligible(doc: adsk.core.Document | None) -> None:
 
 
 def _list_recent_docs() -> list[dict]:
-    """Recent cache filtered to entries that are NOT currently open and have
-    NOT been inserted during this palette session. Enriches each entry with a
-    thumbnail URL when one is cached on disk."""
-    entries = _read_recent_cache()
-    # _list_open_docs already filters out _inserted_in_session, so we need a
-    # raw open-id set here (re-read docs to get every truly-open id).
-    raw_open_ids: set[str] = set()
-    try:
-        documents = app.documents
-        for i in range(documents.count):
-            doc = documents.item(i)
-            if doc is None or not doc.isSaved:
-                continue
-            df = getattr(doc, "dataFile", None)
-            if df is None:
-                continue
-            raw_open_ids.add(getattr(df, "id", ""))
-    except Exception:
-        pass
-    # Include the active doc's id too — we never want it to appear.
+    """The Recent gallery: the shared recents list, as insertable cards.
+
+    Uses ``recents.list_recent`` so this gallery and the Open Recent flyout are
+    the same list, drawn from Fusion's own recents file. It previously walked our
+    cache directly and excluded every open document, which on a small cache left
+    only a handful of cards; the exclusions now match the flyout's — just the
+    active document, which cannot be inserted into itself.
+
+    Only the session-insert guard is extra, and it is functional rather than
+    cosmetic: re-clicking a card already inserted this session would silently add
+    a duplicate occurrence.
+
+    Designs only (``f3d``) — these cards insert a component, so drawings and
+    electronics files have no meaning here.
+
+    The whole list goes to the page, which renders the newest slice and filters
+    across all of it. Any cached thumbnails ride along as data URIs, which is the
+    payload the lazy per-card fetch is meant to replace.
+    """
+    exclude = set(_inserted_in_session)
     try:
         active_df = getattr(app.activeDocument, "dataFile", None)
         if active_df is not None:
-            raw_open_ids.add(getattr(active_df, "id", ""))
+            exclude.add(getattr(active_df, "id", ""))
     except Exception:
         pass
 
-    seen: set[str] = set()
     out: list[dict] = []
-    # Newest first.
-    for entry in reversed(entries):
-        df_id = entry.get("dataFileId", "")
-        if not df_id or df_id in seen:
-            continue
-        if df_id in raw_open_ids or df_id in _inserted_in_session:
-            continue
-        seen.add(df_id)
-        # Recent docs are by definition not open — Component.createThumbnail
-        # can't render them. Reuse whatever PNG was cached when this doc was
-        # last open; otherwise the card falls back to the placeholder.
-        thumb_url = _cached_thumbnail(df_id)
+    for item in recents.list_recent(
+        exclude_ids=exclude, limit=RECENT_PAYLOAD_LIMIT, file_types=("f3d",)
+    ):
+        # Cached PNGs only: a closed document cannot be rendered with
+        # Component.createThumbnail, so cards without one fall back to the
+        # design-intent placeholder.
         out.append(
             {
-                "dataFileId": df_id,
-                "name": entry.get("name", ""),
-                "intent": entry.get("intent", ""),
-                "thumbUrl": thumb_url,
+                "dataFileId": item["dataFileId"],
+                "name": item["name"],
+                "intent": item["intent"],
+                "thumbUrl": _cached_thumbnail(item["dataFileId"]),
             }
         )
     return out
@@ -881,6 +908,29 @@ def _action_create_component(data: dict) -> str:
         return f"Create failed: {e}"
 
 
+def _end_active_command() -> None:
+    """End any running command so an insert does not start inside one.
+
+    Clicking a ribbon button ends whatever command is active, but the palette is
+    not part of the ribbon and stays clickable throughout. Since an insert now
+    leaves Move/Copy open, clicking a second card would otherwise call
+    ``addByInsert`` from inside that command. Terminating discards an
+    uncommitted move, exactly as pressing Escape would — the click was a
+    deliberate move away from the dialog.
+    """
+    try:
+        active = ui.activeCommand
+    except Exception:
+        return  # older builds may not expose it; let Fusion arbitrate
+    if not active or active in _IDLE_CMD_IDS:
+        return
+    try:
+        ui.terminateActiveCommand()
+        ptutil.log(f"{CMD_NAME}: ended '{active}' before inserting.")
+    except Exception as e:
+        ptutil.log(f"{CMD_NAME}: could not end '{active}' — {e}")
+
+
 def _action_insert_doc(data: dict) -> str:
     df_id = data.get("dataFileId", "")
     if not df_id:
@@ -894,16 +944,85 @@ def _action_insert_doc(data: dict) -> str:
     if data_file is None:
         return "Could not resolve the selected document."
 
+    # DISABLED with _finish_insert_like_fusion below — see the note there. This
+    # only existed to make back-to-back inserts safe while Move/Copy was left
+    # open, so it goes quiet with it rather than terminating the user's command
+    # for no reason. Re-enable both together.
+    # _end_active_command()
     transform = adsk.core.Matrix3D.create()
     try:
-        design.rootComponent.occurrences.addByInsert(data_file, transform, True)
-        intent_name = data.get("intent", "")
-        _touch_recent(df_id, getattr(data_file, "name", ""), intent_name)
-        # Remember this doc was inserted in this session so the next refresh
-        # hides it from both galleries — a second click would silently create a
-        # duplicate occurrence in the assembly.
-        _inserted_in_session.add(df_id)
-        ptutil.log(f"{CMD_NAME}: inserted '{getattr(data_file, 'name', df_id)}'.")
-        return ""
+        occurrence = design.rootComponent.occurrences.addByInsert(
+            data_file, transform, True
+        )
     except Exception as e:
         return f"Insert failed: {e}"
+    # Documented to return null rather than raise when the insert fails (most
+    # often the DataFile living in a different project than this document).
+    if occurrence is None:
+        return (
+            f"Fusion could not insert '{getattr(data_file, 'name', df_id)}'.\n\n"
+            "A referenced insert requires the document to be in the same project "
+            "as this assembly."
+        )
+
+    intent_name = data.get("intent", "")
+    _touch_recent(df_id, getattr(data_file, "name", ""), intent_name)
+    # Remember this doc was inserted in this session so the next refresh
+    # hides it from both galleries — a second click would silently create a
+    # duplicate occurrence in the assembly.
+    _inserted_in_session.add(df_id)
+    ptutil.log(f"{CMD_NAME}: inserted '{getattr(data_file, 'name', df_id)}'.")
+    # DISABLED pending investigation — replicating Fusion's post-insert command
+    # chain did not behave as expected in practice. The implementation is kept
+    # below (unreferenced) rather than deleted so the next attempt starts from it.
+    # Re-enable together with _end_active_command above.
+    # _finish_insert_like_fusion(occurrence)
+    return ""
+
+
+def _finish_insert_like_fusion(occurrence) -> None:
+    """Leave the new occurrence selected, framed, and in Move/Copy.
+
+    NOT CURRENTLY CALLED — see the disabled call in _action_insert_doc. Kept as
+    the starting point for a second attempt. What is known so far: the three API
+    calls below are individually correct (verified against the API stubs), and
+    ``CommandDefinition.execute`` is used the same way by the Fasteners handoff in
+    this file, which works. So the likely suspects are the *context* rather than
+    the calls — running them from inside ``incomingFromHTML`` (the palette's
+    message handler), and the palette refresh that the caller performs
+    immediately afterwards, which may disturb the selection Move/Copy reads. The
+    ``customEvent`` deferral documented in ``commands/externalize/entry.py`` is
+    the obvious thing to try next.
+
+    Fusion's own Insert Component chains five commands — FusionImportCommand,
+    CommitCommand, SelectCommand, FitCommand, FusionMoveCommand. ``addByInsert``
+    is the import and commit; this adds the last three so a palette insert ends
+    in the same state as the native one, with the component ready to position
+    instead of sitting unselected at the origin.
+
+    Each step degrades independently: a failure to select or fit must not stop
+    Move/Copy from opening, and none of them should turn a successful insert into
+    a reported failure — the component is already in the assembly by this point.
+    """
+    try:
+        ui.activeSelections.clear()
+        ui.activeSelections.add(occurrence)
+    except Exception as e:
+        ptutil.log(f"{CMD_NAME}: could not select the inserted occurrence — {e}")
+
+    try:
+        # Before Move/Copy, so the dialog opens over a framed view rather than
+        # re-framing underneath it.
+        app.activeViewport.fit()
+    except Exception as e:
+        ptutil.log(f"{CMD_NAME}: could not fit the view after insert — {e}")
+
+    cmd_def = ui.commandDefinitions.itemById(_MOVE_COPY_CMD_ID)
+    if cmd_def is None:
+        ptutil.log(f"{CMD_NAME}: {_MOVE_COPY_CMD_ID} not available — insert only.")
+        return
+    try:
+        # Operates on the current selection, so this must follow the select above.
+        cmd_def.execute()
+    except Exception as e:
+        ptutil.log(f"{CMD_NAME}: could not start Move/Copy — {e}")

@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <title>New Assembly</title>
     <link rel="stylesheet" href="style.css">
+    <!-- Generated on palette open from lib/ptAddInUtils/assets/intent_icons.
+         Defines --pt-intent-<intent>-<size> for both themes. -->
+    <link rel="stylesheet" href="intent-icons.css">
 </head>
 <body class="dark">
     <header class="topbar">
@@ -99,9 +102,19 @@
                         <div class="empty" id="openEmpty">No other open documents.</div>
                     </div>
                 </div>
-                <div class="gallery tab-pane" id="recentGallery"
+                <div class="tab-pane recent-pane"
                      data-tab="recent" role="tabpanel">
-                    <div class="empty" id="recentEmpty">No recent documents yet.</div>
+                    <!-- Fusion's recents list runs to a few hundred designs, so
+                         the gallery renders the newest slice and this reaches
+                         the rest. Filtering is client-side over the full list. -->
+                    <div class="filter-row">
+                        <input type="search" id="recentFilter"
+                               placeholder="Filter recent documents by name…"
+                               autocomplete="off" />
+                    </div>
+                    <div class="gallery" id="recentGallery">
+                        <div class="empty" id="recentEmpty">No recent documents yet.</div>
+                    </div>
                 </div>
             </div>
             <!-- Insert paths that are not documents. Pinned below the scrolling

@@ -4,9 +4,9 @@
 
 ## Overview
 
-**Open Recent** adds a flyout submenu to Fusion's **File** menu, directly after **Open**, that lists the documents in your PowerTools recents cache. Each entry shows the document's name; hovering over it reveals a tooltip with the document's Data Panel location and a thumbnail preview. Selecting an entry opens that document in Fusion.
+**Open Recent** adds a flyout submenu to Fusion's **File** menu, directly after **Open**, that lists your recently-used documents. Each entry shows the document's name; hovering over it reveals a tooltip with the document's Data Panel location and a thumbnail preview. Selecting an entry opens that document in Fusion.
 
-The recents list is the same one that powers the **Recent** gallery in the [New Assembly](./New%20Assembly.md) quick-start palette — it grows automatically as you open and work on Part, Hybrid, and Assembly documents. Open Recent simply surfaces that list where you expect it: on the File menu, one click from anywhere in Fusion.
+The list comes from the recents history Fusion already keeps for your signed-in account on the active hub, so it is populated from the first launch rather than having to be built up by using PowerTools. It is the same list that powers the **Recent** gallery in the [New Assembly](./New%20Assembly.md) quick-start palette. Open Recent simply surfaces it where you expect it: on the File menu, one click from anywhere in Fusion. Unlike that gallery — whose cards insert a component, so it lists designs only — this flyout lists every kind of document Fusion recorded, drawings included.
 
 ```text
 File ▾
@@ -28,10 +28,11 @@ File ▾
 
 ## How it works
 
-- The list is drawn from the shared PowerTools recents cache (`cache/recent_docs.json`). Every time you activate a **saved** Part, Hybrid, or Assembly document, it is recorded (or moved to the top) and its thumbnail and location are captured while the document is open.
+- The entries and their order come from Fusion's own recents history for the signed-in account on the active hub, which Fusion rewrites as you open documents. Switching hubs switches the list.
+- PowerTools keeps a small cache of its own (`cache/recent_docs.json`) alongside it. Every time you activate a **saved** Part, Hybrid, or Assembly document, it is recorded there together with its thumbnail and location. That cache supplies the two things Fusion's history does not carry — the thumbnail, and the design intent for documents Fusion recorded none for — and it becomes the whole list if Fusion's history cannot be read (for example when you are signed out).
 - Thumbnails are cached on disk, so they appear in the tooltip even after the document is closed. A document that has not been open since you installed this version shows a name-and-location tooltip until the first time you open it.
 - The currently-active document is omitted from the list (you already have it open); it reappears once you switch away from it.
-- The flyout shows up to the 15 most recent documents; the cache itself retains the last 24.
+- The flyout shows up to the 15 most recent documents.
 
 ## Prerequisites
 

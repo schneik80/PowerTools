@@ -264,24 +264,31 @@ def _clear_items() -> None:
 
 
 def _rebuild_menu() -> None:
-    """Repopulate the flyout from the recents cache, newest-first."""
+    """Repopulate the flyout from the recents list, newest-first."""
     global _item_cmd_ids, _last_signature
 
     if _dropdown is None:
         return
 
     active_id = _active_data_file_id()
+    # file_types=None: opening a drawing from the File menu is as reasonable as
+    # opening a design, so this flyout lists every type Fusion recorded. (The New
+    # Assembly gallery stays designs-only — its cards insert a component.)
     items = recents.list_recent(
-        exclude_ids={active_id} if active_id else None, limit=MENU_LIMIT
+        exclude_ids={active_id} if active_id else None,
+        limit=MENU_LIMIT,
+        file_types=None,
     )
 
     # Skip the rebuild (and its command-definition churn) when nothing visible
-    # changed — documentActivated fires on every tab switch.
+    # changed — documentActivated fires on every tab switch. ``version`` is in
+    # the signature so a re-saved document refreshes its tool-clip.
     signature = tuple(
         (
             it["dataFileId"],
             it["name"],
             it.get("location", ""),
+            it.get("version", ""),
             bool(it.get("thumbPath")),
         )
         for it in items

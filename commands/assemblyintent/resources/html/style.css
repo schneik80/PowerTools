@@ -12,9 +12,7 @@
     --text-muted: #718096;
     --accent: #0696d7;
     --accent-hover: #0aa3e8;
-    --badge-part: #38a169;
-    --badge-hybrid: #d69e2e;
-    --badge-assembly: #5a67d8;
+    --warning: #d69e2e;
     --shadow-card: 0 2px 6px rgba(0,0,0,0.3);
 }
 
@@ -31,9 +29,7 @@ body.light {
     --text-muted: #888888;
     --accent: #0696d7;
     --accent-hover: #0580b8;
-    --badge-part: #38a169;
-    --badge-hybrid: #b7791f;
-    --badge-assembly: #5a67d8;
+    --warning: #b7791f;
     --shadow-card: 0 1px 3px rgba(0,0,0,0.12);
 }
 
@@ -101,7 +97,7 @@ body {
     align-items: center;
 }
 
-input[type="text"], select {
+input[type="text"], input[type="search"], select {
     background: var(--bg-input);
     color: var(--text-primary);
     border: 1px solid var(--border-color);
@@ -110,7 +106,7 @@ input[type="text"], select {
     font-size: 12px;
     font-family: inherit;
 }
-input[type="text"]:focus, select:focus {
+input[type="text"]:focus, input[type="search"]:focus, select:focus {
     outline: none;
     border-color: var(--accent);
 }
@@ -151,8 +147,8 @@ input[type="text"]:focus, select:focus {
     gap: 8px;
     align-items: flex-start;
     background: var(--bg-card);
-    border: 1px solid var(--badge-hybrid);
-    border-left: 3px solid var(--badge-hybrid);
+    border: 1px solid var(--warning);
+    border-left: 3px solid var(--warning);
     border-radius: 6px;
     padding: 8px 10px;
     box-shadow: var(--shadow-card);
@@ -160,7 +156,7 @@ input[type="text"]:focus, select:focus {
 }
 .banner[hidden] { display: none; }
 .banner .banner-icon {
-    color: var(--badge-hybrid);
+    color: var(--warning);
     font-size: 14px;
     line-height: 1.4;
     flex-shrink: 0;
@@ -248,15 +244,27 @@ input[type="text"]:focus, select:focus {
     object-fit: contain;
     display: block;
 }
+/* No thumbnail (or one that failed to load) → stand in the document's 32px
+   design-intent icon, so the card still says what kind of document it is.
+   Each intent is named explicitly: a document Fusion recorded no intent for
+   carries no intent class and must stay an empty frame rather than inheriting
+   one, which would mislabel it exactly as the old text badge did. */
 .doc-thumb.broken::after {
     content: '';
-    width: 36%;
-    height: 36%;
-    background: var(--border-strong);
-    -webkit-mask: radial-gradient(circle, transparent 35%, #000 36%) center / 100% 100% no-repeat;
-            mask: radial-gradient(circle, transparent 35%, #000 36%) center / 100% 100% no-repeat;
-    opacity: 0.45;
-    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    background: center / 32px 32px no-repeat;
+}
+.doc-thumb.broken.part::after { background-image: var(--pt-intent-part-32); }
+.doc-thumb.broken.hybrid::after { background-image: var(--pt-intent-hybrid-32); }
+.doc-thumb.broken.assembly::after { background-image: var(--pt-intent-assembly-32); }
+
+/* Intent icon sits on the name's first line rather than in a row of its own,
+   which keeps the cards as short as they were with the old text badges. */
+.doc-card-meta {
+    display: flex;
+    align-items: flex-start;
+    gap: 5px;
 }
 
 .doc-card .doc-card-name {
@@ -270,19 +278,17 @@ input[type="text"]:focus, select:focus {
     word-break: break-word;
 }
 
-.badge {
-    align-self: flex-start;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: #ffffff;
-    padding: 2px 6px;
-    border-radius: 3px;
-    line-height: 1;
+/* 16px design-intent glyph. Themed variables come from the generated
+   intent-icons.css; see lib/ptAddInUtils/intent_icons.py. */
+.intent-icon {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    background: center / 16px 16px no-repeat;
+    background-image: var(--pt-intent-part-16);
 }
-.badge.part { background: var(--badge-part); }
-.badge.hybrid { background: var(--badge-hybrid); }
-.badge.assembly { background: var(--badge-assembly); }
+.intent-icon.hybrid { background-image: var(--pt-intent-hybrid-16); }
+.intent-icon.assembly { background-image: var(--pt-intent-assembly-16); }
 
 .empty {
     grid-column: 1 / -1;
@@ -347,9 +353,10 @@ input[type="text"]:focus, select:focus {
 .tab-pane { display: none; }
 .tab-pane.active { display: grid; }
 
-/* Open pane wraps a filter row above its gallery, so it stacks as a single
+/* Both panes wrap a filter row above their gallery, so they stack as a single
    column rather than inheriting the gallery's multi-column grid. */
-.open-pane.active { display: flex; flex-direction: column; gap: 8px; }
+.open-pane.active,
+.recent-pane.active { display: flex; flex-direction: column; gap: 8px; }
 
 .filter-row {
     display: flex;
@@ -360,7 +367,23 @@ input[type="text"]:focus, select:focus {
     cursor: pointer;
     user-select: none;
 }
-.filter-row input { cursor: pointer; }
+.filter-row input[type="checkbox"] { cursor: pointer; }
+/* Recent's name filter reaches the entries beyond the rendered slice. */
+.filter-row input[type="search"] {
+    width: 100%;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+/* Footnote under a capped gallery: says how much of the list is on screen. */
+.gallery-note {
+    grid-column: 1 / -1;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-style: italic;
+    padding: 6px 2px 2px;
+    text-align: center;
+}
 
 /* Footer of the insert card: text links to insert paths that are not documents.
    flex-shrink: 0 keeps it pinned while .tab-panes takes the leftover height. */

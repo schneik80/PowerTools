@@ -10,9 +10,10 @@ The New Assembly command opens a docked quick-start palette that helps you popul
 - **Hand off to related commands** — open **Assembly Builder** to design a multi-level hierarchy, or **Global Parameters** to define a shared parameter set, without hunting for them on the toolbar. The palette hides while the handed-off command runs.
 - **Insert an open document** — the **Open** tab shows a thumbnail gallery of your currently-open Part/Hybrid/Assembly documents. Click a card to insert that document into the active design as a referenced component (`addByInsert`).
 - **Show only what you opened** — by default the Open tab lists only **top-level documents** (the ones you opened directly). Tick **Show referenced children** to also list the sub-assemblies and parts that Fusion loaded as references of an open assembly.
-- **Insert a recent document** — the **Recent** tab shows a gallery of recently-touched Part/Hybrid/Assembly documents that are **not** currently open, backed by a small local cache that grows as you work.
+- **Insert a recent document** — the **Recent** tab shows a gallery of your recently-used Part/Hybrid/Assembly documents, drawn from the recents list Fusion itself keeps for your account. It is populated from the first launch, including documents you opened before installing PowerTools, and it is the same list the [Open Recent](./Open%20Recent.md) File-menu flyout shows. The newest 40 are shown as cards; type in the filter box to reach the rest by name.
 - **Insert a fastener** — the **Fasteners ↗** link below the galleries hands off to Fusion's own Fasteners dialog, so bolts and screws come from the Fusion fastener library rather than the document galleries.
-- **Thumbnail previews everywhere** — each card renders the component's thumbnail. Thumbnails are cached on disk so the Recent gallery can show them even when the document is closed.
+- **Thumbnail previews everywhere** — each card renders the component's thumbnail. Thumbnails are cached on disk so the Recent gallery can show them even when the document is closed. When a document has no thumbnail, the card shows that document's design-intent icon instead.
+- **Design intent at a glance** — every card is marked with the Part, Hybrid, or Assembly icon beside the document name. Hover the icon to see the intent by name.
 - Palette theme follows the Fusion UI theme — light, dark, or **match OS device theme** — and is correct on first paint.
 
 ## Prerequisites
@@ -30,7 +31,8 @@ The New Assembly command opens a docked quick-start palette that helps you popul
    - If **New Component** is greyed out and a *No target project* banner is shown, there is no active project to store the component in. Open the **Data Panel**, click into the project you want to work in, then press **Re-check** on the banner (or simply click back into the palette — it re-checks automatically when it regains focus).
 3. **To insert an open document:** switch to the **Open** tab and click a thumbnail card. The document is inserted as a referenced component at the origin.
    - Tick **Show referenced children** if you also want to see (and insert) the sub-assemblies and parts loaded as references of an open assembly.
-4. **To insert a recent document:** switch to the **Recent** tab and click a card. Recently-used documents that are not currently open are listed newest-first.
+4. **To insert a recent document:** switch to the **Recent** tab and click a card. Documents are listed newest-first, with the count on the tab. Only the newest 40 are drawn at once — type part of a name in the filter box to find anything further down the list.
+   - A card shows a Part, Hybrid, or Assembly icon beside its name. Some documents have no design intent recorded on Fusion's side; those show no icon rather than a guessed one.
 5. **To insert a fastener:** select the **Fasteners ↗** link at the bottom of the insert card. The palette hides and Fusion's Fasteners dialog opens. The trailing **↗** marks a link that opens another dialog.
 6. **To design a hierarchy or manage parameters:** select **Assembly Builder…** or **Global Parameters…**. The palette hides and the chosen command opens.
 

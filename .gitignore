@@ -131,6 +131,9 @@ data.json
 commands/relateddata/docs.json
 commands/relateddata/data.json
 commands/*/resources/html/init.js
+# Design-intent icon variables, generated from lib/ptAddInUtils/assets on
+# palette open (lib/ptAddInUtils/intent_icons.py owns the SVGs).
+commands/*/resources/html/intent-icons.css
 cache/
 
 # Machine-local user preferences store. Auto-created on first run from
