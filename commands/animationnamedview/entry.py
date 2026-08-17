@@ -55,8 +55,9 @@ NAME_INPUT_ID = "PTAN_name"
 # Fallback name when there is no design or storyboard to derive one from.
 FALLBACK_VIEW_NAME = "Animation View"
 
-# The Animation workspace and its tab are resolved at start() because Fusion
-# publishes neither ID; both are kept so stop() tears down the same panel.
+# The Animation workspace and its tab are resolved at start() — Fusion publishes
+# neither ID, so config pins the observed ones and falls back to a name scan.
+# Both are kept so stop() tears down the same panel.
 _workspace_id = None
 _tab_id = None
 

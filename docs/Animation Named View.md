@@ -85,7 +85,7 @@ Note also that `NamedViews` and `NamedView` live in **`adsk.core`**, not `adsk.f
 | Problem | Cause and fix |
 | --- | --- |
 | The command does not appear | Your build may have no Animation workspace, or the Animation group is disabled in PowerTools Preferences. |
-| The panel is at the end of the tab, not after **View** | Your build names the View panel differently, so no anchor was matched. The resolved tab and panel IDs are in the debug log; the names matched against are `config.animation_after_panel_names`. |
+| The panel is at the end of the tab, not after **View** | Your build renumbered or renamed the View panel, so no anchor was matched. The resolved tab and panel IDs are in the debug log; the IDs and names matched against are `config.animation_after_panel_candidates` and `config.animation_after_panel_names`. |
 | `No design was found for the active document` | Open a design document before running the command. |
 | The name is `Animation View` | No active storyboard could be read. The view is still saved. |
 | The name is `Storyboard 2`, not `Storyboard2` | The storyboard has been renamed; the API cannot read the new name, so the positional fallback was used. |
@@ -99,4 +99,6 @@ Note also that `NamedViews` and `NamedView` live in **`adsk.core`**, not `adsk.f
 
 Detailed logging is written to `cache/powertools-debug.log` when debug logging is enabled (a `.debug` marker file in the add-in root).
 
-Fusion publishes none of the Animation workspace's UI IDs — not the workspace, not its tab, not its panels. They are absent from the API documentation and from the shipped binaries, so all three are resolved at runtime: the workspace by ID candidates then by name, and the tab and anchor panel by display name. The log records every workspace, tab, and panel it saw along with the IDs it settled on, so the real values can be read off rather than guessed at.
+Fusion publishes none of the Animation workspace's UI IDs — not the workspace, not its tab, not its panels. They are absent from the API documentation and from the shipped binaries, so they were read off a live build and pinned in `config.py`. The catch: the Animation environment is internally the **Publisher** environment, so its IDs say "Publisher", not "Animation" — the workspace is `Publisher3DEnvironment`, its tab is `Animation`, and the View panel it anchors to is `PublisherViewPanel`.
+
+Each lookup keeps a display-name fallback behind the pinned ID, and logs every workspace, tab, or panel it had to scan along with the ID it settled on, so a build that renumbers or renames these can be fixed by reading the log rather than by guesswork.

@@ -101,10 +101,15 @@ manage_panel_after = ""
 # 3c. Animation workspace — target for commands that run inside the Animation
 # environment. Unlike every other workspace above, none of these IDs are
 # published: not the workspace, not its built-in tab, not its panels. They are
-# absent from the API docs and from the shipped binaries, so everything here is
-# resolved at runtime and logged, and the IDs found can be read out of the debug
-# log. The workspace is matched by ID candidates then by name; the tab and the
-# neighbouring panel are matched by display name.
+# absent from the API docs and from the shipped binaries, so they were read out
+# of the debug log on a live build (Fusion 2704.1.36) and pinned below. The
+# catch is that the Animation environment is internally the *Publisher*
+# environment, so its IDs say "Publisher", not "Animation" — guessing
+# "FusionAnimationEnvironment" never hits.
+#
+# Every lookup keeps a name-based fallback behind the pinned IDs, and logs what
+# it saw, so a build that renumbers or renames these can be fixed by reading the
+# debug log rather than by guesswork.
 #
 # Our panel goes on Fusion's own Animation tab, immediately after its View
 # panel (and so before Publish). We never create or delete that tab — the same
@@ -114,6 +119,7 @@ manage_panel_after = ""
 # ---------------------------------------------------------------------------
 
 animation_workspace_candidates = (
+    "Publisher3DEnvironment",
     "FusionAnimationEnvironment",
     "AnimationEnvironment",
     "NaAnimationEnvironment",
@@ -121,9 +127,15 @@ animation_workspace_candidates = (
 animation_panel_id = "PT_AnimationPowerTools"
 animation_panel_name = "Power Tools"
 
-# Display name of the built-in panel our panel is inserted directly after. The
-# Publish panel follows View, so inserting after View also places us before
-# Publish.
+# IDs of the built-in tab we put our panel on, and of the built-in panel we
+# insert directly after. The Publish panel follows View, so inserting after View
+# also places us before Publish.
+animation_tab_candidates = ("Animation",)
+animation_after_panel_candidates = ("PublisherViewPanel",)
+
+# Display names matched, case-insensitively, when none of the IDs above hit.
+animation_workspace_names = ("Animation",)
+animation_tab_names = ("Animation",)
 animation_after_panel_names = ("View",)
 
 
@@ -131,10 +143,10 @@ def resolve_animation_workspace_id():
     """Find the ID of Fusion's Animation workspace on this build.
 
     Tries ``animation_workspace_candidates`` first, then falls back to scanning
-    every workspace for a Design-product workspace whose name mentions
-    "animation". The full workspace list is logged on the fallback path so the
-    real ID can be read out of the debug log and pinned into the candidate
-    tuple.
+    every workspace for one whose display name matches
+    ``animation_workspace_names``. The full workspace list is logged on the
+    fallback path so the real ID can be read out of the debug log and pinned into
+    the candidate tuple.
 
     Returns:
         The workspace ID string, or None when no Animation workspace exists.
@@ -148,6 +160,7 @@ def resolve_animation_workspace_id():
             continue
 
     ptutil.log("Animation workspace not found by ID; scanning workspaces.")
+    wanted = {name.strip().lower() for name in animation_workspace_names}
     fallback = None
     for workspace in workspaces:
         try:
@@ -155,7 +168,8 @@ def resolve_animation_workspace_id():
         except Exception:
             continue
         ptutil.log(f"  workspace id={workspace_id!r} name={name!r}")
-        if fallback is None and "animation" in (name or "").lower():
+        lowered = (name or "").lower()
+        if fallback is None and any(want in lowered for want in wanted):
             fallback = workspace_id
     return fallback
 
@@ -186,15 +200,46 @@ def _panel_id_by_name(tab, names):
     return match
 
 
+def _anchor_panel_id(tab):
+    """Return the ID of the built-in panel our panel is inserted directly after.
+
+    Tries ``animation_after_panel_candidates`` first and only walks the tab's
+    panels — logging each one — when none of those IDs is present.
+
+    Returns:
+        The matching panel ID, or "" when none matches.
+    """
+    panels = tab.toolbarPanels
+    for candidate in animation_after_panel_candidates:
+        try:
+            if panels.itemById(candidate) is not None:
+                return candidate
+        except Exception:
+            continue
+    return _panel_id_by_name(tab, animation_after_panel_names)
+
+
 def _find_animation_tab(workspace):
     """Return Fusion's built-in Animation tab, or None.
 
-    Prefers the tab that actually carries the panel we want to sit next to,
-    rather than assuming a position, and falls back to the first tab so a build
-    that renames its panels still gets the command somewhere usable.
+    Tries ``animation_tab_candidates`` first, then matches on display name, then
+    settles for whichever tab actually carries the panel we want to sit next to
+    rather than assuming a position, and finally falls back to the first tab so a
+    build that renames everything still gets the command somewhere usable.
     """
+    tabs = workspace.toolbarTabs
+    for candidate in animation_tab_candidates:
+        try:
+            tab = tabs.itemById(candidate)
+        except Exception:
+            continue
+        if tab is not None:
+            return tab
+
+    ptutil.log("Animation tab not found by ID; scanning tabs.")
+    wanted = {name.strip().lower() for name in animation_tab_names}
     fallback = None
-    for tab in workspace.toolbarTabs:
+    for tab in tabs:
         try:
             tab_id, tab_name = tab.id, tab.name
         except Exception:
@@ -202,6 +247,8 @@ def _find_animation_tab(workspace):
         ptutil.log(f"  animation tab id={tab_id!r} name={tab_name!r}")
         if fallback is None:
             fallback = tab
+        if any(want in (tab_name or "").lower() for want in wanted):
+            return tab
         if _panel_id_by_name(tab, animation_after_panel_names):
             return tab
     return fallback
@@ -238,7 +285,7 @@ def get_or_create_animation_panel(workspace_id):
     if existing is not None:
         return existing, tab.id
 
-    after_id = _panel_id_by_name(tab, animation_after_panel_names)
+    after_id = _anchor_panel_id(tab)
     panel = tab.toolbarPanels.add(
         animation_panel_id, animation_panel_name, after_id, False
     )
