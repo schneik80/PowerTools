@@ -183,3 +183,23 @@ textarea:focus { outline: none; border-color: var(--accent); }
 .folders-edit { padding: 8px 0; }
 .folders-edit + .folders-edit { border-top: 1px solid var(--border-color); margin-top: 4px; }
 .fe-title { font-weight: 600; margin-bottom: 2px; }
+
+/* Thin, themed scrollbar (WebKit/CEF), matching the assemblyintent palette.
+   Only the webkit pseudo-elements are set: specifying scrollbar-width or
+   scrollbar-color would make Chromium ignore them and fall back to its own
+   thin bar, which reads differently from the sibling palettes. */
+nav::-webkit-scrollbar,
+.content::-webkit-scrollbar,
+textarea::-webkit-scrollbar { width: 6px; }
+nav::-webkit-scrollbar-track,
+.content::-webkit-scrollbar-track,
+textarea::-webkit-scrollbar-track { background: transparent; }
+nav::-webkit-scrollbar-thumb,
+.content::-webkit-scrollbar-thumb,
+textarea::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 3px;
+}
+nav::-webkit-scrollbar-thumb:hover,
+.content::-webkit-scrollbar-thumb:hover,
+textarea::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
