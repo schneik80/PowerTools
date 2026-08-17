@@ -23,6 +23,7 @@
 
 import json
 import os
+import threading
 
 import adsk.core
 import adsk.fusion
@@ -72,12 +73,36 @@ _GLOBAL_PARAMETERS_CMD_ID = "PTAT_globalParameters"
 # definition is the only route.
 _FASTENERS_CMD_ID = "FusionFastenersCommand"
 
-# Fusion's own Move/Copy command. Inserting a component from the ASSEMBLY >
-# INSERT panel runs a sequence — FusionImportCommand, CommitCommand,
-# SelectCommand, FitCommand, FusionMoveCommand — so the new occurrence arrives
-# selected, framed, and ready to position. ``addByInsert`` only covers the
-# import and commit; _finish_insert_like_fusion adds the rest.
-_MOVE_COPY_CMD_ID = "FusionMoveCommand"
+# Inserting a component from the ASSEMBLY > INSERT panel runs a sequence —
+# FusionImportCommand, CommitCommand, SelectCommand, FitCommand,
+# FusionMoveCommand — so the new occurrence arrives selected, framed, and ready
+# to position. ``addByInsert`` only covers the import and commit;
+# _finish_insert_like_fusion adds the rest, with Edit Initial Position standing in
+# for Fusion's final Move/Copy step: it edits the placement the insert itself
+# recorded instead of stacking a separate Move feature on top of it.
+#
+# Fusion ships two definitions with the same "Edit Initial Position" label and
+# identical HUD and marking-menu entries (Libraries/.../CommandDefinitions.xml):
+# the Dc ("double click") variant and the plain one. The Dc id is the one that
+# comes up on a palette insert; the plain one is kept as a fallback in case a build
+# ever differs, since both resolve to the same command for the user.
+_EDIT_POSITION_CMD_IDS = (
+    "FusionDcEditInitialPositionCommand",
+    "FusionEditInitialPositionCommand",
+)
+
+# Custom event used to defer the post-insert chain out of the palette's
+# incomingFromHTML handler — see _FinishInsertHandler for why that matters. The
+# delay is what actually buys the deferral: fired inline, Fusion dispatched the
+# handler within the same event turn and the command it started was torn down
+# again when the HTML event finished (see _schedule_finish_insert).
+_FINISH_EVENT_ID = "PTAT_newAssembly_finishInsert"
+_FINISH_DELAY_SECONDS = 0.35
+
+# How long to keep pumping events before believing ui.activeCommand. A command
+# started by execute() does not become active in the same turn — reading it after a
+# single doEvents() said "SelectCommand" for a command that visibly did start.
+_COMMAND_START_WAIT_SECONDS = 0.4
 
 # Fusion reports its idle state as the Select command rather than "nothing
 # running", so these ids mean "no real command is active".
@@ -137,6 +162,12 @@ RECENT_PAYLOAD_LIMIT = 300
 # Persists across palette opens this session.
 _show_children = False
 
+# Custom event handler for the post-insert chain, kept alive for the life of the
+# add-in, plus the occurrence handed to it by the last insert (cleared as soon as
+# the handler picks it up).
+_finish_event_handler = None
+_pending_finish = None
+
 # The Document we last popped the palette for (or had open when palette closed).
 # Compared via Python identity (`is`) — NOT id(), which can collide across
 # short-lived Fusion Document wrappers and previously caused the popup to be
@@ -151,6 +182,8 @@ _palette_was_open_for = None
 
 
 def start():
+    global _finish_event_handler
+
     # documentActivated is the reliable trigger across Fusion builds —
     # documentOpened isn't always emitted for File > New on macOS.
     # documentActivated fires on every tab switch too, so we gate manually
@@ -186,6 +219,16 @@ def start():
         control = panel.controls.addCommand(cmd_def, LAUNCH_POSITION_REF, False)
         control.isPromoted = False
 
+    # Runner for the post-insert chain. unregister-then-register gives a clean
+    # slate if the add-in was reloaded without restarting Fusion.
+    try:
+        app.unregisterCustomEvent(_FINISH_EVENT_ID)
+    except Exception:
+        pass
+    finish_event = app.registerCustomEvent(_FINISH_EVENT_ID)
+    _finish_event_handler = _FinishInsertHandler()
+    finish_event.add(_finish_event_handler)
+
     _diag(f"start(): primary trigger=documentActivated. thumb dir = {_THUMB_DIR}")
 
 
@@ -200,7 +243,7 @@ def _launch_command_created(args: adsk.core.CommandCreatedEventArgs):
 
 
 def stop():
-    global _palette_was_open_for
+    global _palette_was_open_for, _finish_event_handler, _pending_finish
     palette = ui.palettes.itemById(PALETTE_ID)
     if palette:
         try:
@@ -222,6 +265,13 @@ def stop():
     cmd_def = ui.commandDefinitions.itemById(LAUNCH_CMD_ID)
     if cmd_def:
         cmd_def.deleteMe()
+
+    try:
+        app.unregisterCustomEvent(_FINISH_EVENT_ID)
+    except Exception:
+        pass
+    _finish_event_handler = None
+    _pending_finish = None
 
     _inserted_in_session.clear()
     _palette_was_open_for = None
@@ -778,6 +828,9 @@ def _palette_incoming(html_args: adsk.core.HTMLEventArgs):
         if msg:
             ui.messageBox(msg, CMD_NAME)
         if palette:
+            # This refresh has to complete before the post-insert chain starts its
+            # command — repainting the palette in the same turn kills it. The delayed
+            # fire in _schedule_finish_insert is what keeps the two apart.
             _send_palette_init(palette)
         html_args.returnData = "OK"
         return
@@ -913,10 +966,10 @@ def _end_active_command() -> None:
 
     Clicking a ribbon button ends whatever command is active, but the palette is
     not part of the ribbon and stays clickable throughout. Since an insert now
-    leaves Move/Copy open, clicking a second card would otherwise call
-    ``addByInsert`` from inside that command. Terminating discards an
-    uncommitted move, exactly as pressing Escape would — the click was a
-    deliberate move away from the dialog.
+    leaves Edit Initial Position open, clicking a second card would otherwise call
+    ``addByInsert`` from inside that command. Terminating discards an uncommitted
+    position edit, exactly as pressing Escape would — the click was a deliberate
+    move away from the dialog.
     """
     try:
         active = ui.activeCommand
@@ -944,11 +997,9 @@ def _action_insert_doc(data: dict) -> str:
     if data_file is None:
         return "Could not resolve the selected document."
 
-    # DISABLED with _finish_insert_like_fusion below — see the note there. This
-    # only existed to make back-to-back inserts safe while Move/Copy was left
-    # open, so it goes quiet with it rather than terminating the user's command
-    # for no reason. Re-enable both together.
-    # _end_active_command()
+    # An insert leaves Edit Initial Position open, so a second card click has to
+    # end it before calling addByInsert from inside a running command.
+    _end_active_command()
     transform = adsk.core.Matrix3D.create()
     try:
         occurrence = design.rootComponent.occurrences.addByInsert(
@@ -972,57 +1023,243 @@ def _action_insert_doc(data: dict) -> str:
     # duplicate occurrence in the assembly.
     _inserted_in_session.add(df_id)
     ptutil.log(f"{CMD_NAME}: inserted '{getattr(data_file, 'name', df_id)}'.")
-    # DISABLED pending investigation — replicating Fusion's post-insert command
-    # chain did not behave as expected in practice. The implementation is kept
-    # below (unreferenced) rather than deleted so the next attempt starts from it.
-    # Re-enable together with _end_active_command above.
-    # _finish_insert_like_fusion(occurrence)
+    _schedule_finish_insert(occurrence)
     return ""
 
 
-def _finish_insert_like_fusion(occurrence) -> None:
-    """Leave the new occurrence selected, framed, and in Move/Copy.
+class _FinishInsertHandler(adsk.core.CustomEventHandler):
+    """Runs the post-insert chain outside the palette's HTML event.
 
-    NOT CURRENTLY CALLED — see the disabled call in _action_insert_doc. Kept as
-    the starting point for a second attempt. What is known so far: the three API
-    calls below are individually correct (verified against the API stubs), and
-    ``CommandDefinition.execute`` is used the same way by the Fasteners handoff in
-    this file, which works. So the likely suspects are the *context* rather than
-    the calls — running them from inside ``incomingFromHTML`` (the palette's
-    message handler), and the palette refresh that the caller performs
-    immediately afterwards, which may disturb the selection Move/Copy reads. The
-    ``customEvent`` deferral documented in ``commands/externalize/entry.py`` is
-    the obvious thing to try next.
+    The first attempt called _finish_insert_like_fusion directly from
+    ``incomingFromHTML`` and nothing visible happened. The API calls it makes are
+    individually correct and ``CommandDefinition.execute`` is used the same way by
+    the Fasteners handoff, which works — so the suspects were contextual: the
+    palette's message handler is a poor place to start a command from, and the
+    caller runs a full palette refresh the moment the handler returns, which can
+    disturb the selection the command reads. A ``customEvent`` handler runs on the
+    main thread after both are done, which is the same deferral
+    ``commands/externalize/entry.py`` needs for its saveCopyAs pipeline.
+    """
+
+    def notify(self, args):
+        global _pending_finish
+        occurrence = _pending_finish
+        _pending_finish = None
+        if occurrence is None:
+            ptutil.log(f"{CMD_NAME}: finish handler fired with nothing pending.")
+            return
+        # The state on arrival tells us whether the deferral landed on a clean turn.
+        # Read defensively: activeCommand is not exposed on every build, and a raise
+        # here would take the whole chain down before it started.
+        ptutil.log(
+            f"{CMD_NAME}: finish handler entered, "
+            f"activeCommand={_read_property(ui, 'activeCommand')!r}."
+        )
+        try:
+            _finish_insert_like_fusion(occurrence)
+        except Exception:
+            ptutil.handle_error(CMD_NAME)
+
+
+def _schedule_finish_insert(occurrence) -> None:
+    """Queue the select → fit → position chain for a later main-loop turn.
+
+    Firing the customEvent straight from this HTML event was not enough of a
+    deferral. A position command *did* start — it appeared on screen for a moment
+    and then died with the selection — so Fusion dispatched the handler inside the
+    same event turn, and finishing the HTML event (plus the full palette refresh the
+    caller runs right after) tore the command back down.
+
+    So the fire is delayed on a worker thread instead. ``fireCustomEvent`` is the
+    one Application call documented as safe to make off the main thread, and it is
+    all the worker does; the handler itself still runs on the main thread, now on a
+    turn where the HTML event and the refresh are both long finished.
+
+    ``fireCustomEvent`` is also documented to return True on success but returns
+    **False even when the event fires** — the debug log shows "returned False"
+    followed immediately by the handler running. Clearing ``_pending_finish`` on
+    that return is what made an earlier attempt look dead, so the return value is
+    ignored; a pending occurrence left over from an event that genuinely never fired
+    is harmless, since the next insert overwrites it before firing again.
+    """
+    global _pending_finish
+    _pending_finish = occurrence
+    timer = threading.Timer(_FINISH_DELAY_SECONDS, _fire_finish_event)
+    timer.daemon = True  # never hold Fusion open on a pending insert
+    timer.start()
+    ptutil.log(
+        f"{CMD_NAME}: post-insert chain queued (+{_FINISH_DELAY_SECONDS}s, "
+        f"{_FINISH_EVENT_ID})."
+    )
+
+
+def _fire_finish_event() -> None:
+    """Hand the chain to the main thread. Runs on the timer's worker thread.
+
+    Nothing here may touch the Fusion API beyond ``fireCustomEvent`` — including
+    ptutil.log, which calls ``Application.log``. Anything worth reporting is logged
+    by the handler, on the main thread.
+    """
+    try:
+        app.fireCustomEvent(_FINISH_EVENT_ID)
+    except Exception:
+        pass
+
+
+def _finish_insert_like_fusion(occurrence) -> None:
+    """Leave the new occurrence selected, framed, and in a position command.
+
+    Always reached through _FinishInsertHandler, never straight from the palette
+    message — see that class for why.
 
     Fusion's own Insert Component chains five commands — FusionImportCommand,
     CommitCommand, SelectCommand, FitCommand, FusionMoveCommand. ``addByInsert``
     is the import and commit; this adds the last three so a palette insert ends
-    in the same state as the native one, with the component ready to position
-    instead of sitting unselected at the origin.
+    ready to position instead of sitting unselected at the origin, with Edit
+    Initial Position in place of Move/Copy so the user adjusts the placement the
+    insert already recorded rather than adding a Move feature over the top of it.
 
-    Each step degrades independently: a failure to select or fit must not stop
-    Move/Copy from opening, and none of them should turn a successful insert into
-    a reported failure — the component is already in the assembly by this point.
+    Each step degrades independently: a failure to select or fit must not stop the
+    position dialog from opening, and none of them should turn a successful insert
+    into a reported failure — the component is already in the assembly by this
+    point.
     """
-    try:
-        ui.activeSelections.clear()
-        ui.activeSelections.add(occurrence)
-    except Exception as e:
-        ptutil.log(f"{CMD_NAME}: could not select the inserted occurrence — {e}")
+    ptutil.log(f"{CMD_NAME}: running the post-insert chain.")
+    _select_only(occurrence, "the inserted occurrence")
 
     try:
-        # Before Move/Copy, so the dialog opens over a framed view rather than
+        # Before the position dialog, so it opens over a framed view rather than
         # re-framing underneath it.
         app.activeViewport.fit()
     except Exception as e:
         ptutil.log(f"{CMD_NAME}: could not fit the view after insert — {e}")
 
-    cmd_def = ui.commandDefinitions.itemById(_MOVE_COPY_CMD_ID)
-    if cmd_def is None:
-        ptutil.log(f"{CMD_NAME}: {_MOVE_COPY_CMD_ID} not available — insert only.")
+    # Fusion refuses the edit outright for some occurrences, patterned ones for
+    # example. Note the spelling: isVaild is the typo the API itself ships with, so
+    # a build that ever corrects it leaves the check unanswered (None) rather than
+    # blocking. Being ungrounded is NOT a blocker despite Fusion's tips text
+    # scoping the command to a ground-to-parent component — a fresh insert reports
+    # groundToParent=False and the dialog opens on it anyway.
+    valid = _read_property(occurrence, "isVaildForEditInitialPosition")
+    if valid is False:
+        ptutil.log(
+            f"{CMD_NAME}: occurrence is not valid for Edit Initial Position — "
+            "insert only."
+        )
         return
+
+    if _start_edit_initial_position():
+        return
+
+    # Nothing came up. Log the occurrence state that would explain it, rather than
+    # leaving the next person to re-derive it from an empty "did not start".
+    ptutil.log(
+        f"{CMD_NAME}: no position command started — "
+        f"validForEditInitialPosition={valid}, "
+        f"groundToParent={_read_property(occurrence, 'isGroundToParent')}."
+    )
+
+
+def _select_only(entity, label: str) -> bool:
+    """Make *entity* the entire selection, logging rather than raising on failure.
+
+    ``Selections.add`` returns a bool as well as being able to raise, so a
+    selection can fail silently — worth logging, since every command downstream
+    reads the selection.
+    """
     try:
-        # Operates on the current selection, so this must follow the select above.
-        cmd_def.execute()
+        ui.activeSelections.clear()
+        added = ui.activeSelections.add(entity)
     except Exception as e:
-        ptutil.log(f"{CMD_NAME}: could not start Move/Copy — {e}")
+        ptutil.log(f"{CMD_NAME}: could not select {label} — {e}")
+        return False
+    ptutil.log(f"{CMD_NAME}: selected {label} (add → {added}).")
+    return bool(added)
+
+
+def _read_property(obj, name: str):
+    """Read a property off a Fusion object, or None when it is unavailable.
+
+    Plain ``getattr`` with a default is not enough: it only swallows
+    AttributeError, and a Fusion property is free to raise something else.
+    """
+    try:
+        return getattr(obj, name)
+    except Exception:
+        return None
+
+
+def _start_edit_initial_position() -> bool:
+    """Try the Edit Initial Position ids against the current selection.
+
+    :return: True as soon as one of them actually starts
+    """
+    return any(_try_start_command(cmd_id) for cmd_id in _EDIT_POSITION_CMD_IDS)
+
+
+def _try_start_command(cmd_id: str) -> bool:
+    """Execute *cmd_id* and report whether a command actually came up.
+
+    ``controlDefinition.isEnabled`` is deliberately NOT a gate here, unlike the
+    Fasteners handoff. Both Edit Initial Position definitions report isEnabled
+    **False** even when the command starts perfectly well: they exist only in the
+    marking menus, and Fusion resolves that kind of command's availability while it
+    builds the menu instead of keeping the standing ControlDefinition current.
+    Fasteners is a real ribbon button, so its isEnabled means something — this one's
+    does not, and gating on it skipped both ids and left the insert with no
+    follow-up at all.
+
+    ``execute()``'s own return value is not enough either: it answers True whether
+    or not the command appears. So the outcome is *observed* through
+    ``ui.activeCommand``, which is the only direct evidence a command started. When
+    activeCommand cannot be read, execute()'s answer is all there is — and trusting
+    it beats firing another command on top of one that already started.
+    """
+    cmd_def = ui.commandDefinitions.itemById(cmd_id)
+    if cmd_def is None:
+        ptutil.log(f"{CMD_NAME}: {cmd_id} is not in this build.")
+        return False
+    try:
+        started = cmd_def.execute()
+    except Exception as e:
+        ptutil.log(f"{CMD_NAME}: {cmd_id} execute raised — {e}")
+        return False
+    active = _active_command_id()
+    ptutil.log(
+        f"{CMD_NAME}: {cmd_id} execute → {started}, activeCommand={active!r}, "
+        f"isEnabled={_command_is_enabled(cmd_def)}."
+    )
+    if active is None:
+        return bool(started)
+    return active not in _IDLE_CMD_IDS
+
+
+def _active_command_id() -> str | None:
+    """The running command's id once it has had time to come up, or None.
+
+    A command started by ``execute()`` does not become active in the same turn:
+    reading activeCommand after a single ``doEvents()`` reported "SelectCommand"
+    for a command that visibly did start, which had the caller fall through and fire
+    a second command over the top of the running one. pump_events_for keeps the UI
+    turning for long enough that an idle answer means idle.
+    """
+    try:
+        ptutil.pump_events_for(_COMMAND_START_WAIT_SECONDS)
+    except Exception:
+        pass
+    try:
+        return ui.activeCommand
+    except Exception:
+        return None
+
+
+def _command_is_enabled(cmd_def):
+    """cmd_def.controlDefinition.isEnabled, or None when the build hides it.
+
+    Logged as evidence only — see _start_edit_initial_position for why it is not
+    trusted as a gate.
+    """
+    try:
+        return cmd_def.controlDefinition.isEnabled
+    except Exception:
+        return None
