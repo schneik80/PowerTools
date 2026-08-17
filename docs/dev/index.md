@@ -180,7 +180,7 @@ verification checklist, and how to disable debugging for a shipping build are in
 |---|---|---|
 | [`docs/`](..) | End users | Per-command usage guides. |
 | [`docs/arch/`](../arch) | Developers | Architecture — C4 diagrams, lifecycle, shared library, `config.py`. |
-| [`docs/dev/`](.) | Developers | This guide + the [debugging guide](debugging.md). |
+| [`docs/dev/`](.) | Developers | This guide, the [debugging guide](debugging.md), and the [insert-and-position recipe](Insert%20and%20position%20a%20component%20from%20a%20palette.md). |
 
 ---
 
