@@ -36,7 +36,9 @@ The New Assembly command opens a docked quick-start palette that helps you popul
 5. **To insert a fastener:** select the **Fasteners ↗** link at the bottom of the insert card. The palette hides and Fusion's Fasteners dialog opens. The trailing **↗** marks a link that opens another dialog.
 6. **To design a hierarchy or manage parameters:** select **Assembly Builder…** or **Global Parameters…**. The palette hides and the chosen command opens.
 
-> **Note:** A document you insert during a palette session is removed from both galleries on the next refresh, so a second click cannot silently create a duplicate occurrence. Use the **↻** refresh button to re-scan open and recent documents at any time.
+> **Note:** Both galleries keep themselves current — opening, switching to, saving, or closing a document updates the **Open** and **Recent** tabs (and their counts) while you watch, without losing your place, your tab, or what you typed in the filter box. A repaint is held back while a command is running, so an insert that leaves **Edit Initial Position** open is never interrupted; it lands as soon as you click back into the palette. The **↻** button forces a full re-scan, including the target project.
+
+> **Note:** A document you insert during a palette session is removed from both galleries, so a second click cannot silently create a duplicate occurrence.
 
 > **Note:** Fusion itself disables Fasteners for part-intent and direct-modeling designs, in the Form environment, for library and AnyCAD-derived components, and when the document is not on a Fusion hub. When that is the case the link reports why instead of hiding the palette on a click that would do nothing.
 

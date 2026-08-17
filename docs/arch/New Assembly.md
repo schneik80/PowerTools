@@ -36,7 +36,7 @@ C4Container
   System_Ext(fusion, "Fusion API", "adsk.core, adsk.fusion")
 
   Rel(user, palette, "Fills create form; clicks document cards; toggles Show referenced children")
-  Rel(palette, python, "fusionSendData('createComponent' / 'insertDoc' / 'setShowChildren' / 'refresh')")
+  Rel(palette, python, "fusionSendData('createComponent' / 'insertDoc' / 'setShowChildren' / 'refresh' / 'flushGalleries')")
   Rel(python, palette, "sendInfoToHTML('setOpenDocs' / 'setRecentDocs' / 'setTheme')")
   Rel(python, init, "Writes state before palette open")
   Rel(python, recent, "Reads / appends recent entries")
@@ -50,17 +50,21 @@ C4Component
 
   Container_Boundary(python, "Python Backend") {
     Component(trigger, "documentActivated gate", "Trigger", "Pops palette once per new empty Assembly-intent doc; _palette_was_open_for dedup")
+    Component(autorefresh, "Gallery auto-refresh", "_refresh_galleries", "Repaints Open + Recent on document activate/open/save/close; fingerprint skips no-op pushes; defers while a command runs")
     Component(launch, "Launch button", "Toolbar", "PTAT_newAssembly control in Assembly > Insert; opens palette on demand")
     Component(state, "Palette state", "_gather_palette_state", "Theme, doc name, open docs, recent docs, target project")
     Component(open, "Open enumerator", "_list_open_docs", "Top-level filter (documentReferences), dedup by id, excludes active/unsaved/inserted")
     Component(recent, "Recent enumerator", "_list_recent_docs", "Cache filtered to not-open + not-inserted; newest-first; dedup")
     Component(thumbs, "Thumbnail engine", "_thumbnail_for_open_doc", "Component.createThumbnail -> PNG cache -> data URL")
     Component(project, "Target-project resolver", "cache.resolve_target_folder", "Saved doc's folder -> activeProject.rootFolder; None -> no-project banner + Create disabled")
-    Component(actions, "Action router", "_palette_incoming", "createComponent / insertDoc / setShowChildren / launch handoffs / launchFasteners / refresh / recheckProject")
+    Component(actions, "Action router", "_palette_incoming", "createComponent / insertDoc / setShowChildren / launch handoffs / launchFasteners / refresh / recheckProject / flushGalleries")
   }
 
   System_Ext(fusion, "Fusion API")
 
+  Rel(autorefresh, open, "Re-lists open documents (closing doc excluded by id)")
+  Rel(autorefresh, recent, "Re-lists recent documents")
+  Rel(actions, autorefresh, "flushGalleries delivers a deferred repaint")
   Rel(trigger, state, "Builds state, shows palette")
   Rel(launch, state, "Builds state, shows palette")
   Rel(state, open, "Lists open documents")
@@ -128,12 +132,33 @@ sequenceDiagram
     end
 
     Python->>Palette: sendInfoToHTML refresh (open + recent)
+
+    loop While the palette stays open
+        Fusion->>Python: documentActivated / Opened / Saved / Closing / Closed
+        alt A command is running
+            Python->>Python: Hold the repaint (_gallery_refresh_pending)
+            User->>Palette: Click back into the palette (focus)
+            Palette->>Python: fusionSendData('flushGalleries')
+        end
+        Python->>Python: Fingerprint the galleries; identical? stop
+        Python->>Palette: sendInfoToHTML('setDocumentName' / 'setOpenDocs' / 'setRecentDocs')
+    end
 ```
 
 ## Design decisions
 
 ### Why `documentActivated` instead of `documentOpened`?
 `documentOpened` is not reliably emitted for **File > New** across Fusion builds (notably on macOS), while `documentActivated` fires consistently. It also fires on every tab switch, so a `_palette_was_open_for` gate (compared by Python object identity, not `id()`) suppresses re-popping the palette for a document it already handled. `documentOpened` is attached as a harmless backup when the running build exposes it.
+
+### How do the Open and Recent galleries stay current?
+Both galleries used to paint once and then go stale until the user pressed **↻**, which was wrong the moment the user switched tabs: the Open tab excludes whichever document is active, and Recent excludes its DataFile, so a switch changes both lists. The application events were already attached for the pop-up trigger, so the refresh rides along on them — `documentActivated` and `documentOpened`, plus `documentClosing`, `documentClosed`, and `documentSaved` attached behind `getattr` (`_attach_optional_app_event`) for builds that expose them. A close only ever *removes* a card, and a save is what turns an untitled design into an insertable one, so neither is reachable from the other two events. Both close events are attached because they need different handling and cover each other: `documentClosing` fires while the document is still in `app.documents`, so its DataFile id is excluded explicitly, while `documentClosed` needs no exclusion and is the backup if a build emits only one of the two.
+
+Four things make this cheap and safe, and each is there for a specific failure:
+
+- **Push, never re-show.** `_refresh_galleries` sends `setDocumentName` / `setOpenDocs` / `setRecentDocs` on the palette looked up by id — it never calls `_show_palette()`, which deletes and rebuilds the palette, clears `_inserted_in_session`, and would throw away the user's tab, scroll position, and filter text. It also deliberately skips `setTargetProject`: that resolution is the one cloud-touching part of the full state, and the page already re-checks it on focus.
+- **A change fingerprint.** `documentActivated` fires on every tab switch, so most refreshes would repaint byte-identical galleries. `_gallery_signature` reduces both lists to `(dataFileId, name, intent, has-thumbnail)` tuples plus the banner name and suppresses the push when it matches the last one — the same guard, for the same reason, as [Open Recent](./Open%20Recent.md)'s menu rebuild.
+- **Deferral while a command is running.** This is the sharp edge. A palette insert queues the post-insert chain and then opens **Edit Initial Position**; repainting inside that window is exactly the failure the chain's own deferral exists to avoid (see above). `_refresh_is_safe` therefore refuses while `_pending_finish` is set or `ui.activeCommand` is not idle, and — because `addByInsert` fires document events of its own, so trigger and hazard arrive together — the refresh is *held*, not dropped. The page asks for it with `flushGalleries` when it regains focus, which is precisely when the command is over. No timer, no polling, no second custom event.
+- **Thumbnails sent once.** The base64 thumbnails are almost the entire payload (`RECENT_PAYLOAD_LIMIT` is 300 cards, and the generated `init.js` runs to hundreds of KB), and a thumbnail cannot change for a given DataFile id. `_strip_sent_thumbs` omits the `thumbUrl` key for ids the page already holds; `app.js` keeps a `dataFileId` → data-URI cache and reads a missing key as "reuse what you have", while an explicit empty string still means "no cached PNG, use the intent placeholder". The set is cleared wherever the page reloads — `_show_palette` and the `htmlReady` handshake — so the Windows stale-`init.js` case cannot leave the page short of a thumbnail it never received.
 
 ### How does an insert continue into Edit Initial Position?
 Fusion's own **Insert Component** is not one command but a chain: `FusionImportCommand` → `CommitCommand` → `SelectCommand` → `FitCommand` → `FusionMoveCommand`. `addByInsert` is only the import and commit, so a palette insert would otherwise land the component unselected at the origin.

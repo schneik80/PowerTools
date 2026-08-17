@@ -175,10 +175,48 @@ _pending_finish = None
 # document activation will pop the palette".
 _palette_was_open_for = None
 
+# Fingerprint of the galleries as the page last received them. documentActivated
+# fires on every tab switch, so most refreshes would repaint identical content;
+# comparing against this keeps those pushes off the bridge (same guard as
+# commands/openrecent/entry.py). None means "next refresh always pushes".
+_last_gallery_signature = None
+
+# A refresh that arrived while a command was running and so had to wait. The page
+# reports its own focus, which is when the deferred repaint lands — no polling.
+_gallery_refresh_pending = False
+
+# DataFile ids whose thumbnail data URI the page is already holding. Thumbnails
+# dominate the payload (a few hundred KB of base64 across both galleries), and
+# they never change for a given id, so each one is sent once per page load and
+# the page caches it. Cleared wherever the page is (re)loaded: _show_palette and
+# the htmlReady handshake.
+_thumbs_sent: set[str] = set()
+
 
 # ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------
+
+
+def _attach_optional_app_event(event_name: str, callback) -> None:
+    """Attach *callback* to ``app.<event_name>`` when this build exposes it.
+
+    Fusion's application events are not uniformly available — documentOpened is
+    not emitted for File > New on macOS, and documentClosing / documentSaved are
+    not present on every build — so each one is probed rather than assumed. A
+    missing or unattachable event is logged and skipped; the handlers here are all
+    refinements of behaviour that documentActivated already covers, so losing one
+    degrades the palette rather than breaking it.
+    """
+    event = getattr(app, event_name, None)
+    if event is None:
+        _diag(f"{event_name} not exposed on this build — skipped.")
+        return
+    try:
+        ptutil.add_handler(event, callback)
+        _diag(f"{event_name} handler attached.")
+    except Exception as e:
+        _diag(f"{event_name} attach failed: {e}")
 
 
 def start():
@@ -192,13 +230,16 @@ def start():
 
     # Attach documentOpened as a belt-and-suspenders backup IF this build
     # exposes it. Harmless if it never fires; the gate handles dedup.
-    opened_event = getattr(app, "documentOpened", None)
-    if opened_event is not None:
-        try:
-            ptutil.add_handler(opened_event, _on_document_opened)
-            _diag("documentOpened handler attached (backup trigger).")
-        except Exception as e:
-            _diag(f"documentOpened attach failed: {e}")
+    _attach_optional_app_event("documentOpened", _on_document_opened)
+
+    # An open palette also has to follow the documents the user closes and saves,
+    # which the two triggers above never see: a close only removes a card, and a
+    # save is what turns an untitled doc into an insertable one. Attached behind
+    # getattr for the same reason documentOpened is — not every build exposes
+    # every application event.
+    _attach_optional_app_event("documentClosing", _on_document_closing)
+    _attach_optional_app_event("documentClosed", _on_document_closed)
+    _attach_optional_app_event("documentSaved", _on_document_saved)
 
     # Manual launch button in the Assembly Insert panel, below Insert STEP.
     cmd_def = ui.commandDefinitions.itemById(LAUNCH_CMD_ID)
@@ -244,6 +285,7 @@ def _launch_command_created(args: adsk.core.CommandCreatedEventArgs):
 
 def stop():
     global _palette_was_open_for, _finish_event_handler, _pending_finish
+    global _last_gallery_signature, _gallery_refresh_pending
     palette = ui.palettes.itemById(PALETTE_ID)
     if palette:
         try:
@@ -275,6 +317,12 @@ def stop():
 
     _inserted_in_session.clear()
     _palette_was_open_for = None
+    # The document handlers outlive stop() until clear_handlers() drops them, so
+    # leave nothing behind that a late call could act on. _refresh_galleries
+    # returns immediately once the palette is gone, which is what makes that safe.
+    _thumbs_sent.clear()
+    _last_gallery_signature = None
+    _gallery_refresh_pending = False
 
 
 # ---------------------------------------------------------------------------
@@ -353,9 +401,14 @@ def _maybe_show_palette_for(doc, source: str) -> None:
 
 def _on_document_activated(args: adsk.core.DocumentEventArgs):
     """Primary trigger. Fires on every tab switch, but the dedup gate in
-    _maybe_show_palette_for keeps the popup from re-firing for the same doc."""
+    _maybe_show_palette_for keeps the popup from re-firing for the same doc.
+
+    A tab switch also changes both galleries — the Open tab excludes whichever
+    document is active, and Recent excludes its DataFile — so an already-open
+    palette is repainted here rather than left stale until the user presses ↻."""
     try:
         _maybe_show_palette_for(args.document, "documentActivated")
+        _refresh_galleries("documentActivated")
     except Exception:
         ptutil.handle_error(CMD_NAME)
 
@@ -365,6 +418,55 @@ def _on_document_opened(args: adsk.core.DocumentEventArgs):
     don't. The same dedup gate handles overlap with documentActivated."""
     try:
         _maybe_show_palette_for(args.document, "documentOpened")
+        _refresh_galleries("documentOpened")
+    except Exception:
+        ptutil.handle_error(CMD_NAME)
+
+
+def _on_document_closing(args: adsk.core.DocumentEventArgs):
+    """Drop a closing document's card from the Open gallery.
+
+    This fires *before* the document leaves ``app.documents``, so the closing doc
+    is still enumerable and has to be excluded explicitly. The exclusion is by
+    DataFile id, not by object identity: Fusion's Document wrappers are
+    short-lived, which is the same hazard documented against _palette_was_open_for.
+
+    Nothing excludes it from Recent — a document that was just closed belongs
+    there, so it moves from one gallery to the other.
+    """
+    try:
+        df_id = ""
+        try:
+            df = getattr(args.document, "dataFile", None)
+            df_id = getattr(df, "id", "") or ""
+        except Exception:
+            df_id = ""
+        _refresh_galleries("documentClosing", exclude_ids={df_id} if df_id else None)
+    except Exception:
+        ptutil.handle_error(CMD_NAME)
+
+
+def _on_document_closed(args: adsk.core.DocumentEventArgs):
+    """Backup for the close path, and the one that needs no exclusion.
+
+    By the time this fires the document is out of ``app.documents``, so the
+    gallery is correct without help. It costs a fingerprint comparison when
+    documentClosing already handled the repaint, and covers a build that emits
+    only one of the two — the same belt-and-suspenders as documentOpened."""
+    try:
+        _refresh_galleries("documentClosed")
+    except Exception:
+        ptutil.handle_error(CMD_NAME)
+
+
+def _on_document_saved(args: adsk.core.DocumentEventArgs):
+    """A save can turn a document into an insertable one.
+
+    The Open gallery skips unsaved docs because ``addByInsert`` needs a DataFile
+    (see _list_open_docs), so the first save of an untitled design is what makes
+    it eligible — and it also settles the name shown in the palette banner."""
+    try:
+        _refresh_galleries("documentSaved")
     except Exception:
         ptutil.handle_error(CMD_NAME)
 
@@ -375,9 +477,15 @@ def _on_document_opened(args: adsk.core.DocumentEventArgs):
 
 
 def _show_palette():
+    global _last_gallery_signature, _gallery_refresh_pending
     # Fresh palette open → forget which docs were inserted during a prior open
     # so the user can deliberately insert them again in this new session.
     _inserted_in_session.clear()
+    # A new page holds no thumbnails and no galleries, so nothing may be treated
+    # as already sent or already painted.
+    _thumbs_sent.clear()
+    _last_gallery_signature = None
+    _gallery_refresh_pending = False
 
     palettes = ui.palettes
     palette = palettes.itemById(PALETTE_ID)
@@ -497,17 +605,153 @@ def _write_intent_icons_css() -> None:
 
 
 def _send_palette_init(palette: adsk.core.Palette):
+    global _last_gallery_signature, _gallery_refresh_pending
     state = _gather_palette_state()
+    # Record what the page now holds so the next document event doesn't repaint
+    # the same galleries, and clear any deferred refresh this push just satisfied.
+    _last_gallery_signature = _gallery_signature(
+        state["docName"], state["openDocs"], state["recentDocs"]
+    )
+    _gallery_refresh_pending = False
     palette.sendInfoToHTML("setDocumentName", state["docName"])
     palette.sendInfoToHTML("setTheme", state["theme"])
-    palette.sendInfoToHTML("setOpenDocs", json.dumps(state["openDocs"]))
-    palette.sendInfoToHTML("setRecentDocs", json.dumps(state["recentDocs"]))
+    palette.sendInfoToHTML(
+        "setOpenDocs", json.dumps(_strip_sent_thumbs(state["openDocs"]))
+    )
+    palette.sendInfoToHTML(
+        "setRecentDocs", json.dumps(_strip_sent_thumbs(state["recentDocs"]))
+    )
     palette.sendInfoToHTML(
         "setTargetProject",
         json.dumps(
             {"hasProject": state["hasTargetProject"], "name": state["targetProject"]}
         ),
     )
+
+
+def _refresh_galleries(
+    reason: str, *, exclude_ids: set[str] | None = None, force: bool = False
+) -> None:
+    """Repaint the Open and Recent galleries of an already-open palette.
+
+    The counterpart to _send_palette_init for document events: it pushes only the
+    two galleries and the banner name, skipping the theme (which cannot change
+    here) and the target project (the only cloud-touching part of the state — see
+    _send_target_project, which the page already re-checks on focus).
+
+    Deliberately never calls _show_palette: that tears the palette down and builds
+    a new one, which would also clear _inserted_in_session and lose the user's tab,
+    scroll, and filter.
+
+    Args:
+        reason: Which event asked for this, for the debug log.
+        exclude_ids: DataFile ids to leave out of the Open gallery — used by
+            documentClosing, which fires while the doc is still enumerable.
+        force: Push even when nothing visible changed. Used by the page's flush,
+            where the point is to deliver a repaint that was previously skipped.
+    """
+    global _last_gallery_signature, _gallery_refresh_pending
+
+    palette = ui.palettes.itemById(PALETTE_ID)
+    if palette is None or not palette.isVisible:
+        return
+
+    if not _refresh_is_safe():
+        # Held, not dropped: the page asks for a flush when it regains focus.
+        _gallery_refresh_pending = True
+        _diag(f"{reason}: refresh deferred, a command is running.")
+        return
+
+    open_docs = _list_open_docs(exclude_ids=exclude_ids)
+    recent_docs = _list_recent_docs()
+    doc_name = getattr(app.activeDocument, "name", "")
+
+    signature = _gallery_signature(doc_name, open_docs, recent_docs)
+    _gallery_refresh_pending = False
+    if signature == _last_gallery_signature and not force:
+        return
+    _last_gallery_signature = signature
+
+    palette.sendInfoToHTML("setDocumentName", doc_name)
+    palette.sendInfoToHTML("setOpenDocs", json.dumps(_strip_sent_thumbs(open_docs)))
+    palette.sendInfoToHTML("setRecentDocs", json.dumps(_strip_sent_thumbs(recent_docs)))
+    _diag(f"{reason}: repainted {len(open_docs)} open, {len(recent_docs)} recent.")
+
+
+def _refresh_is_safe() -> bool:
+    """False while repainting the palette could disturb a running command.
+
+    Two reasons, and the first is the sharp one. A palette insert queues the
+    post-insert chain on a short fuse and then opens Edit Initial Position;
+    repainting inside that window is exactly what used to kill the command before
+    the deferral existed (see _schedule_finish_insert). ``addByInsert`` triggers
+    document events of its own, so the trigger and the hazard arrive together.
+
+    More generally, any command reading a selection can lose it to a repaint, so
+    an active command defers the refresh instead of racing it. Fusion reports its
+    idle state as the Select command rather than "nothing running", hence
+    _IDLE_CMD_IDS.
+    """
+    if _pending_finish is not None:
+        return False
+    active = _read_property(ui, "activeCommand")
+    if active is None:
+        # Not exposed on this build — nothing to test, so don't block on it.
+        return True
+    return active in _IDLE_CMD_IDS
+
+
+def _entry_signature(entry: dict) -> tuple:
+    """Fingerprint of one gallery card: everything a repaint would change."""
+    return (
+        entry.get("dataFileId", ""),
+        entry.get("name", ""),
+        entry.get("intent", ""),
+        # Present/absent is enough — a thumbnail's bytes are derived from a cache
+        # file keyed by the id, so the URI cannot change without this flipping.
+        bool(entry.get("thumbUrl")),
+    )
+
+
+def _gallery_signature(
+    doc_name: str, open_docs: list[dict], recent_docs: list[dict]
+) -> tuple:
+    """Fingerprint of everything a gallery push would put on screen.
+
+    documentActivated fires on every tab switch, so identical repaints are the
+    common case; comparing this against the last push keeps them off the bridge.
+    Same guard, and the same reason, as commands/openrecent/entry.py.
+    """
+    return (
+        doc_name,
+        tuple(_entry_signature(entry) for entry in open_docs),
+        tuple(_entry_signature(entry) for entry in recent_docs),
+    )
+
+
+def _strip_sent_thumbs(entries: list[dict]) -> list[dict]:
+    """Drop thumbnail data URIs the page is already holding.
+
+    Base64 thumbnails are almost the whole payload — RECENT_PAYLOAD_LIMIT is 300
+    cards, and the generated init.js runs to hundreds of KB — and a thumbnail
+    never changes for a given DataFile id. So each is sent once per page load and
+    the page caches it by id; later pushes omit the key entirely, which the page
+    reads as "reuse what you have". An explicit empty string still means "this
+    document has no cached thumbnail", so the placeholder path is unaffected.
+
+    Returns copies; the input entries keep their thumbnails so the caller's
+    signature stays honest.
+    """
+    out: list[dict] = []
+    for entry in entries:
+        df_id = entry.get("dataFileId", "")
+        if entry.get("thumbUrl") and df_id:
+            if df_id in _thumbs_sent:
+                entry = {k: v for k, v in entry.items() if k != "thumbUrl"}
+            else:
+                _thumbs_sent.add(df_id)
+        out.append(entry)
+    return out
 
 
 def _send_target_project(palette: adsk.core.Palette) -> None:
@@ -584,14 +828,20 @@ def _is_top_level_doc(doc) -> bool:
         return False
 
 
-def _list_open_docs() -> list[dict]:
+def _list_open_docs(exclude_ids: set[str] | None = None) -> list[dict]:
     """Open Fusion design docs (part/hybrid/assembly) for the Open tab.
 
     By default only top-level (directly-opened) docs appear; when
     _show_children is set, reference-loaded children of open assemblies are
     included too. Always excludes the active doc, unsaved docs (addByInsert
-    needs a DataFile), and docs inserted earlier in this palette session."""
+    needs a DataFile), and docs inserted earlier in this palette session.
+
+    Args:
+        exclude_ids: Extra DataFile ids to leave out. documentClosing fires while
+            the closing document is still in app.documents, so that is how its
+            card is removed before it disappears on its own."""
     out: list[dict] = []
+    skip_ids = set(exclude_ids) if exclude_ids else set()
     active = app.activeDocument
     active_key = id(active) if active else None
 
@@ -625,7 +875,7 @@ def _list_open_docs() -> list[dict]:
         if df is None:
             continue
         df_id = getattr(df, "id", "")
-        if df_id in _inserted_in_session:
+        if df_id in _inserted_in_session or df_id in skip_ids:
             continue
         if df_id in seen:
             continue
@@ -787,6 +1037,10 @@ def _palette_incoming(html_args: adsk.core.HTMLEventArgs):
         # re-read init.js — on Windows the embedded browser caches init.js
         # across palette recreations and can serve a stale/empty copy, which
         # left the galleries blank. This guarantees a fresh repaint.
+        #
+        # A page that just loaded holds no cached thumbnails, whatever init.js
+        # did or didn't deliver, so every thumbnail is in play again.
+        _thumbs_sent.clear()
         if palette:
             _send_palette_init(palette)
         html_args.returnData = "OK"
@@ -836,11 +1090,16 @@ def _palette_incoming(html_args: adsk.core.HTMLEventArgs):
         return
 
     if action == "setShowChildren":
-        global _show_children
+        global _show_children, _last_gallery_signature
         _show_children = bool(data.get("showChildren", False))
-        # Only the Open list depends on this — re-send just that.
+        # Only the Open list depends on this — re-send just that. The recorded
+        # fingerprint no longer describes what the page holds, so drop it rather
+        # than let it suppress the next document-event repaint.
         if palette:
-            palette.sendInfoToHTML("setOpenDocs", json.dumps(_list_open_docs()))
+            palette.sendInfoToHTML(
+                "setOpenDocs", json.dumps(_strip_sent_thumbs(_list_open_docs()))
+            )
+            _last_gallery_signature = None
         html_args.returnData = "OK"
         return
 
@@ -849,6 +1108,15 @@ def _palette_incoming(html_args: adsk.core.HTMLEventArgs):
         # banner's Re-check button and when the palette page regains focus.
         if palette:
             _send_target_project(palette)
+        html_args.returnData = "OK"
+        return
+
+    if action == "flushGalleries":
+        # The page regained focus. Document events repaint the galleries on their
+        # own, so this only has to deliver a repaint that was skipped because a
+        # command was running — anything else is already on screen.
+        if palette and _gallery_refresh_pending:
+            _refresh_galleries("flushGalleries", force=True)
         html_args.returnData = "OK"
         return
 

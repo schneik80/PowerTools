@@ -24,6 +24,13 @@
     // Full unfiltered Recent list, kept so filtering never round-trips.
     var recentAll = [];
 
+    // dataFileId → thumbnail data URI. The galleries repaint on every document
+    // open / switch / save / close, and the base64 thumbnails are almost the
+    // whole payload, so the backend sends each one once and then omits the
+    // thumbUrl key; a missing key means "reuse what you already have". An
+    // explicit empty string still means the document has no cached thumbnail.
+    var thumbCache = {};
+
     function applyTheme(theme) {
         document.body.classList.remove('dark', 'light');
         document.body.classList.add(theme === 'light' ? 'light' : 'dark');
@@ -51,6 +58,32 @@
     function setTabCount(id, n) {
         var el = document.getElementById(id);
         if (el) el.textContent = n > 0 ? ' (' + n + ')' : '';
+    }
+
+    // A card's thumbnail, taking the cache into account. A thumbUrl that arrived
+    // is remembered; an omitted one is looked back up, so a repeat push does not
+    // have to carry hundreds of KB of base64 it already sent.
+    function resolveThumb(doc) {
+        var id = doc.dataFileId;
+        if (doc.thumbUrl) {
+            if (id) thumbCache[id] = doc.thumbUrl;
+            return doc.thumbUrl;
+        }
+        if (doc.thumbUrl === undefined && id && thumbCache[id]) {
+            return thumbCache[id];
+        }
+        return '';
+    }
+
+    // Run a repaint without moving the user. Document-change repaints land under
+    // the cursor and renderGallery rebuilds the list from scratch, so the scroll
+    // offset has to be carried across it. Tab switches deliberately reset scroll
+    // instead — see activateTab.
+    function withScrollPreserved(paint) {
+        var container = document.querySelector('.tab-panes');
+        var top = container ? container.scrollTop : 0;
+        paint();
+        if (container) container.scrollTop = top;
     }
 
     function renderGallery(rootId, emptyId, docs, opts) {
@@ -96,10 +129,11 @@
             // The intent class rides on the thumb too: with no thumbnail (or one
             // that fails to load) `.broken` swaps in this type's 32px icon.
             var thumbClass = 'doc-thumb' + (intent ? ' ' + intent : '');
+            var thumbUrl = resolveThumb(doc);
             var thumbHtml;
-            if (doc.thumbUrl) {
+            if (thumbUrl) {
                 thumbHtml = '<div class="' + thumbClass + '">' +
-                    '<img src="' + escapeHtml(doc.thumbUrl) + '" alt="" ' +
+                    '<img src="' + escapeHtml(thumbUrl) + '" alt="" ' +
                     'onerror="this.parentNode.classList.add(\'broken\');this.remove();" />' +
                     '</div>';
             } else {
@@ -203,12 +237,21 @@
         send('recheckProject', {});
     }
 
-    // Auto re-check when the palette regains focus, but only while the banner
-    // is showing — no point polling when a project is already set. This makes
-    // returning from the Data Panel clear the banner without a manual click.
-    function autoRecheckIfNeeded() {
+    // What runs when the palette regains focus.
+    //
+    // Re-check the target project, but only while the banner is showing — no
+    // point polling when a project is already set. This makes returning from the
+    // Data Panel clear the banner without a manual click.
+    //
+    // Then ask for any gallery repaint the backend had to hold back. Document
+    // events repaint the galleries on their own, except while a command is
+    // running: an insert leaves Edit Initial Position open, and repainting under
+    // it kills it. Coming back to the palette is when that is safe again, and
+    // the backend answers nothing when it has nothing waiting.
+    function onPaletteFocus() {
         var banner = document.getElementById('noProjectBanner');
         if (banner && !banner.hidden) send('recheckProject', {});
+        send('flushGalleries', {});
     }
 
     // --- Initial paint from ptInit ---
@@ -288,10 +331,11 @@
     if (recheckBtn) recheckBtn.addEventListener('click', recheckProject);
 
     // Fusion emits no active-project event, so approximate one: when the user
-    // returns to the palette after using the Data Panel, re-check.
-    window.addEventListener('focus', autoRecheckIfNeeded);
+    // returns to the palette after using the Data Panel, re-check — and collect
+    // any repaint deferred while a command was up.
+    window.addEventListener('focus', onPaletteFocus);
     document.addEventListener('visibilitychange', function () {
-        if (!document.hidden) autoRecheckIfNeeded();
+        if (!document.hidden) onPaletteFocus();
     });
 
     // --- Tab switching (Open / Recent) ---
@@ -328,11 +372,13 @@
                 } else if (action === 'setOpenDocs') {
                     var open = [];
                     try { open = JSON.parse(data) || []; } catch (e) { open = []; }
-                    renderGallery('openGallery', 'openEmpty', open);
+                    withScrollPreserved(function () {
+                        renderGallery('openGallery', 'openEmpty', open);
+                    });
                 } else if (action === 'setRecentDocs') {
                     var recent = [];
                     try { recent = JSON.parse(data) || []; } catch (e) { recent = []; }
-                    setRecentDocs(recent);
+                    withScrollPreserved(function () { setRecentDocs(recent); });
                 } else if (action === 'setTargetProject') {
                     applyTargetProject(data);
                 }
