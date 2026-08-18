@@ -21,7 +21,13 @@ ui = app.userInterface
 
 CMD_NAME = "Create Mirrored Design"
 CMD_ID = "PTPM_createmirrordesign"
-CMD_DESCRIPTION = "Save the active documents bodies as an associative mirror using derive. Names the component after the source plus -Mirror"
+CMD_Description = (
+    "Derive every solid body of the active design into a new document saved "
+    "alongside it as <name>-mirror, then apply a uniform scale of -1 to "
+    "produce a mirrored copy without touching the source. The derive stays "
+    "associative, so the mirror follows later changes. The source design must "
+    "already be saved to Fusion."
+)
 IS_PROMOTED = False
 
 WORKSPACE_ID = config.design_workspace
@@ -37,7 +43,7 @@ local_handlers = []
 def start() -> None:
     try:
         cmd_def = ui.commandDefinitions.addButtonDefinition(
-            CMD_ID, CMD_NAME, CMD_DESCRIPTION, ICON_FOLDER
+            CMD_ID, CMD_NAME, CMD_Description, ICON_FOLDER
         )
         ptutil.add_handler(cmd_def.commandCreated, command_created)
 

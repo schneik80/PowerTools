@@ -19,6 +19,13 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Favorites"
+CMD_Description = (
+    "Quick Access Toolbar dropdown of saved Fusion Team folder locations, so "
+    "frequently used places are one click away instead of a walk through the "
+    "data panel. Add the active document's location, edit the saved list, and "
+    "jump straight to any entry. Favorites are stored per hub, so switching "
+    "hubs shows only that hub's locations."
+)
 CMD_ID = "PTAT_favorites_dropdown"  # The QAT dropdown control ID
 CMD_ADD_ID = "PTAT_favorites_add"  # The "Favorite This Location" button definition ID
 CMD_ADD_NAME = "Favorite This Location"

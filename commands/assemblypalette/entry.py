@@ -38,6 +38,13 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Assembly Palette"
+CMD_Description = (
+    "Docked quick-start palette for populating a new assembly. Opens "
+    "automatically for a new, empty design with Assembly design intent, or on "
+    "demand from the toolbar. Create external Part, Hybrid or Assembly "
+    "components in place, insert from a thumbnail gallery of your open or "
+    "recent documents, and hand off to Assembly Builder or Global Parameters."
+)
 PALETTE_NAME = "Assembly Palette"
 PALETTE_ID = config.assembly_palette_id
 PALETTE_DOCKING = adsk.core.PaletteDockingStates.PaletteDockStateRight

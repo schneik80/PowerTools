@@ -24,7 +24,7 @@ ui = app.userInterface
 # Specify the command identity information.
 CMD_ID = "PTSHD_projectMembers"
 CMD_NAME = "Document Project Members..."
-CMD_Description = "Invite members to the active document's project.\n\nThis will open your default WEB browser to invite to the hub and project for the active document.\n\nThis command is only available when the active document is saved and in a project.\n\nNote: This command will not work if the active document is not saved or is not in a project."
+CMD_Description = "See who has access to the active document's project.\n\nThis will open your default WEB browser to the Members page in Fusion Team for the hub and project of the active document, where you can review access levels, add collaborators, and change or remove existing permissions.\n\nThis command is only available when the active document is saved and in a project.\n\nNote: This command will not work if the active document is not saved or is not in a project."
 
 # Specify that the command will be promoted to the panel.
 IS_PROMOTED = False

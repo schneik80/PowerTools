@@ -20,7 +20,11 @@ ui = app.userInterface
 
 CMD_NAME = "Toggle Data"
 CMD_ID = "PTND_toggledata"
-CMD_Description = "Hide or show the data pane"
+CMD_Description = (
+    "Open or close the Data Pane with a single click from the Navigation "
+    "Toolbar. Fusion otherwise hides this behind a nested menu or a keyboard "
+    "shortcut most people never find."
+)
 IS_PROMOTED = False
 
 # Global variables by referencing values from /config.py

@@ -20,8 +20,12 @@ ui = app.userInterface
 
 CMD_NAME = "Hide Objects"
 CMD_ID = "PTPM_hideobjects"
-CMD_DESCRIPTION = (
-    "Hide selected types of objects across all components in the active design."
+CMD_Description = (
+    "Hide selected categories of reference and construction geometry across "
+    "every component in the active design at once, to declutter the viewport "
+    "before sharing, rendering or reviewing. Objects are only switched off at "
+    "their visibility light bulb, never deleted or suppressed, so anything "
+    "can be brought back from the browser."
 )
 IS_PROMOTED = False
 
@@ -40,7 +44,7 @@ local_handlers = []
 def start() -> None:
     try:
         cmd_def = ui.commandDefinitions.addButtonDefinition(
-            CMD_ID, CMD_NAME, CMD_DESCRIPTION, ICON_FOLDER
+            CMD_ID, CMD_NAME, CMD_Description, ICON_FOLDER
         )
         ptutil.add_handler(cmd_def.commandCreated, command_created)
 

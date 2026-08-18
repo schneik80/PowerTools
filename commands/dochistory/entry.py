@@ -20,7 +20,11 @@ ui = app.userInterface
 
 CMD_NAME = "History"
 CMD_ID = "PTND_history"
-CMD_Description = "Show History for the open document"
+CMD_Description = (
+    "Open the version and timeline history panel for the active design from a "
+    "Quick Access Toolbar button. Reaching it in Fusion otherwise means "
+    "right-clicking the root component in the browser, which is easy to miss."
+)
 
 # Resource location for command icons, here we assume a sub folder in this directory named "resources".
 ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "")

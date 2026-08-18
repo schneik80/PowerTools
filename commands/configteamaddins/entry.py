@@ -39,7 +39,7 @@ CMD_Description = (
     "active hub.\n"
     "Drop an add-in .zip into that folder and everyone running PowerTools picks "
     "it up shortly after Fusion starts.\n"
-    "There is nothing to configure — the location is the same in every hub."
+    "There is nothing to configure: the location is the same in every hub."
 )
 
 ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "")
@@ -126,7 +126,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
             f"Folder: {folder_name}\n"
             f"Add-in packages in it: {count}\n\n"
             f"Drop an add-in .zip into that folder to share it with the team. "
-            f"Use Tools → Power Tools → Team Add-ins to check it now.",
+            f"Use Tools > Power Tools > Team Add-ins to check it now.",
             CMD_NAME,
             adsk.core.MessageBoxButtonTypes.OKButtonType,
             adsk.core.MessageBoxIconTypes.InformationIconType,

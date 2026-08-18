@@ -17,7 +17,13 @@ ui = app.userInterface
 
 CMD_NAME = "Local Recovery Save"
 CMD_ID = "PTND_autoSave"
-CMD_Description = "Force local recovery save"
+CMD_Description = (
+    "Write a local recovery checkpoint for the active document without "
+    "creating a new cloud version. Lets you checkpoint work in progress as "
+    "often as you like without the version noise that triggers out-of-date "
+    "notifications for everyone else on the assembly. Adds an entry to the "
+    "File menu on the Quick Access Toolbar."
+)
 
 # Local list of event handlers used to maintain a reference so
 # they are not released and garbage collected.

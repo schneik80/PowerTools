@@ -19,7 +19,12 @@ ui = app.userInterface
 
 CMD_NAME = "Reference Manager"
 CMD_ID = "PTAT_refmanager"
-CMD_Description = "See all references and manage updates"
+CMD_Description = (
+    "Open Fusion's Reference Manager dialog straight from the Quick Access "
+    "Toolbar, instead of hunting for it through nested menus. Review every "
+    "external reference in the active document, update them all at once or "
+    "one at a time, and pick a specific version for any individual reference."
+)
 
 # Resource location for command icons, here we assume a sub folder in this directory named "resources".
 ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "")

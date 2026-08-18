@@ -27,7 +27,13 @@ ui = app.userInterface
 
 CMD_NAME = "Document References"
 CMD_ID = "PTAT_docrefs"
-CMD_Description = "List Active Document References"
+CMD_Description = (
+    "List every document related to the active design, grouped by "
+    "relationship: the top-level root assemblies that ultimately contain it "
+    "(found by walking the full parent chain), the assemblies that use it "
+    "directly, the documents it uses, and its drawings. Use it to see where a "
+    "part sits in a larger project before changing it."
+)
 IS_PROMOTED = False
 
 # Global variables by referencing values from /config.py

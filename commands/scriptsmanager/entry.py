@@ -24,7 +24,12 @@ ui = app.userInterface
 
 CMD_ID = "PT_scriptsmanager"
 CMD_NAME = "Scripts and Add-ins"
-CMD_Description = "Open the Fusion Scripts and Add-Ins manager."
+CMD_Description = (
+    "Open Fusion's built-in Scripts and Add-Ins manager: the same dialog as "
+    "Shift+S or Utilities > Add-Ins, from the File menu, directly above "
+    "PowerTools Preferences. Purely a shortcut: it puts a frequently used "
+    "tool one click from where you already are."
+)
 
 # The built-in Fusion command this menu item launches.
 TARGET_CMD_ID = "ScriptsManagerCommand"
