@@ -31,7 +31,7 @@ GROUPS = [
         "commands": [
             _cmd("assemblybuilder", "Assembly Builder.md"),
             _cmd("insertSTEP", "Insert Step.md"),
-            _cmd("assemblyintent", "New Assembly.md"),
+            _cmd("assemblypalette", "Assembly Palette.md"),
             _cmd("assemblystats", "Assembly Statistics.md"),
             _cmd("getandupdate", "Get and Update.md"),
             _cmd("bottomupupdate", "Bottom-Up Update.md"),

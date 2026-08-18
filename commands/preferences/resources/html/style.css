@@ -1,6 +1,6 @@
 /* Copyright (C) Industrial Machine Arts LLC WA, USA - All Rights Reserved
    PowerTools Preferences palette styles. Theme variables mirror the other
-   PowerTools palettes (assemblyintent/assemblybuilder) for visual consistency. */
+   PowerTools palettes (assemblypalette/assemblybuilder) for visual consistency. */
 
 :root {
     --bg-primary: #2A3442;
@@ -184,7 +184,7 @@ textarea:focus { outline: none; border-color: var(--accent); }
 .folders-edit + .folders-edit { border-top: 1px solid var(--border-color); margin-top: 4px; }
 .fe-title { font-weight: 600; margin-bottom: 2px; }
 
-/* Thin, themed scrollbar (WebKit/CEF), matching the assemblyintent palette.
+/* Thin, themed scrollbar (WebKit/CEF), matching the assemblypalette palette.
    Only the webkit pseudo-elements are set: specifying scrollbar-width or
    scrollbar-color would make Chromium ignore them and fall back to its own
    thin bar, which reads differently from the sibling palettes. */

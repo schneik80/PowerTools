@@ -1,8 +1,8 @@
-# New Assembly
+# Assembly Palette
 
 [Back to PowerTools Assembly](../README.md)
 
-The New Assembly command opens a docked quick-start palette that helps you populate a brand-new assembly. It appears automatically when you create a new, empty design with **Assembly** design intent, and can also be opened on demand from a toolbar button. From a single panel you can create external Part, Hybrid, or Assembly components in place, hand off to the Assembly Builder or Global Parameters commands, and insert components from a gallery of your currently-open or recently-used documents.
+The Assembly Palette command opens a docked quick-start palette that helps you populate a brand-new assembly. It appears automatically when you create a new, empty design with **Assembly** design intent, and can also be opened on demand from a toolbar button. From a single panel you can create external Part, Hybrid, or Assembly components in place, hand off to the Assembly Builder or Global Parameters commands, and insert components from a gallery of your currently-open or recently-used documents.
 
 ## What you can do
 
@@ -23,10 +23,10 @@ The New Assembly command opens a docked quick-start palette that helps you popul
 - **Insert from Open / Recent** requires the source document to be **saved** to an Autodesk Hub — `addByInsert` needs a cloud `DataFile`. Unsaved documents are not listed.
 - **Creating a component** requires an **active project** in the Data Panel — that project's folder is where the new external component is stored. If no project is in context, the palette shows a *No target project* banner and disables **New Component** until you select one.
 
-## How to use New Assembly
+## How to use Assembly Palette
 
 1. In Autodesk Fusion, create a new design with **File > New Design** and confirm the design intent is **Assembly**. The palette opens automatically docked to the right.
-   - To open it manually at any time, select **New Assembly** in the **Assembly** tab's **Insert** panel (directly below **Insert STEP File**).
+   - To open it manually at any time, select **Assembly Palette** in the **Assembly** tab's **Insert** panel (directly below **Insert STEP File**).
 2. **To create a component:** enter a component name, choose **Part**, **Hybrid**, or **Assembly** from the dropdown, and select **New Component**. The external component is created in the active project's root folder and added to the active design.
    - If **New Component** is greyed out and a *No target project* banner is shown, there is no active project to store the component in. Open the **Data Panel**, click into the project you want to work in, then press **Re-check** on the banner (or simply click back into the palette — it re-checks automatically when it regains focus).
 3. **To insert an open document:** switch to the **Open** tab and click a thumbnail card. The document is inserted as a referenced component at the origin.
@@ -47,11 +47,11 @@ The New Assembly command opens a docked quick-start palette that helps you popul
 | Method | Location |
 |---|---|
 | Automatic | Opens docked to the right when a **new, empty, Assembly-intent** design becomes active. |
-| Manual | **Assembly** tab > **Insert** panel > **New Assembly** (below **Insert STEP File**). |
+| Manual | **Assembly** tab > **Insert** panel > **Assembly Palette** (below **Insert STEP File**). |
 
 The palette docks to the right edge of the Fusion window. Closing it does not disable the automatic trigger — creating another new empty Assembly design opens it again.
 
-> **Developers:** see the [architecture notes](./arch/New%20Assembly.md).
+> **Developers:** see the [architecture notes](./arch/Assembly%20Palette.md).
 
 ---
 

@@ -1,4 +1,4 @@
-"""Unit tests for ``_action_launch_fasteners`` in ``assemblyintent/entry.py``.
+"""Unit tests for ``_action_launch_fasteners`` in ``assemblypalette/entry.py``.
 
 The handler backs the palette's "Fasteners ↗" link, which hands off to Fusion's
 own ``FusionFastenersCommand``. Fusion often has that command present but
@@ -13,7 +13,7 @@ import importlib
 
 import pytest
 
-entry = importlib.import_module("PowerTools.commands.assemblyintent.entry")
+entry = importlib.import_module("PowerTools.commands.assemblypalette.entry")
 
 
 class FakeControlDefinition:

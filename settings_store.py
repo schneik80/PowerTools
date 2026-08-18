@@ -73,6 +73,31 @@ def _defaults() -> dict:
     return data
 
 
+# Commands whose registry key (and so whose settings key) has been renamed.
+# Without this, a rename silently resets everyone's enable/disable state for
+# that command back to the default, and leaves a dead key in preferences.json.
+RENAMED_COMMANDS = {
+    "assemblyintent": "assemblypalette",
+}
+
+
+def _migrate_renames(stored: dict) -> dict:
+    """Carry settings across a command rename. Returns *stored*, modified.
+
+    Applied to the stored file before it is merged over the defaults. The old
+    key is dropped, so it disappears from disk the next time anything is saved.
+    An existing entry under the new key always wins.
+    """
+    for old, new in RENAMED_COMMANDS.items():
+        for section in ("commands", "command_settings"):
+            block = stored.get(section)
+            if not isinstance(block, dict) or old not in block:
+                continue
+            value = block.pop(old)
+            block.setdefault(new, value)
+    return stored
+
+
 def _deep_merge(base: dict, override) -> dict:
     """Return *base* with *override* merged in (override wins; dicts recurse)."""
     out = dict(base)
@@ -119,6 +144,7 @@ def load() -> dict:
     stored = ptutil.read_json(config.SETTINGS_PREFS_FILE, {})
     if not isinstance(stored, dict):
         stored = {}
+    stored = _migrate_renames(stored)
     # Merge over defaults so newly added groups/commands pick up their defaults.
     _cache = _deep_merge(defaults, stored)
     return _cache

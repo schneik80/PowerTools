@@ -11,7 +11,7 @@ shared PowerTools recents cache; selecting a button opens that document.
 The command owns no cache logic of its own. The recents list, the on-disk
 thumbnail store, and the record/list/render helpers all live in the shared
 `lib/ptAddInUtils/recents_utils` module, which is also used by the
-[New Assembly](./New%20Assembly.md) palette. This keeps a single source of truth
+[Assembly Palette](./Assembly%20Palette.md) palette. This keeps a single source of truth
 for the recents format so the two surfaces can never drift.
 
 ### Command / control IDs
@@ -95,7 +95,7 @@ C4Component
     }
 
     System_Ext(fusion, "Fusion API", "adsk.core, adsk.fusion")
-    Component(newasm, "New Assembly", "commands/assemblyintent", "Recent gallery — shares the same cache")
+    Component(newasm, "Assembly Palette", "commands/assemblypalette", "Recent gallery — shares the same cache")
 
     Rel(user, flyout, "Hovers items (location + thumbnail), clicks to open")
     Rel(entry, flyout, "Creates / rebuilds")
@@ -149,11 +149,11 @@ sequenceDiagram
 
 ### Why a shared `recents_utils` module?
 The recents cache and thumbnail store were previously private to
-`commands/assemblyintent`. Surfacing the same list on the File menu meant either
+`commands/assemblypalette`. Surfacing the same list on the File menu meant either
 duplicating that logic (two definitions of the cache path, format, thumbnail key
 scheme, and limit that would inevitably drift) or extracting it. Following the
 `cache_utils` precedent — "this module owns the format so it stays in sync" — the
-data and thumbnail layer moved to `lib/ptAddInUtils/recents_utils`. New Assembly
+data and thumbnail layer moved to `lib/ptAddInUtils/recents_utils`. Assembly Palette
 now delegates to it (behavior-preserving), and Open Recent uses it directly.
 
 ### Why record recents in Open Recent too?

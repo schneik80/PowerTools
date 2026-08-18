@@ -312,8 +312,8 @@ table for the label the user sees, then grep the command definitions for the id.
 
 ---
 
-*Written up from the New Assembly palette in Power Tools
-(`commands/assemblyintent/entry.py`); the design notes and the dead ends behind it are in
-[docs/arch/New Assembly.md](../arch/New%20Assembly.md).*
+*Written up from the Assembly Palette command in Power Tools
+(`commands/assemblypalette/entry.py`); the design notes and the dead ends behind it are in
+[docs/arch/Assembly Palette.md](../arch/Assembly%20Palette.md).*
 
 *Copyright © 2026 IMA LLC. All rights reserved.*

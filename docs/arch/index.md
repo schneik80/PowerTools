@@ -22,7 +22,7 @@ matching end-user guide lives in [`../`](..).
 **Assembly**
 
 - [Assembly Builder](Assembly%20Builder.md)
-- [New Assembly](New%20Assembly.md)
+- [Assembly Palette](Assembly%20Palette.md)
 - [Insert Step](Insert%20Step.md)
 - [Assembly Statistics](Assembly%20Statistics.md)
 - [Get and Update](Get%20and%20Update.md)

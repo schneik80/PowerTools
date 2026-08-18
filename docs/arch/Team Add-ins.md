@@ -54,7 +54,7 @@ _fire_check()   [worker thread]        app.fireCustomEvent(...)  ← only call p
 _CheckHandler.notify()  [main thread]  apply pending → check → report
 ```
 
-Three constraints carried over verbatim from `commands/assemblyintent/entry.py:_schedule_finish_insert`:
+Three constraints carried over verbatim from `commands/assemblypalette/entry.py:_schedule_finish_insert`:
 
 - The worker thread must touch nothing but `fireCustomEvent` — not even `ptutil.log`, which calls `Application.log`.
 - `fireCustomEvent` returns `False` even when the event fires; its return value is ignored.

@@ -1,4 +1,4 @@
-"""Unit tests for the post-insert chain in ``assemblyintent/entry.py``.
+"""Unit tests for the post-insert chain in ``assemblypalette/entry.py``.
 
 A palette insert is only ``addByInsert`` -- the import and commit half of what
 Fusion's own Insert Component does -- so ``_finish_insert_like_fusion`` adds the
@@ -15,7 +15,7 @@ import importlib
 
 import pytest
 
-entry = importlib.import_module("PowerTools.commands.assemblyintent.entry")
+entry = importlib.import_module("PowerTools.commands.assemblypalette.entry")
 
 DC_ID, PLAIN_ID = entry._EDIT_POSITION_CMD_IDS
 

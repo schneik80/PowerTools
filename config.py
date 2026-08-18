@@ -460,8 +460,8 @@ def fusion_addins_dir() -> str:
 assembly_builder_palette_id = (
     f"{COMPANY_NAME.replace(' ', '_')}_{ADDIN_NAME}_assembly_builder_palette"
 )
-assembly_intent_palette_id = (
-    f"{COMPANY_NAME.replace(' ', '_')}_{ADDIN_NAME}_assembly_intent_palette"
+assembly_palette_id = (
+    f"{COMPANY_NAME.replace(' ', '_')}_{ADDIN_NAME}_assembly_palette"
 )
 preferences_palette_id = (
     f"{COMPANY_NAME.replace(' ', '_')}_{ADDIN_NAME}_preferences_palette"

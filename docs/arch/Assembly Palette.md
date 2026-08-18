@@ -1,13 +1,13 @@
-# New Assembly — Architecture
-[← New Assembly guide](../New%20Assembly.md)
+# Assembly Palette — Architecture
+[← Assembly Palette guide](../Assembly%20Palette.md)
 
 ## Architecture
 
-New Assembly bridges an HTML/JS palette (running in Fusion's QT WebEngine) and the Fusion Python API. The palette hosts the three quick-start sections; the Python backend watches for new empty Assembly documents, enumerates open and recent documents, renders thumbnails, and performs component creation and insertion.
+Assembly Palette bridges an HTML/JS palette (running in Fusion's QT WebEngine) and the Fusion Python API. The palette hosts the three quick-start sections; the Python backend watches for new empty Assembly documents, enumerates open and recent documents, renders thumbnails, and performs component creation and insertion.
 
 ```mermaid
 C4Context
-  title New Assembly – System Context
+  title Assembly Palette – System Context
 
   Person(user, "Design Engineer", "Autodesk Fusion user starting a new assembly")
   System(addin, "PowerTools Assembly", "Autodesk Fusion add-in")
@@ -21,12 +21,12 @@ C4Context
 
 ```mermaid
 C4Container
-  title New Assembly – Container View
+  title Assembly Palette – Container View
 
   Person(user, "Design Engineer")
 
-  Container_Boundary(cmd, "New Assembly command") {
-    Container(python, "Python Backend", "commands/assemblyintent/entry.py", "Trigger gate, open/recent enumeration, thumbnails, target-project resolution, create + insert")
+  Container_Boundary(cmd, "Assembly Palette command") {
+    Container(python, "Python Backend", "commands/assemblypalette/entry.py", "Trigger gate, open/recent enumeration, thumbnails, target-project resolution, create + insert")
     Container(palette, "HTML Palette", "resources/html/index.html", "Create form, no-project banner, Open/Recent tabbed galleries, theme")
     ContainerDb(init, "init.js", "Generated sidecar", "window.__ptInit: theme, doc name, open + recent docs, target project")
     ContainerDb(recent, "recent_docs.json", "Local cache (recents_utils)", "Recently-touched part/hybrid/assembly DataFile ids; shared with Open Recent")
@@ -46,11 +46,11 @@ C4Container
 
 ```mermaid
 C4Component
-  title New Assembly – Python Backend
+  title Assembly Palette – Python Backend
 
   Container_Boundary(python, "Python Backend") {
     Component(trigger, "documentActivated gate", "Trigger", "Pops palette once per new empty Assembly-intent doc; _palette_was_open_for dedup")
-    Component(launch, "Launch button", "Toolbar", "PTAT_newAssembly control in Assembly > Insert; opens palette on demand")
+    Component(launch, "Launch button", "Toolbar", "PTAT_assemblyPalette control in Assembly > Insert; opens palette on demand")
     Component(state, "Palette state", "_gather_palette_state", "Theme, doc name, open docs, recent docs, target project")
     Component(open, "Open enumerator", "_list_open_docs", "Top-level filter (documentReferences), dedup by id, excludes active/unsaved/inserted")
     Component(recent, "Recent enumerator", "_list_recent_docs", "Cache filtered to not-open + not-inserted; newest-first; dedup")
@@ -142,7 +142,7 @@ Fusion's own **Insert Component** is not one command but a chain: `FusionImportC
 
 **The whole difficulty was *when* the command is started, not which one.** Three false leads cost real time, so they are recorded here rather than re-derived:
 
-- **Deferral, in two stages.** Running the chain straight from the palette's `incomingFromHTML` handler did nothing visible. Deferring it through a `customEvent` (`PTAT_newAssembly_finishInsert`, the same trick `commands/externalize/entry.py` needs for its `saveCopyAs` pipeline) was *still* not enough: fired inline, Fusion dispatches the handler within the same event turn, and the command that started was torn down again when the HTML event finished and the palette repainted — visible on screen as a dialog that flashed up and died together with the selection. The fire is therefore delayed on a `threading.Timer` (`_FINISH_DELAY_SECONDS`, 0.35s), which lands the handler on a later main-loop turn. `fireCustomEvent` is the one `Application` call documented as safe off the main thread and is all the worker does — **not** `ptutil.log`, which calls `Application.log`.
+- **Deferral, in two stages.** Running the chain straight from the palette's `incomingFromHTML` handler did nothing visible. Deferring it through a `customEvent` (`PTAT_assemblyPalette_finishInsert`, the same trick `commands/externalize/entry.py` needs for its `saveCopyAs` pipeline) was *still* not enough: fired inline, Fusion dispatches the handler within the same event turn, and the command that started was torn down again when the HTML event finished and the palette repainted — visible on screen as a dialog that flashed up and died together with the selection. The fire is therefore delayed on a `threading.Timer` (`_FINISH_DELAY_SECONDS`, 0.35s), which lands the handler on a later main-loop turn. `fireCustomEvent` is the one `Application` call documented as safe off the main thread and is all the worker does — **not** `ptutil.log`, which calls `Application.log`.
 - **`controlDefinition.isEnabled` is not a usable gate for these two.** Both report `False` even when the command starts perfectly well, because they exist only in the marking menus and Fusion resolves that kind of command's availability while it builds the menu. The Fasteners handoff *does* gate on `isEnabled`, but that one is a real ribbon button where the flag means something; copying the pattern here skipped both ids outright. `execute()`'s own return value is no better — it answers `True` whether or not the command appears. `_try_start_command` therefore **observes** `ui.activeCommand`, and only falls back on `execute()`'s answer when activeCommand cannot be read at all.
 - **`ui.activeCommand` does not update in the turn a command starts.** Read after a single `doEvents()` it reported `SelectCommand` for a command that visibly came up. `_active_command_id` pumps for `_COMMAND_START_WAIT_SECONDS` (0.4s) via `ptutil.pump_events_for` before believing an idle answer.
 
@@ -163,7 +163,7 @@ As with Assembly Builder, the palette loads asynchronously and `palettes.add()` 
 The DataFile-backed cloud thumbnail did not resolve reliably in the target build. Rendering the live root component is dependable while a document is open, so thumbnails are generated for open documents and cached on disk (keyed by `md5(dataFileId)` in the OS temp folder). The Recent gallery — whose documents are closed and cannot be rendered — reuses whatever PNG was cached while the document was last open, falling back to a placeholder.
 
 ### Why is the recents cache shared with Open Recent?
-The recents cache (`cache/recent_docs.json`) and the per-document thumbnail store were originally private to this command. The [Open Recent](./Open%20Recent.md) File-menu flyout surfaces the same list, so the data layer — cache format/location, thumbnail key scheme and rendering, and the `read`/`write`/`touch`/`list`/`remember` helpers — was extracted into `lib/ptAddInUtils/recents_utils` (mirroring how `cache_utils` owns the Global Parameters cache formats). New Assembly now delegates its recents helpers to that module, keeping one source of truth so the palette gallery and the File-menu flyout can never drift.
+The recents cache (`cache/recent_docs.json`) and the per-document thumbnail store were originally private to this command. The [Open Recent](./Open%20Recent.md) File-menu flyout surfaces the same list, so the data layer — cache format/location, thumbnail key scheme and rendering, and the `read`/`write`/`touch`/`list`/`remember` helpers — was extracted into `lib/ptAddInUtils/recents_utils` (mirroring how `cache_utils` owns the Global Parameters cache formats). Assembly Palette now delegates its recents helpers to that module, keeping one source of truth so the palette gallery and the File-menu flyout can never drift.
 
 ### Why a "no target project" banner (and manual re-check)?
 A new external component needs a target `DataFolder` for its eventual save. The backend resolves one via `cache.resolve_target_folder()` — the active document's own folder when it is already saved, otherwise `app.data.activeProject.rootFolder`. That `activeProject` access raises `InternalValidationError('id.size()')` when the Data Panel has no project in context. Because a raise inside the palette's `incomingFromHTML` handler is swallowed by the `DEBUG`-gated `handle_error()`, this previously read to the user as **nothing happening** on *New Component*. The palette now surfaces an unresolved project as a banner and disables *New Component* until one is available. Fusion exposes **no active-project-changed event** (`Data.activeProject` is a plain property with no event), so the palette can't observe the user picking a project: it re-checks on demand instead — via a **Re-check** button on the banner and automatically when the palette page regains focus (a lightweight `recheckProject` message that re-resolves only the target folder). The same resolver and banner back the Assembly Builder's *Create Assembly* gate.

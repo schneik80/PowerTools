@@ -219,7 +219,7 @@ created and torn down by the individual command that uses it:
 | Manage-tab panel `PT_ManagePowerTools` | Document Tools | On the built-in `ManageTab` of the Design workspace (present only with the Fusion Manage Extension); the tab itself is never created or deleted, and the panel is skipped when the tab is absent. Owned by Sync Item to Part Number. |
 | QATRight "Share" flyout `shareDropMenu` | Share | Right Quick Access Toolbar drop-down for the Share commands. |
 | SolidTab panels / sketch & modify menus | Part Modeling, Assembly | Context-specific placement near sketch and modify tools. |
-| Assembly palettes (`*_assembly_builder_palette`, `*_assembly_intent_palette`) | Assembly | Palette IDs derived from company + add-in name in `config.py`. |
+| Assembly palettes (`*_assembly_builder_palette`, `*_assembly_palette`) | Assembly | Palette IDs derived from company + add-in name in `config.py`. |
 
 ---
 
@@ -251,7 +251,7 @@ flowchart TD
 A few ordering constraints are encoded in the `commands` list in
 `commands/__init__.py`:
 
-- `insertSTEP` must start before `assemblyintent` — the New Assembly launch
+- `insertSTEP` must start before `assemblypalette` — the Assembly Palette launch
   button positions itself relative to the Insert STEP control.
 - The Share commands keep their original relative order for correct QATRight
   flyout positioning.
@@ -319,7 +319,7 @@ use them.
 | `event_utils.py` | `add_handler()` (registers a handler and retains it against GC), `clear_handlers()` (releases globally-scoped handlers at stop). |
 | `attributes_utils.py` | Attribute enumeration/formatting helpers (`attributes_for_selection`, `get_all_attributes`, `get_comptypes`, `update_feedback_from_list`). |
 | `cache_utils.py` | Project/folder/param-doc JSON cache helpers (Global Parameters and Related Data domains); active-project / target-folder resolution shared by the assembly commands (`get_active_project`, `resolve_target_folder`, `target_project_label`). |
-| `recents_utils.py` | Single source of truth for the "recent documents" cache (`cache/recent_docs.json`) and per-document thumbnail store, shared by New Assembly and Open Recent: `read/write/touch` cache helpers, `render_thumbnail_for_doc`, `remember_recent_if_eligible`, `list_recent`. The pure cache helpers avoid any `adsk` dependency so they stay unit-testable. |
+| `recents_utils.py` | Single source of truth for the "recent documents" cache (`cache/recent_docs.json`) and per-document thumbnail store, shared by Assembly Palette and Open Recent: `read/write/touch` cache helpers, `render_thumbnail_for_doc`, `remember_recent_if_eligible`, `list_recent`. The pure cache helpers avoid any `adsk` dependency so they stay unit-testable. |
 | `date_utils.py` | `next_business_day(dt)`, `compute_quick_dates()`. |
 | `log_utils.py` | `default_log_directory()`, `open_live_log_viewer(path)`. |
 | `upload_utils.py` | `wait_for_upload(save_result, context_label, …)` — polls a Fusion save/upload to completion. |
@@ -361,7 +361,7 @@ files. It is organized into the following sections:
 | 4. PTSettings dropdown | `PT_SETTINGS_DROPDOWN_ID`, `PT_SETTINGS_DROPDOWN_NAME`, `get_or_create_pt_settings_dropdown()`, `remove_from_pt_settings_dropdown()` | The shared QAT File-menu flyout (created by the bootstrap; helpers retained for compatibility). |
 | 5. Settings cache | `CACHE_DIR`, `SETTINGS_FILE`, `load_settings()`, `save_settings()` | JSON settings store under `cache/` (Document Tools). |
 | 6. Hub configuration | `COMPANY_HUB`, `COMPANY_HUB_CONFIGS`, `loadHub()`, `reload_hub_config()` | Loads `hub.json` into in-memory hub/project/folder config (Related Data). |
-| 7. Palette IDs | `assembly_builder_palette_id`, `assembly_intent_palette_id` | Assembly palette IDs derived from company + add-in name. |
+| 7. Palette IDs | `assembly_builder_palette_id`, `assembly_palette_id` | Assembly palette IDs derived from company + add-in name. |
 
 `DEBUG` is not hard-coded: it is set to the presence of a `.debug` marker file
 in the add-in root (`DEBUG = os.path.isfile(.../.debug)`). To enable verbose
@@ -381,8 +381,8 @@ commands.
 | `cache/settings.json` | Document Tools | User settings (`load_settings()` / `save_settings()`). |
 | `cache/[hub-id].json` | Related Data | Per-hub template cache. |
 | `cache/favorites_<hub-id>.json` | Document Tools (Favorites) | Per-hub saved document locations. |
-| `cache/recent_docs.json` | `recents_utils` (New Assembly + Open Recent) | Recently-touched part/hybrid/assembly `DataFile` ids with name, intent, and folder location; owned by `lib/ptAddInUtils/recents_utils`. |
-| `<temp>/powertools_assembly_thumbs/` | `recents_utils` (New Assembly + Open Recent) | Per-document thumbnail PNGs keyed by `md5(dataFileId)`, rendered while a document is open. |
+| `cache/recent_docs.json` | `recents_utils` (Assembly Palette + Open Recent) | Recently-touched part/hybrid/assembly `DataFile` ids with name, intent, and folder location; owned by `lib/ptAddInUtils/recents_utils`. |
+| `<temp>/powertools_assembly_thumbs/` | `recents_utils` (Assembly Palette + Open Recent) | Per-document thumbnail PNGs keyed by `md5(dataFileId)`, rendered while a document is open. |
 | `cache/hub.json` | Related Data | Registered hub IDs, project IDs, and folder IDs (loaded by `loadHub()`). |
 
 Per-domain caches live under the add-in's single `cache/` directory
@@ -432,7 +432,7 @@ PowerTools/
 │       ├── event_utils.py        # add_handler(), clear_handlers()
 │       ├── attributes_utils.py   # attribute enumeration/formatting helpers
 │       ├── cache_utils.py        # project/folder/param-doc JSON cache helpers
-│       ├── recents_utils.py      # shared recents cache + thumbnail store (New Assembly, Open Recent)
+│       ├── recents_utils.py      # shared recents cache + thumbnail store (Assembly Palette, Open Recent)
 │       ├── date_utils.py         # next_business_day(), compute_quick_dates()
 │       ├── log_utils.py          # default_log_directory(), open_live_log_viewer()
 │       ├── upload_utils.py       # wait_for_upload()

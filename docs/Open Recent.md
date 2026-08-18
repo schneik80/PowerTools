@@ -6,7 +6,7 @@
 
 **Open Recent** adds a flyout submenu to Fusion's **File** menu, directly after **Open**, that lists your recently-used documents. Each entry shows the document's name; hovering over it reveals a tooltip with the document's Data Panel location and a thumbnail preview. Selecting an entry opens that document in Fusion.
 
-The list comes from the recents history Fusion already keeps for your signed-in account on the active hub, so it is populated from the first launch rather than having to be built up by using PowerTools. It is the same list that powers the **Recent** gallery in the [New Assembly](./New%20Assembly.md) quick-start palette. Open Recent simply surfaces it where you expect it: on the File menu, one click from anywhere in Fusion. Unlike that gallery — whose cards insert a component, so it lists designs only — this flyout lists every kind of document Fusion recorded, drawings included.
+The list comes from the recents history Fusion already keeps for your signed-in account on the active hub, so it is populated from the first launch rather than having to be built up by using PowerTools. It is the same list that powers the **Recent** gallery in the [Assembly Palette](./Assembly%20Palette.md) quick-start palette. Open Recent simply surfaces it where you expect it: on the File menu, one click from anywhere in Fusion. Unlike that gallery — whose cards insert a component, so it lists designs only — this flyout lists every kind of document Fusion recorded, drawings included.
 
 ```text
 File ▾
@@ -47,7 +47,7 @@ File ▾
 
 Open Recent is enabled by default. You can turn it off (or back on) in **File ▸ PowerTools Preferences**, under **Document Tools**. Changes apply on the next Fusion restart.
 
-> **Note:** Open Recent shares its list with **New Assembly**. The two are recorded together, so a document you use in one shows up in the other. Open Recent works independently, though — it keeps the list up to date on its own even if the Assembly commands are disabled.
+> **Note:** Open Recent shares its list with **Assembly Palette**. The two are recorded together, so a document you use in one shows up in the other. Open Recent works independently, though — it keeps the list up to date on its own even if the Assembly commands are disabled.
 
 > **Developers:** see the [architecture notes](./arch/Open%20Recent.md).
 

@@ -421,7 +421,7 @@ def normalize_entry(entry: dict, file_types=("f3d",)) -> dict | None:
 
     None means "skip this entry": no lineage id, an unwanted ``fileType``, or an
     unparseable ``lastOpened``. Pass ``file_types=None`` to accept every type
-    (the Open Recent flyout lists drawings too; the New Assembly gallery inserts
+    (the Open Recent flyout lists drawings too; the Assembly Palette gallery inserts
     components and so takes designs only).
 
     ``location`` is re-punctuated from Fusion's ``A/B`` to the ``A > B`` form the

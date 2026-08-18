@@ -12,7 +12,7 @@
 Two PowerTools commands surface the same list of recently-touched
 part/hybrid/assembly documents:
 
-  * **New Assembly** (``commands/assemblyintent``) — the Recent gallery in its
+  * **Assembly Palette** (``commands/assemblypalette``) — the Recent gallery in its
     quick-start palette.
   * **Open Recent** (``commands/openrecent``) — the File-menu flyout.
 
@@ -153,7 +153,7 @@ def read_recent_cache() -> list[dict]:
 def write_recent_cache(entries: list[dict]) -> None:
     """Persist *entries* (only the newest RECENT_LIMIT are kept).
 
-    Written atomically because both New Assembly and Open Recent record from
+    Written atomically because both Assembly Palette and Open Recent record from
     their own ``documentActivated`` handler, so two writes race on this file on
     every tab switch; a plain truncating write can leave a reader with a
     half-written file. ``write_json_atomic`` also creates the directory.
@@ -251,7 +251,7 @@ def cached_thumbnail_path(df_id: str) -> str:
 def cached_thumbnail_data_url(df_id: str) -> str:
     """Return a cached thumbnail as a data: URL if present, else "".
 
-    Used by the New Assembly Recent gallery, whose closed documents cannot be
+    Used by the Assembly Palette Recent gallery, whose closed documents cannot be
     rendered live and reuse the PNG cached while they were last open.
     """
     path = cached_thumbnail_path(df_id)

@@ -41,7 +41,7 @@ Most commands appear in **Design › Tools › Power Tools**. Some appear in oth
 | Command | Location | Description |
 | --- | --- | --- |
 | [Assembly Builder](./docs/Assembly%20Builder.md) | Design › Tools › Power Tools | Build and manage multi-component assemblies from a guided palette. |
-| [New Assembly](./docs/New%20Assembly.md) | Design › Solid | Start a new assembly with the assembly-intent workflow. |
+| [Assembly Palette](./docs/Assembly%20Palette.md) | Design › Solid | Quick-start palette for populating a new assembly: create components in place, or insert from open and recent documents. |
 | [Insert Step](./docs/Insert%20Step.md) | Design › Solid | Insert a STEP file as a referenced component. |
 | [Assembly Statistics](./docs/Assembly%20Statistics.md) | Design › Tools › Power Tools | Report component, occurrence, and reference counts for the active design. |
 | [Get and Update](./docs/Get%20and%20Update.md) | Design › Tools › Power Tools | Fetch and update referenced documents in one step. |

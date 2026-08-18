@@ -16,7 +16,7 @@
 # shows the document's Data Panel location and a thumbnail tool-clip. Selecting
 # an item opens that document in Fusion.
 #
-# The recents cache is shared with New Assembly (commands/assemblyintent). This
+# The recents cache is shared with Assembly Palette (commands/assemblypalette). This
 # command ALSO records the active document on documentActivated, so the recents
 # list grows even when the Assembly commands are disabled — Open Recent has no
 # hard dependency on any other command.

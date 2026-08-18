@@ -14,10 +14,10 @@
 # thread CAN do is fire a custom event, and Fusion dispatches that handler on
 # the main thread on a later turn. So start() returns immediately, a daemon
 # timer waits, and the actual check runs once Fusion has finished launching.
-# The same deferral is used by commands/assemblyintent and commands/externalize.
+# The same deferral is used by commands/assemblypalette and commands/externalize.
 #
 # Three constraints in this file are load-bearing and were paid for elsewhere in
-# this add-in (see assemblyintent/entry.py:_schedule_finish_insert):
+# this add-in (see assemblypalette/entry.py:_schedule_finish_insert):
 #
 #   * The worker thread must touch nothing but fireCustomEvent — not even
 #     ptutil.log, which calls Application.log.

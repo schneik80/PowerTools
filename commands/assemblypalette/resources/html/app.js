@@ -38,7 +38,7 @@
         try {
             adsk.fusionSendData(action, JSON.stringify(payload || {}));
         } catch (e) {
-            console.log('[New Assembly] not in Fusion palette:', action, payload);
+            console.log('[Assembly Palette] not in Fusion palette:', action, payload);
         }
     }
 
@@ -337,7 +337,7 @@
                     applyTargetProject(data);
                 }
             } catch (e) {
-                console.log('[New Assembly] handler error:', e);
+                console.log('[Assembly Palette] handler error:', e);
             }
             return 'OK';
         }

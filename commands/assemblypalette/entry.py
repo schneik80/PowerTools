@@ -7,7 +7,7 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
-# PowerTools Assembly - New Assembly Intent dialog.
+# PowerTools Assembly - Assembly Palette Intent dialog.
 #
 # When the user creates a new, empty Fusion Design with Assembly intent, this
 # add-in pops up a docked palette offering three quick-start sections:
@@ -37,9 +37,9 @@ from ...lib.ptAddInUtils import recents_utils as recents
 app = adsk.core.Application.get()
 ui = app.userInterface
 
-CMD_NAME = "New Assembly"
-PALETTE_NAME = "New Assembly"
-PALETTE_ID = config.assembly_intent_palette_id
+CMD_NAME = "Assembly Palette"
+PALETTE_NAME = "Assembly Palette"
+PALETTE_ID = config.assembly_palette_id
 PALETTE_DOCKING = adsk.core.PaletteDockingStates.PaletteDockStateRight
 
 ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "")
@@ -96,7 +96,7 @@ _EDIT_POSITION_CMD_IDS = (
 # delay is what actually buys the deferral: fired inline, Fusion dispatched the
 # handler within the same event turn and the command it started was torn down
 # again when the HTML event finished (see _schedule_finish_insert).
-_FINISH_EVENT_ID = "PTAT_newAssembly_finishInsert"
+_FINISH_EVENT_ID = "PTAT_assemblyPalette_finishInsert"
 _FINISH_DELAY_SECONDS = 0.35
 
 # How long to keep pumping events before believing ui.activeCommand. A command
@@ -112,9 +112,9 @@ _IDLE_CMD_IDS = ("", "SelectCommand")
 # Insert panel, directly below the Insert STEP command. The palette also pops
 # automatically on new empty Assembly docs (see the documentActivated trigger);
 # this button is the on-demand entry point.
-LAUNCH_CMD_ID = "PTAT_newAssembly"
-LAUNCH_CMD_NAME = "New Assembly"
-LAUNCH_CMD_DESC = "Open the New Assembly quick-start palette."
+LAUNCH_CMD_ID = "PTAT_assemblyPalette"
+LAUNCH_CMD_NAME = "Assembly Palette"
+LAUNCH_CMD_DESC = "Open the Assembly Palette quick-start palette."
 LAUNCH_WORKSPACE_ID = "FusionSolidEnvironment"
 LAUNCH_TAB_ID = "AssemblyTab"
 LAUNCH_TAB_NAME = "ASSEMBLY"
@@ -134,7 +134,7 @@ def _diag(msg: str) -> None:
         return
     try:
         app.log(
-            f"[New Assembly] {msg}",
+            f"[Assembly Palette] {msg}",
             adsk.core.LogLevels.InfoLogLevel,
             adsk.core.LogTypes.ConsoleLogType,
         )
