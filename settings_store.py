@@ -48,6 +48,15 @@ COMMAND_SETTING_DEFAULTS = {
         "basic": list(DEFAULT_FOLDER_SETS["basic"]),
         "advanced": list(DEFAULT_FOLDER_SETS["advanced"]),
     },
+    # Team Add-ins. The launch check is deferred rather than run inline, so
+    # startup_delay_seconds is how long after Fusion finishes launching the
+    # hub is read; auto_reload=False keeps every update waiting for a restart
+    # instead of stopping and restarting a running add-in in place.
+    "teamaddins": {
+        "auto_check_on_launch": True,
+        "startup_delay_seconds": 25,
+        "auto_reload": True,
+    },
 }
 
 

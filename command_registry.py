@@ -110,6 +110,17 @@ GROUPS = [
         ],
     },
     {
+        "key": "teamaddins",
+        "label": "Team Add-ins",
+        # This group owns the "Team Add-ins" preferences section (see
+        # commands/preferences). It stays dormant until a hub folder is picked,
+        # so leaving the group enabled by default costs nothing.
+        "commands": [
+            _cmd("configteamaddins", "Set Up Shared Add-ins Folder.md"),
+            _cmd("teamaddins", "Team Add-ins.md", settings=True),
+        ],
+    },
+    {
         "key": "tools",
         "label": "Tools",
         # Launcher commands that open built-in Fusion tools. "Scripts and

@@ -107,6 +107,15 @@ Most commands appear in **Design › Tools › Power Tools**. Some appear in oth
 | [Create Related Data](./docs/Related%20Data.md) | Design › Solid | Create related documents from configured templates. |
 | [Select Related Data Folder](./docs/Select%20Related%20Data%20Folder.md) | File › PowerTools Settings | Configure the hub/project/folder used for related data. |
 
+### Team Add-ins
+
+Share add-ins across a team through one hub folder — `Assets / Shared Addins` in the active hub. Drop an add-in `.zip` in; everyone else picks it up shortly after Fusion starts, with no restart and nothing to publish. Dormant until the folder exists, and silent unless something changed.
+
+| Command | Location | Description |
+| --- | --- | --- |
+| [Team Add-ins](./docs/Team%20Add-ins.md) | Design › Tools › Power Tools | Check the shared folder now and show what the last check did. |
+| [Set Up Shared Add-ins Folder](./docs/Set%20Up%20Shared%20Add-ins%20Folder.md) | File › PowerTools Preferences | Find or create the shared folder in the hub's Assets project. |
+
 ### Tools
 
 | Command | Location | Description |

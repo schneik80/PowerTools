@@ -7,8 +7,8 @@
     "use strict";
 
     var S = window.__ptInit || {
-        groups: [], hub: {}, commandSettings: {}, theme: "dark", beta: false,
-        settingsPath: "", restartNote: ""
+        groups: [], hub: {}, teamAddins: {}, commandSettings: {}, theme: "dark",
+        beta: false, settingsPath: "", restartNote: ""
     };
 
     // Per-command settings sections. Keyed by command module name.
@@ -64,6 +64,32 @@
                         function (list) { setCmdSetting("defaultfolders", "advanced", list); })
                 ];
             }
+        },
+        teamaddins: {
+            label: "Team Add-ins",
+            render: function (cs) {
+                return [
+                    labelCheck(
+                        "Check the team folder shortly after Fusion starts",
+                        cs.auto_check_on_launch !== false,
+                        function (v) { setCmdSetting("teamaddins", "auto_check_on_launch", v); }
+                    ),
+                    labelNumber(
+                        "Wait this many seconds after launch before checking",
+                        cs.startup_delay_seconds == null ? 25 : cs.startup_delay_seconds,
+                        5, 600,
+                        function (v) { setCmdSetting("teamaddins", "startup_delay_seconds", v); }
+                    ),
+                    labelCheck(
+                        "Load updates immediately (otherwise they wait for a Fusion restart)",
+                        cs.auto_reload !== false,
+                        function (v) { setCmdSetting("teamaddins", "auto_reload", v); }
+                    ),
+                    el("div", { class: "summary",
+                        text: "The check never blocks Fusion's launch: it runs on a later " +
+                              "turn, and stays silent unless something actually changed." })
+                ];
+            }
         }
     };
 
@@ -100,6 +126,25 @@
     function labelCheck(text, checked, onchange) {
         var lbl = el("label", { class: "inline" });
         lbl.appendChild(checkbox(checked, onchange));
+        lbl.appendChild(el("span", { text: text }));
+        return lbl;
+    }
+
+    // Bounded integer field. Clamps out-of-range input rather than rejecting
+    // it, so a mistyped value can never leave a setting unsaved.
+    function labelNumber(text, value, min, max, onchange) {
+        var lbl = el("label", { class: "inline" });
+        var input = el("input", { type: "number", min: String(min), max: String(max) });
+        input.value = String(value);
+        input.style.width = "70px";
+        input.addEventListener("change", function () {
+            var n = parseInt(input.value, 10);
+            if (isNaN(n)) n = value;
+            n = Math.max(min, Math.min(max, n));
+            input.value = String(n);
+            onchange(n);
+        });
+        lbl.appendChild(input);
         lbl.appendChild(el("span", { text: text }));
         return lbl;
     }
@@ -252,6 +297,54 @@
         return sec;
     }
 
+    // Status labels for the shared folder. There is nothing to configure: the
+    // location is a fixed convention, so this reports whether it is there.
+    var TEAM_STATE = {
+        ready:   { label: "Ready",       cls: "status-ok" },
+        missing: { label: "Not created", cls: "status-no" },
+        no_hub:  { label: "No hub",      cls: "status-no" },
+        error:   { label: "Unavailable", cls: "status-no" }
+    };
+
+    function sectionTeamAddins() {
+        var t = S.teamAddins || {};
+        var st = TEAM_STATE[t.state] || TEAM_STATE.error;
+        var project = t.projectName || "Assets";
+        var folder = t.folderName || "Shared Addins";
+
+        var sec = el("section", { id: "sec-teamaddins" }, [el("h2", { text: "Team Add-ins" })]);
+        sec.appendChild(el("div", { class: "section-desc",
+            text: "Add-ins dropped into a shared hub folder are installed automatically " +
+                  "shortly after Fusion starts. The folder is always " +
+                  project + " / " + folder + " in the active hub, so there is nothing " +
+                  "to configure." }));
+
+        var card = el("div", { class: "card" });
+        var s = el("div", { class: "kv" }, [el("div", { class: "k", text: folder })]);
+        s.appendChild(el("div", { class: "v" }, [el("span", { class: st.cls, text: st.label })]));
+        card.appendChild(s);
+
+        if (t.hubName) card.appendChild(kv("Hub", t.hubName));
+        card.appendChild(kv("Location", project + " / " + folder));
+
+        if (t.state === "ready") {
+            card.appendChild(kv("Packages in folder", String(t.packageCount || 0)));
+            card.appendChild(kv("Installed on this machine", String(t.installedCount || 0)));
+            if (t.checkedAt) card.appendChild(kv("Last checked", t.checkedAt));
+        } else if (t.message) {
+            card.appendChild(el("div", { class: "muted", text: t.message }));
+        }
+
+        var btns = el("div", { class: "btn-row" });
+        btns.appendChild(el("button", {
+            text: t.state === "ready" ? "Check folder…" : "Create shared folder…",
+            onclick: function () { send("setUpTeamAddinsFolder", {}); }
+        }));
+        card.appendChild(btns);
+        sec.appendChild(card);
+        return sec;
+    }
+
     // ── nav + render ─────────────────────────────────────────────────────────
     function setActive(id) {
         document.querySelectorAll("#nav .nav-item").forEach(function (n) {
@@ -297,6 +390,12 @@
         if (rel && rel.enabled) {
             content.appendChild(sectionHub());
             nav.push(["sec-hub", "Hub Settings"]);
+        }
+
+        var team = groupByKey("teamaddins");
+        if (team && team.enabled) {
+            content.appendChild(sectionTeamAddins());
+            nav.push(["sec-teamaddins", "Team Add-ins"]);
         }
 
         buildNav(nav);

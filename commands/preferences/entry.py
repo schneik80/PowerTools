@@ -52,6 +52,11 @@ INIT_JS_PATH = os.path.join(_HTML_DIR, "init.js")
 # The Related Data command that the Hub Settings section launches.
 CONFIGHUB_CMD_ID = f"{config.COMPANY_NAME}_{config.ADDIN_NAME}_configHub"
 
+# The picker the Team Add-ins section launches.
+CONFIG_TEAM_ADDINS_CMD_ID = (
+    f"{config.COMPANY_NAME}_{config.ADDIN_NAME}_configTeamAddins"
+)
+
 local_handlers = []
 
 
@@ -235,6 +240,34 @@ def _hub_info() -> dict:
     }
 
 
+def _team_addins_info() -> dict:
+    """Status card data for the Team Add-ins section.
+
+    Team Add-ins has nothing saved to report: the folder is a convention, so
+    this asks the hub whether it is actually there. That is a live call, but it
+    only happens when the user opens this palette.
+    """
+    info = {
+        "state": "error",
+        "hubName": "",
+        "projectName": "",
+        "folderName": "",
+        "message": "",
+        "packageCount": 0,
+        "installedCount": 0,
+        "checkedAt": "",
+    }
+    try:
+        from ..teamaddins import sync, team_fs
+
+        info.update(team_fs.folder_status(app))
+        info.update(sync.installed_summary(team_fs.active_hub_id(app)))
+    except Exception as exc:
+        info["message"] = f"Could not read the hub: {exc}"
+        ptutil.log(f"{CMD_NAME}: team add-ins status unavailable — {exc}")
+    return info
+
+
 def _gather_state() -> dict:
     prefs = settings_store.load()
     groups = []
@@ -271,6 +304,7 @@ def _gather_state() -> dict:
         "commandSettings": prefs.get("command_settings", {}),
         "settingsPath": config.SETTINGS_PREFS_FILE,
         "hub": _hub_info(),
+        "teamAddins": _team_addins_info(),
         "restartNote": "Changes apply on the next Fusion restart.",
     }
 
@@ -387,6 +421,18 @@ def _palette_incoming(html_args: adsk.core.HTMLEventArgs):
                 ui.messageBox(
                     "The Related Data commands are disabled. Enable them in the "
                     "Commands list and restart Fusion to configure a hub folder.",
+                    CMD_NAME,
+                )
+            _send_state(palette)
+
+        elif action == "setUpTeamAddinsFolder":
+            cmd_def = ui.commandDefinitions.itemById(CONFIG_TEAM_ADDINS_CMD_ID)
+            if cmd_def:
+                cmd_def.execute()
+            else:
+                ui.messageBox(
+                    "The Team Add-ins commands are disabled. Enable them in the "
+                    "Commands list and restart Fusion to set up the folder.",
                     CMD_NAME,
                 )
             _send_state(palette)

@@ -21,6 +21,7 @@
 import json
 import os
 import os.path
+import sys
 
 import adsk.core
 
@@ -424,6 +425,35 @@ def reload_hub_config():
 loadHub(__file__)
 
 # ---------------------------------------------------------------------------
+# 6b. Team Add-ins
+# ---------------------------------------------------------------------------
+#
+# Team Add-ins has no hub configuration to store: the location is a convention
+# (<active hub>/Assets/Shared Addins), resolved live by
+# commands/teamaddins/team_fs.py. All this section contributes is where add-ins
+# get installed to.
+
+
+def fusion_addins_dir() -> str:
+    """Return the platform-appropriate Fusion AddIns directory.
+
+    This is where Fusion scans for add-ins at start-up, and where Team Add-ins
+    installs each package as ``<addin id>/``.
+    """
+    if sys.platform == "darwin":
+        return os.path.expanduser(
+            "~/Library/Application Support/Autodesk/Autodesk Fusion 360/API/AddIns"
+        )
+    return os.path.join(
+        os.environ.get("APPDATA", ""),
+        "Autodesk",
+        "Autodesk Fusion 360",
+        "API",
+        "AddIns",
+    )
+
+
+# ---------------------------------------------------------------------------
 # 7. Palette IDs (Assembly)
 # ---------------------------------------------------------------------------
 
@@ -435,6 +465,9 @@ assembly_intent_palette_id = (
 )
 preferences_palette_id = (
     f"{COMPANY_NAME.replace(' ', '_')}_{ADDIN_NAME}_preferences_palette"
+)
+team_addins_palette_id = (
+    f"{COMPANY_NAME.replace(' ', '_')}_{ADDIN_NAME}_team_addins_palette"
 )
 
 # ---------------------------------------------------------------------------
