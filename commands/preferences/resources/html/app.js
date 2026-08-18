@@ -39,6 +39,12 @@
         },
         docopen: {
             label: "Show In Location",
+            // Rendered nested under its own row in the Commands list rather
+            // than as a top-level section. This command has no button - it
+            // only reacts to documentOpened/documentActivated - so a separate
+            // section made the enable checkbox and these two toggles look like
+            // three controls for two real states.
+            inline: true,
             render: function (cs) {
                 return [
                     labelCheck(
@@ -64,33 +70,11 @@
                         function (list) { setCmdSetting("defaultfolders", "advanced", list); })
                 ];
             }
-        },
-        teamaddins: {
-            label: "Team Add-ins",
-            render: function (cs) {
-                return [
-                    labelCheck(
-                        "Check the team folder shortly after Fusion starts",
-                        cs.auto_check_on_launch !== false,
-                        function (v) { setCmdSetting("teamaddins", "auto_check_on_launch", v); }
-                    ),
-                    labelNumber(
-                        "Wait this many seconds after launch before checking",
-                        cs.startup_delay_seconds == null ? 25 : cs.startup_delay_seconds,
-                        5, 600,
-                        function (v) { setCmdSetting("teamaddins", "startup_delay_seconds", v); }
-                    ),
-                    labelCheck(
-                        "Load updates immediately (otherwise they wait for a Fusion restart)",
-                        cs.auto_reload !== false,
-                        function (v) { setCmdSetting("teamaddins", "auto_reload", v); }
-                    ),
-                    el("div", { class: "summary",
-                        text: "The check never blocks Fusion's launch: it runs on a later " +
-                              "turn, and stays silent unless something actually changed." })
-                ];
-            }
         }
+        // NOTE: Team Add-ins deliberately has no entry here. Its settings are
+        // rendered inside sectionTeamAddins() alongside the shared-folder
+        // status card; a CMD_SECTIONS entry as well would put two sections
+        // both labelled "Team Add-ins" in the nav.
     };
 
     // ── helpers ──────────────────────────────────────────────────────────────
@@ -245,7 +229,21 @@
                 name.appendChild(document.createTextNode(c.name + " "));
                 if (c.beta) name.appendChild(el("span", { class: "badge", text: "beta" }));
                 info.appendChild(name);
-                if (c.summary) info.appendChild(el("div", { class: "summary", title: c.summary, text: c.summary }));
+                // No title attribute: the summary already wraps and is fully
+                // visible, so a native tooltip only repeated it in an
+                // unthemed, unbounded-width browser popup.
+                if (c.summary) info.appendChild(el("div", { class: "summary", text: c.summary }));
+
+                // Settings flagged inline sit under their own command, gated
+                // on the enable checkbox above them, instead of repeating the
+                // command as a separate section further down.
+                var inlineDef = CMD_SECTIONS[c.key];
+                if (inlineDef && inlineDef.inline && c.enabled) {
+                    var nested = el("div", { class: "row-settings" });
+                    var cs = (S.commandSettings && S.commandSettings[c.key]) || {};
+                    inlineDef.render(cs).forEach(function (node) { nested.appendChild(node); });
+                    info.appendChild(nested);
+                }
                 row.appendChild(info);
                 row.appendChild(el("a", { class: "doc", href: "#", text: "docs ↗",
                     onclick: function (e) { e.preventDefault(); send("openDoc", { url: c.doc }); } }));
@@ -342,6 +340,31 @@
         }));
         card.appendChild(btns);
         sec.appendChild(card);
+
+        // Settings live in this same section rather than in CMD_SECTIONS, so
+        // there is one "Team Add-ins" entry in the nav instead of two.
+        var cs = (S.commandSettings && S.commandSettings.teamaddins) || {};
+        var opts = el("div", { class: "card" });
+        opts.appendChild(labelCheck(
+            "Check the shared folder shortly after Fusion starts",
+            cs.auto_check_on_launch !== false,
+            function (v) { setCmdSetting("teamaddins", "auto_check_on_launch", v); }
+        ));
+        opts.appendChild(labelNumber(
+            "Wait this many seconds after launch before checking",
+            cs.startup_delay_seconds == null ? 25 : cs.startup_delay_seconds,
+            5, 600,
+            function (v) { setCmdSetting("teamaddins", "startup_delay_seconds", v); }
+        ));
+        opts.appendChild(labelCheck(
+            "Load updates immediately (otherwise they wait for a Fusion restart)",
+            cs.auto_reload !== false,
+            function (v) { setCmdSetting("teamaddins", "auto_reload", v); }
+        ));
+        opts.appendChild(el("div", { class: "summary",
+            text: "The check never blocks Fusion's launch: it runs on a later turn, " +
+                  "and stays silent unless something actually changed." }));
+        sec.appendChild(opts);
         return sec;
     }
 
@@ -379,6 +402,7 @@
         content.appendChild(sectionCommands()); nav.push(["sec-commands", "Commands"]);
 
         Object.keys(CMD_SECTIONS).forEach(function (key) {
+            if (CMD_SECTIONS[key].inline) return;  // already shown under its row
             var fc = findCmd(key);
             if (fc && fc.group.enabled && fc.cmd.enabled) {
                 content.appendChild(sectionCmdSettings(key));

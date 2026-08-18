@@ -124,6 +124,17 @@ section > h2 {
     text-overflow: ellipsis;
 }
 
+/* Per-command settings rendered under their own row (CMD_SECTIONS inline:true),
+   so the enable checkbox above reads as the parent of these rather than as a
+   competing control. */
+.row .row-settings {
+    margin: 4px 0 2px;
+    padding-left: 10px;
+    border-left: 2px solid var(--border-color);
+}
+.row .row-settings label.inline { padding: 3px 0; font-size: 12px; }
+.row .row-settings .summary { margin-top: 4px; }
+
 input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
 label.inline { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 6px 0; }
 
