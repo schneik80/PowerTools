@@ -20,20 +20,23 @@ This command enforces a consistent folder structure across projects without requ
 
 ## Folder sets
 
+Both sets are editable in **PowerTools Preferences → Add Project Folders**. The lists below are what a fresh install starts with; once you edit a set, your version is kept and is not overwritten by later updates.
+
 ### Basic
 
 | Folder name |
 |---|
+| _Global Parameters |
 | Drawings |
 | Archive |
 | Obit |
+| Wiki |
 
 ### Advanced
 
 | Folder name |
 |---|
-| 00 - Products |
-| 01 - Sub Assemblies |
+| 01 - Assemblies |
 | 02 - ECAD |
 | 03 - Parts |
 | 04 - Purchased Parts |

@@ -22,10 +22,9 @@ from .lib import ptAddInUtils as ptutil
 # Default folder sets for the "Add Project Folders" command (defaultfolders).
 # These were hard-coded in the command; they now seed the user-editable lists.
 DEFAULT_FOLDER_SETS = {
-    "basic": ["Drawings", "Archive", "Obit"],
+    "basic": ["_Global Parameters", "Drawings", "Archive", "Obit", "Wiki"],
     "advanced": [
-        "00 - Products",
-        "01 - Sub Assemblies",
+        "01 - Assemblies",
         "02 - ECAD",
         "03 - Parts",
         "04 - Purchased Parts",
@@ -39,11 +38,26 @@ DEFAULT_FOLDER_SETS = {
     ],
 }
 
+# Commands that ship switched off. Everything not listed here defaults to
+# enabled. A user can turn any of these on in Preferences; this only decides
+# what a fresh install starts with, since load() merges stored values over the
+# defaults and so never overrides an existing choice.
+DEFAULT_DISABLED_COMMANDS = frozenset(
+    {
+        "componentwarn",
+        "docopen",
+        "getandupdate",
+        "refmanager",
+        "sketchcirclecenterpoint",
+        "versiondiff",
+    }
+)
+
 # Per-command settings sections (defaults). Keyed by command module name.
 COMMAND_SETTING_DEFAULTS = {
     "componentwarn": {"warn_non_leaf": False},
     "changecyclecolor": {"show_in_context_menu": True},
-    "docopen": {"run_on_open": True, "run_on_activate": True},
+    "docopen": {"run_on_open": False, "run_on_activate": False},
     "defaultfolders": {
         "basic": list(DEFAULT_FOLDER_SETS["basic"]),
         "advanced": list(DEFAULT_FOLDER_SETS["advanced"]),
@@ -66,7 +80,8 @@ def _defaults() -> dict:
         "general": {"beta_mode": False},
         "groups": {g["key"]: {"enabled": True} for g in registry.GROUPS},
         "commands": {
-            c["module"]: {"enabled": True} for _, c in registry.iter_commands()
+            c["module"]: {"enabled": c["module"] not in DEFAULT_DISABLED_COMMANDS}
+            for _, c in registry.iter_commands()
         },
         "command_settings": {k: dict(v) for k, v in COMMAND_SETTING_DEFAULTS.items()},
     }
