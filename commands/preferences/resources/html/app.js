@@ -171,22 +171,46 @@
     }
 
     // ── sections ─────────────────────────────────────────────────────────────
+    // Beta mode and the settings file shared one card, which read as a single
+    // group of controls. They are unrelated: one changes which commands exist,
+    // the other moves every preference on this page between machines -- and one
+    // of its two buttons overwrites all of them. Each gets its own block.
     function sectionGeneral() {
         var sec = el("section", { id: "sec-general" }, [el("h2", { text: "General" })]);
-        var card = el("div", { class: "card" });
-        card.appendChild(labelCheck(
-            "Enable beta mode (show beta commands)",
+
+        var beta = subsection("Beta mode");
+        var betaCard = el("div", { class: "card" });
+        betaCard.appendChild(labelCheck(
+            "Show beta commands",
             S.beta === true,
             function (v) { S.beta = v; send("setBeta", { value: v }); render(); }
         ));
+        betaCard.appendChild(el("div", { class: "hint",
+            text: "Commands still in development. They appear in the lists below "
+                + "straight away, and on the Fusion toolbar after a restart." }));
+        beta.appendChild(betaCard);
+        sec.appendChild(beta);
+
+        var file = subsection("Settings file");
+        var fileCard = el("div", { class: "card" });
+        fileCard.appendChild(el("div", { class: "hint",
+            text: "Holds every choice on this page: beta mode, which groups and "
+                + "commands are enabled, and each command's own settings. Only "
+                + "these PowerTools Preferences — your Fusion settings and your "
+                + "designs are untouched." }));
         var btns = el("div", { class: "btn-row" });
         btns.appendChild(el("button", { class: "secondary", text: "Open settings file",
             onclick: function () { send("openSettingsFile", {}); } }));
         btns.appendChild(el("button", { class: "secondary", text: "Import settings…",
             onclick: function () { send("importSettings", {}); } }));
-        card.appendChild(btns);
-        card.appendChild(el("div", { class: "summary", text: "Settings file: " + (S.settingsPath || "") }));
-        sec.appendChild(card);
+        fileCard.appendChild(btns);
+        fileCard.appendChild(el("div", { class: "hint",
+            text: "Open it to copy it elsewhere as a backup. Importing replaces "
+                + "every choice on this page, and applies after Fusion restarts." }));
+        fileCard.appendChild(el("div", { class: "path", text: S.settingsPath || "" }));
+        file.appendChild(fileCard);
+        sec.appendChild(file);
+
         return sec;
     }
 

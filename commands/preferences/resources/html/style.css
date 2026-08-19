@@ -103,6 +103,24 @@ section > h2 {
    Settings, the Team Add-ins shared folder. Indented and with a lighter heading
    than section > h2, so it reads as belonging to the group above it rather than
    as a section in its own right — it has no nav entry. */
+/* Explanatory copy inside a card. Sits above or below the controls it describes,
+   so it takes its own vertical rhythm rather than .row .summary's. */
+.card .hint {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.5;
+    margin-top: 8px;
+}
+.card .hint + .btn-row { margin-top: 10px; }
+/* A filesystem path: de-emphasised, and allowed to break anywhere so a long
+   path cannot widen the card. */
+.card .path {
+    color: var(--text-muted);
+    font-size: 11px;
+    margin-top: 10px;
+    word-break: break-all;
+}
+
 .subsection { margin: 14px 0 0 14px; }
 .subsection > h3 {
     margin: 0 0 8px;
