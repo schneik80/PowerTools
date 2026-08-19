@@ -72,7 +72,55 @@ def _qat_file_dropdown():
     return adsk.core.DropDownControl.cast(qat.controls.itemById("FileSubMenuCommand"))
 
 
+# The File dropdown entry is this command's only access point, and start() runs
+# once when the add-in loads. If the QAT is not resolvable at that moment - Fusion
+# started with no document open, or the add-in loaded before the UI finished
+# building - the entry used to be skipped silently and never retried, leaving
+# Preferences unreachable for the rest of the session even after a document was
+# opened. That is a soft lockout rather than a cosmetic problem: this palette is
+# the only way to re-enable a disabled command, so the alternative is hand-editing
+# settings/preferences.json.
+_control_placed = False
+
+
+def _ensure_control() -> bool:
+    """Add the File-dropdown entry if it is not already there.
+
+    Idempotent, so it is safe to call repeatedly from the retry handler.
+
+    Returns:
+        True if the entry is in place, False if the dropdown is unavailable.
+    """
+    global _control_placed
+    cmd_def = ui.commandDefinitions.itemById(CMD_ID)
+    if not cmd_def:
+        return False
+    file_dd = _qat_file_dropdown()
+    if not file_dd:
+        return False
+    if not file_dd.controls.itemById(CMD_ID):
+        file_dd.controls.addCommand(cmd_def)
+    _control_placed = True
+    return True
+
+
+def _retry_placement(args) -> None:
+    """Re-attempt placement once a document exists.
+
+    Deliberately left registered after it succeeds rather than removing itself:
+    unhooking a handler from inside its own dispatch is not worth the risk, and
+    the flag check costs nothing on the tab switches that follow.
+    """
+    if _control_placed:
+        return
+    if _ensure_control():
+        ptutil.log(f"{CMD_NAME}: File dropdown entry added on document activate.")
+
+
 def start():
+    global _control_placed
+    _control_placed = False
+
     existing = ui.commandDefinitions.itemById(CMD_ID)
     if existing:
         existing.deleteMe()
@@ -81,12 +129,21 @@ def start():
     )
     ptutil.add_handler(cmd_def.commandCreated, command_created)
 
-    file_dd = _qat_file_dropdown()
-    if file_dd and not file_dd.controls.itemById(CMD_ID):
-        file_dd.controls.addCommand(cmd_def)
+    if not _ensure_control():
+        # Say so. This is the one command whose job is to be reachable when
+        # something else is misconfigured, and it was the only QAT command that
+        # failed mute - openrecent already logs the same condition.
+        ptutil.log(
+            f"{CMD_NAME}: QAT File dropdown unavailable at start-up, so the File "
+            f"menu entry was not added. Retrying on the next document activate. "
+            f"Settings file: {config.SETTINGS_PREFS_FILE}"
+        )
+        ptutil.add_handler(app.documentActivated, _retry_placement)
 
 
 def stop():
+    global _control_placed
+    _control_placed = False
     file_dd = _qat_file_dropdown()
     if file_dd:
         ctrl = file_dd.controls.itemById(CMD_ID)
