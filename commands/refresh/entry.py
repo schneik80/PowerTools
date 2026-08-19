@@ -11,6 +11,7 @@ import adsk.core
 import adsk.fusion
 
 from ...lib import ptAddInUtils as ptutil
+from . import logic
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -18,7 +19,7 @@ ui = app.userInterface
 CMD_NAME = "Refresh Active Document"
 CMD_ID = "PTAT_refresh"
 CMD_Description = (
-    "Close and reopen the active document to get new versions from Team Hub"
+    "Check Team Hub for a newer version of the active document and load it"
 )
 
 # Local list of event handlers used to maintain a reference so
@@ -67,11 +68,40 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         ui.messageBox("Could not locate this document in Team Hub.", CMD_NAME)
         return
 
-    # close(False) discards unsaved edits — a destructive action, so confirm first.
-    if doc_a.isModified:
+    # Compare the open version against the Hub before touching the document: the
+    # close-and-reopen costs a full document load and discards unsaved edits, so
+    # it is only worth doing when there is actually something newer to load.
+    # source_file is the freshly looked-up DataFile, so it carries the current
+    # Hub state; the document's own dataFile is passed too as a stale-cache
+    # guard (see logic.latest_version).
+    name = logic.display_name(source_file)
+    current_version = logic.open_version(doc_a.dataFile)
+    latest_version = logic.latest_version(source_file, doc_a.dataFile)
+    ptutil.log(
+        f"{CMD_NAME}: "
+        f"{logic.refresh_log_message(name, current_version, latest_version)}"
+    )
+
+    # close(False) discards unsaved edits — a destructive action, so confirm
+    # first. Which question to ask depends on what the reload would accomplish:
+    # loading a newer version, or only reverting the local changes.
+    if logic.newer_version_available(current_version, latest_version):
+        prompt = (
+            logic.discard_for_newer_prompt(name, current_version, latest_version)
+            if doc_a.isModified
+            else None
+        )
+    elif doc_a.isModified:
+        prompt = logic.discard_to_reload_prompt(name, latest_version)
+    else:
+        # Already at the latest version with nothing to discard: reopening would
+        # reload the same bytes, so report it and leave the document alone.
+        ui.messageBox(logic.up_to_date_message(name, latest_version), CMD_NAME)
+        return
+
+    if prompt is not None:
         result = ui.messageBox(
-            "This document has unsaved changes that will be discarded when it is "
-            "refreshed to the latest Team Hub version.\n\nContinue?",
+            prompt,
             CMD_NAME,
             adsk.core.MessageBoxButtonTypes.YesNoButtonType,
             adsk.core.MessageBoxIconTypes.WarningIconType,
