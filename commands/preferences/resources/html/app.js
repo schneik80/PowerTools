@@ -72,9 +72,9 @@
             }
         }
         // NOTE: Team Add-ins deliberately has no entry here. Its settings are
-        // rendered inside sectionTeamAddins() alongside the shared-folder
-        // status card; a CMD_SECTIONS entry as well would put two sections
-        // both labelled "Team Add-ins" in the nav.
+        // rendered by teamAddinsSubsection() alongside the shared-folder status
+        // card; a CMD_SECTIONS entry as well would render its settings twice
+        // inside the Team Add-ins group section.
     };
 
     // ── helpers ──────────────────────────────────────────────────────────────
@@ -156,21 +156,6 @@
             el("div", { class: "k", text: k }),
             el("div", { class: "v", text: v })
         ]);
-    }
-
-    function groupByKey(key) {
-        for (var i = 0; i < S.groups.length; i++) if (S.groups[i].key === key) return S.groups[i];
-        return null;
-    }
-
-    function findCmd(key) {
-        for (var i = 0; i < S.groups.length; i++) {
-            var g = S.groups[i];
-            for (var j = 0; j < g.commands.length; j++) {
-                if (g.commands[j].key === key) return { group: g, cmd: g.commands[j] };
-            }
-        }
-        return null;
     }
 
     function setCmdSetting(key, sub, value) {
@@ -258,6 +243,7 @@
         });
         grp.appendChild(body);
         sec.appendChild(grp);
+        groupExtras(g).forEach(function (node) { sec.appendChild(node); });
         return sec;
     }
 
@@ -265,19 +251,43 @@
         return "sec-group-" + key;
     }
 
-    function sectionCmdSettings(key) {
+    // A titled block nested inside a group's section. Deliberately a div and
+    // not a <section>: the scroll-spy tracks every section to highlight the
+    // nav, and a nested one would keep clearing the highlight as it scrolled
+    // past, since it has no nav entry of its own.
+    function subsection(title) {
+        return el("div", { class: "subsection" }, [el("h3", { text: title })]);
+    }
+
+    // Extra settings a group owns, rendered inside it. Anything belonging to a
+    // group or one of its commands lives in that group's section, so nothing
+    // appears in the nav twice.
+    function groupExtras(g) {
+        var out = [];
+        g.commands.forEach(function (c) {
+            var def = CMD_SECTIONS[c.key];
+            if (!def || def.inline) return;   // inline settings sit under the row
+            if (!g.enabled || !c.enabled) return;
+            out.push(cmdSettingsSubsection(c.key));
+        });
+        if (g.key === "related" && g.enabled) out.push(hubSubsection());
+        if (g.key === "teamaddins" && g.enabled) out.push(teamAddinsSubsection());
+        return out;
+    }
+
+    function cmdSettingsSubsection(key) {
         var def = CMD_SECTIONS[key];
         var cs = (S.commandSettings && S.commandSettings[key]) || {};
-        var sec = el("section", { id: "sec-cmd-" + key }, [el("h2", { text: def.label + " settings" })]);
+        var sec = subsection(def.label + " settings");
         var card = el("div", { class: "card" });
         def.render(cs).forEach(function (node) { card.appendChild(node); });
         sec.appendChild(card);
         return sec;
     }
 
-    function sectionHub() {
+    function hubSubsection() {
         var h = S.hub || {};
-        var sec = el("section", { id: "sec-hub" }, [el("h2", { text: "Hub Settings" })]);
+        var sec = subsection("Hub Settings");
         var card = el("div", { class: "card" });
         if (h.hubId) {
             card.appendChild(kv("Active hub", h.hubName || "(unnamed)"));
@@ -314,17 +324,13 @@
         error:   { label: "Unavailable", cls: "status-no" }
     };
 
-    function sectionTeamAddins() {
+    function teamAddinsSubsection() {
         var t = S.teamAddins || {};
         var st = TEAM_STATE[t.state] || TEAM_STATE.error;
         var project = t.projectName || "Assets";
         var folder = t.folderName || "Shared Addins";
 
-        // "Setup", not "Team Add-ins": the group of that name is now its own
-        // section, and two identically named nav entries told the user nothing
-        // about which one held the shared-folder status.
-        var sec = el("section", { id: "sec-teamaddins" },
-            [el("h2", { text: "Team Add-ins Setup" })]);
+        var sec = subsection("Shared folder");
         sec.appendChild(el("div", { class: "section-desc",
             text: "Add-ins dropped into a shared hub folder are installed automatically " +
                   "shortly after Fusion starts. The folder is always " +
@@ -419,27 +425,10 @@
             nav.push([groupSectionId(g.key), g.label]);
         });
 
-        Object.keys(CMD_SECTIONS).forEach(function (key) {
-            if (CMD_SECTIONS[key].inline) return;  // already shown under its row
-            var fc = findCmd(key);
-            if (fc && fc.group.enabled && fc.cmd.enabled) {
-                content.appendChild(sectionCmdSettings(key));
-                nav.push(["sec-cmd-" + key, CMD_SECTIONS[key].label]);
-            }
-        });
-
-        var rel = groupByKey("related");
-        if (rel && rel.enabled) {
-            content.appendChild(sectionHub());
-            nav.push(["sec-hub", "Hub Settings"]);
-        }
-
-        var team = groupByKey("teamaddins");
-        if (team && team.enabled) {
-            content.appendChild(sectionTeamAddins());
-            nav.push(["sec-teamaddins", "Team Add-ins Setup"]);
-        }
-
+        // Nothing else is appended here. Per-command settings, Hub Settings and
+        // the Team Add-ins shared folder are all rendered by groupExtras()
+        // inside the group that owns them, so the nav is General plus one entry
+        // per group and no group appears in it twice.
         buildNav(nav);
     }
 

@@ -99,6 +99,20 @@ section > h2 {
 }
 .section-desc { color: var(--text-secondary); margin: -6px 0 12px; font-size: 12px; }
 
+/* A titled block nested inside a group's section: per-command settings, Hub
+   Settings, the Team Add-ins shared folder. Indented and with a lighter heading
+   than section > h2, so it reads as belonging to the group above it rather than
+   as a section in its own right — it has no nav entry. */
+.subsection { margin: 14px 0 0 14px; }
+.subsection > h3 {
+    margin: 0 0 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
 .card {
     background: var(--bg-card);
     border: 1px solid var(--border-color);
