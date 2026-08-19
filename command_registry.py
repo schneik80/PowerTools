@@ -83,6 +83,7 @@ GROUPS = [
             _cmd("sketchunderconstrained", "SketchUnder.md"),
             _cmd("sketchcirclecenterpoint", "RadialHoleCircle.md", beta=True),
             _cmd("timelinecompute", "Timeline Compute Times.md"),
+            _cmd("measurepath", "Measure Path.md"),
             _cmd("mirrorderive", "MirrorDerive.md"),
             _cmd("hideobjects", "HideObjects.md"),
         ],

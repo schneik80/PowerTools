@@ -67,6 +67,7 @@ matching end-user guide lives in [`../`](..).
 - [MirrorDerive](MirrorDerive.md)
 - [HideObjects](HideObjects.md)
 - [Timeline Compute Times](Timeline%20Compute%20Times.md)
+- [Measure Path](Measure%20Path.md)
 
 **Related Data**
 

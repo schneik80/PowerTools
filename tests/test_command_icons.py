@@ -34,12 +34,15 @@ class IconSet:
     Attributes:
         command: The command module name under ``commands/``.
         variants: The filename suffixes this set is expected to ship.
-        placeholder: The command whose icons it used to be a copy of.
+        placeholder: The command whose icons it used to be a copy of, or None for
+            a set that shipped with original art and so never had one. The
+            duplicate-art risk for those is covered by
+            :func:`test_every_command_looks_different_from_every_other`.
     """
 
     command: str
     variants: tuple[str, ...]
-    placeholder: str
+    placeholder: str | None
 
     @property
     def resources(self) -> Path:
@@ -57,6 +60,7 @@ ICON_SETS = (
     IconSet("assignpartnumbers", THEME_VARIANTS, "docinfo"),
     IconSet("syncitempartnumber", THEME_VARIANTS, "docinfo"),
     IconSet("assigndrawingnumber", THEME_VARIANTS, "docinfo"),
+    IconSet("measurepath", THEME_VARIANTS, None),
 )
 
 
@@ -124,6 +128,9 @@ def test_no_stray_variants(icon_set: IconSet) -> None:
 @pytest.mark.parametrize("icon_set", ICON_SETS, ids=lambda icon_set: icon_set.command)
 def test_icons_are_not_the_placeholders_they_replaced(icon_set: IconSet) -> None:
     """The shipped art is drawn for this command, not copied from another."""
+    if icon_set.placeholder is None:
+        pytest.skip("shipped with original art; it never replaced a placeholder")
+
     placeholder_dir = REPO_ROOT / "commands" / icon_set.placeholder / "resources"
 
     for name in _expected_names(icon_set):

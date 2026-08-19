@@ -99,6 +99,12 @@ each command's `start()`. On shutdown the order is reversed. See
 [Command execution model](../arch/architecture.md#command-execution-model) in the
 architecture doc.
 
+If your command draws in the viewport — a highlight, a marker, a manipulator —
+read [**Custom graphics that stay painted**](Custom%20graphics%20that%20stay%20painted.md)
+*before* you write the draw code. Graphics created outside `executePreview` are
+undone by Fusion's next preview cycle, which looks like flaky rendering and is
+not.
+
 ## Developer tooling
 
 The tooling is configured in `pyproject.toml` and installed as the `dev` extra.
@@ -180,7 +186,7 @@ verification checklist, and how to disable debugging for a shipping build are in
 |---|---|---|
 | [`docs/`](..) | End users | Per-command usage guides. |
 | [`docs/arch/`](../arch) | Developers | Architecture — C4 diagrams, lifecycle, shared library, `config.py`. |
-| [`docs/dev/`](.) | Developers | This guide, the [debugging guide](debugging.md), and the [insert-and-position recipe](Insert%20and%20position%20a%20component%20from%20a%20palette.md). |
+| [`docs/dev/`](.) | Developers | This guide, the [debugging guide](debugging.md), the [insert-and-position recipe](Insert%20and%20position%20a%20component%20from%20a%20palette.md), and [custom graphics that stay painted](Custom%20graphics%20that%20stay%20painted.md). |
 
 ---
 

@@ -93,6 +93,7 @@ Most commands appear in **Design › Tools › Power Tools**. Some appear in oth
 | [Mirror Derive](./docs/MirrorDerive.md) | Design › Solid | Create a mirrored derived component. |
 | [Hide Objects](./docs/HideObjects.md) | Design › Tools | Quickly hide selected objects. |
 | [Timeline Compute Times](./docs/Timeline%20Compute%20Times.md) | Design › Solid | Measure per-feature timeline compute times. |
+| [Measure Path](./docs/Measure%20Path.md) | Design › Inspect | Total the arc length of a connected chain of edges and sketch curves between two objects. |
 
 ### Animation
 
