@@ -205,54 +205,64 @@
         return sec;
     }
 
-    function sectionCommands() {
-        var sec = el("section", { id: "sec-commands" }, [el("h2", { text: "Commands" })]);
-        sec.appendChild(el("div", { class: "section-desc",
-            text: "Enable or disable command groups and individual commands." }));
-        S.groups.forEach(function (g) {
-            var grp = el("div", { class: "group" + (g.enabled ? "" : " disabled") });
-            var head = el("div", { class: "group-head" });
-            head.appendChild(checkbox(g.enabled, function (v) {
-                g.enabled = v; send("setGroup", { key: g.key, enabled: v }); render();
+    // One section per registry group rather than a single "Commands" section.
+    // With ~50 commands, one entry gave the nav nothing to aim at: every group
+    // was the same long scroll. The group's own name is the heading, so the
+    // toggle below it says what it does instead of repeating the name.
+    function sectionGroup(g) {
+        var sec = el("section", { id: groupSectionId(g.key) }, [el("h2", { text: g.label })]);
+
+        var grp = el("div", { class: "group" + (g.enabled ? "" : " disabled") });
+        var head = el("div", { class: "group-head" });
+        head.appendChild(checkbox(g.enabled, function (v) {
+            g.enabled = v; send("setGroup", { key: g.key, enabled: v }); render();
+        }));
+        head.appendChild(el("span", { class: "grow", text: "Enable " + g.label + " commands" }));
+        grp.appendChild(head);
+
+        var body = el("div", { class: "group-body" });
+        var visible = g.commands.filter(function (c) { return !c.beta || S.beta; });
+        if (!visible.length) {
+            body.appendChild(el("div", { class: "muted",
+                text: "No commands in this group are available." }));
+        }
+        visible.forEach(function (c) {
+            var row = el("div", { class: "row" });
+            row.appendChild(checkbox(c.enabled, function (v) {
+                c.enabled = v; send("setCommand", { key: c.key, enabled: v }); render();
             }));
-            head.appendChild(el("span", { class: "grow", text: g.label }));
-            grp.appendChild(head);
+            var info = el("div", { class: "grow" });
+            var name = el("div", { class: "name" });
+            name.appendChild(document.createTextNode(c.name + " "));
+            if (c.beta) name.appendChild(el("span", { class: "badge", text: "beta" }));
+            info.appendChild(name);
+            // No title attribute: the summary already wraps and is fully
+            // visible, so a native tooltip only repeated it in an
+            // unthemed, unbounded-width browser popup.
+            if (c.summary) info.appendChild(el("div", { class: "summary", text: c.summary }));
 
-            var body = el("div", { class: "group-body" });
-            g.commands.filter(function (c) { return !c.beta || S.beta; }).forEach(function (c) {
-                var row = el("div", { class: "row" });
-                row.appendChild(checkbox(c.enabled, function (v) {
-                    c.enabled = v; send("setCommand", { key: c.key, enabled: v }); render();
-                }));
-                var info = el("div", { class: "grow" });
-                var name = el("div", { class: "name" });
-                name.appendChild(document.createTextNode(c.name + " "));
-                if (c.beta) name.appendChild(el("span", { class: "badge", text: "beta" }));
-                info.appendChild(name);
-                // No title attribute: the summary already wraps and is fully
-                // visible, so a native tooltip only repeated it in an
-                // unthemed, unbounded-width browser popup.
-                if (c.summary) info.appendChild(el("div", { class: "summary", text: c.summary }));
-
-                // Settings flagged inline sit under their own command, gated
-                // on the enable checkbox above them, instead of repeating the
-                // command as a separate section further down.
-                var inlineDef = CMD_SECTIONS[c.key];
-                if (inlineDef && inlineDef.inline && c.enabled) {
-                    var nested = el("div", { class: "row-settings" });
-                    var cs = (S.commandSettings && S.commandSettings[c.key]) || {};
-                    inlineDef.render(cs).forEach(function (node) { nested.appendChild(node); });
-                    info.appendChild(nested);
-                }
-                row.appendChild(info);
-                row.appendChild(el("a", { class: "doc", href: "#", text: "docs ↗",
-                    onclick: function (e) { e.preventDefault(); send("openDoc", { url: c.doc }); } }));
-                body.appendChild(row);
-            });
-            grp.appendChild(body);
-            sec.appendChild(grp);
+            // Settings flagged inline sit under their own command, gated
+            // on the enable checkbox above them, instead of repeating the
+            // command as a separate section further down.
+            var inlineDef = CMD_SECTIONS[c.key];
+            if (inlineDef && inlineDef.inline && c.enabled) {
+                var nested = el("div", { class: "row-settings" });
+                var cs = (S.commandSettings && S.commandSettings[c.key]) || {};
+                inlineDef.render(cs).forEach(function (node) { nested.appendChild(node); });
+                info.appendChild(nested);
+            }
+            row.appendChild(info);
+            row.appendChild(el("a", { class: "doc", href: "#", text: "docs ↗",
+                onclick: function (e) { e.preventDefault(); send("openDoc", { url: c.doc }); } }));
+            body.appendChild(row);
         });
+        grp.appendChild(body);
+        sec.appendChild(grp);
         return sec;
+    }
+
+    function groupSectionId(key) {
+        return "sec-group-" + key;
     }
 
     function sectionCmdSettings(key) {
@@ -310,7 +320,11 @@
         var project = t.projectName || "Assets";
         var folder = t.folderName || "Shared Addins";
 
-        var sec = el("section", { id: "sec-teamaddins" }, [el("h2", { text: "Team Add-ins" })]);
+        // "Setup", not "Team Add-ins": the group of that name is now its own
+        // section, and two identically named nav entries told the user nothing
+        // about which one held the shared-folder status.
+        var sec = el("section", { id: "sec-teamaddins" },
+            [el("h2", { text: "Team Add-ins Setup" })]);
         sec.appendChild(el("div", { class: "section-desc",
             text: "Add-ins dropped into a shared hub folder are installed automatically " +
                   "shortly after Fusion starts. The folder is always " +
@@ -399,7 +413,11 @@
         var nav = [];
 
         content.appendChild(sectionGeneral()); nav.push(["sec-general", "General"]);
-        content.appendChild(sectionCommands()); nav.push(["sec-commands", "Commands"]);
+
+        S.groups.forEach(function (g) {
+            content.appendChild(sectionGroup(g));
+            nav.push([groupSectionId(g.key), g.label]);
+        });
 
         Object.keys(CMD_SECTIONS).forEach(function (key) {
             if (CMD_SECTIONS[key].inline) return;  // already shown under its row
@@ -419,7 +437,7 @@
         var team = groupByKey("teamaddins");
         if (team && team.enabled) {
             content.appendChild(sectionTeamAddins());
-            nav.push(["sec-teamaddins", "Team Add-ins"]);
+            nav.push(["sec-teamaddins", "Team Add-ins Setup"]);
         }
 
         buildNav(nav);
