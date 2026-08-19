@@ -449,6 +449,24 @@ def _curve_ends(curve) -> tuple | None:
     return first, second
 
 
+def _iter_collection(collection):
+    """Iterate a Fusion collection that may be None, or may raise on access.
+
+    SketchPoint.connectedEntities returns None rather than an empty collection
+    for some points. Iterating it directly raised
+    "TypeError: 'NoneType' object is not iterable" out of _collect and aborted
+    the entire graph build for one unremarkable sketch point, which surfaced as
+    Measure Path simply not finding a path. One flaky property should cost us
+    that point's neighbours, not the whole measurement.
+    """
+    if not collection:
+        return ()
+    try:
+        return list(collection)
+    except Exception:
+        return ()
+
+
 def _vertex_world(vertex) -> tuple | None:
     try:
         return _tuple(vertex.geometry)
@@ -512,7 +530,7 @@ def _collect(entity, records, seen) -> None:
             if vkey in seen:
                 continue
             seen.add(vkey)
-            for incident in vertex.edges:
+            for incident in _iter_collection(vertex.edges):
                 frontier.append(incident)
             continue
 
@@ -541,7 +559,7 @@ def _collect(entity, records, seen) -> None:
             if pkey in seen:
                 continue
             seen.add(pkey)
-            for connected in point.connectedEntities:
+            for connected in _iter_collection(point.connectedEntities):
                 connected_curve = adsk.fusion.SketchCurve.cast(connected)
                 if not connected_curve:
                     continue
@@ -1464,8 +1482,21 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs) -> None:
                     "part of a measured chain. Select an arc, line, edge, or point."
                 )
                 return
-            with ptutil.perf_timer("measurepath.rebuild", CMD_NAME):
-                _rebuild(start_entity, end_entity)
+            try:
+                with ptutil.perf_timer("measurepath.rebuild", CMD_NAME):
+                    _rebuild(start_entity, end_entity)
+            except Exception:
+                # Refresh regardless. Returning here left the previous
+                # selection's length on screen next to the new picks, which
+                # reads as the answer for them.
+                ptutil.log(f"{CMD_NAME}: graph build failed\n{traceback.format_exc()}")
+                _reset_graph_only()
+                _resolve_and_draw(inputs)
+                inputs.itemById(INPUT_STATUS).text = (
+                    "Could not read the geometry around one of these selections. "
+                    "Try picking a different point, curve, or edge."
+                )
+                return
             _resolve_and_draw(inputs)
 
     except Exception:
