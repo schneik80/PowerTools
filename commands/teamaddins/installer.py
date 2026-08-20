@@ -238,9 +238,16 @@ def read_manifest_version(root: str, addin_id: str) -> str:
 
 
 def _on_rm_error(func, path, _exc_info):
-    """rmtree onerror hook: clear the read-only bit and retry once."""
+    """rmtree onerror hook: restore the write bit and retry once.
+
+    S_IWRITE is OR-ed onto the current mode rather than assigned over it. On
+    Windows the mode is little more than a read-only flag, so assigning is
+    harmless; on POSIX it would leave the entry at 0o200 - write-only - dropping
+    read and execute. For a directory that clears the traverse bit, which turns
+    one failed unlink into a subtree rmtree can no longer descend into.
+    """
     try:
-        os.chmod(path, stat.S_IWRITE)
+        os.chmod(path, os.stat(path).st_mode | stat.S_IWRITE)
         func(path)
     except Exception:
         raise
