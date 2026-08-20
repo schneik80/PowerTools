@@ -85,9 +85,18 @@ def work_dir() -> str:
     return os.path.join(config.CACHE_PATH, "team-addins", "work")
 
 
+def _comparable_path(path: str) -> str:
+    """Canonical form for path identity checks.
+
+    Fusion runs on case-insensitive filesystems (Windows, macOS), so fold
+    case on every platform; os.path.normcase only does so on Windows.
+    """
+    return os.path.normcase(os.path.abspath(path)).casefold()
+
+
 def _addin_root() -> str:
     """Absolute path of the running PowerTools add-in folder."""
-    return os.path.normcase(os.path.abspath(config.ADDIN_PATH))
+    return _comparable_path(config.ADDIN_PATH)
 
 
 def is_self(dest_path: str) -> bool:
@@ -96,7 +105,7 @@ def is_self(dest_path: str) -> bool:
     A team manifest that publishes an add-in whose id happens to match this
     add-in's folder would otherwise delete the code currently executing.
     """
-    dest = os.path.normcase(os.path.abspath(dest_path))
+    dest = _comparable_path(dest_path)
     root = _addin_root()
     return dest == root or root.startswith(dest + os.sep)
 
