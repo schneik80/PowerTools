@@ -44,16 +44,17 @@ def write_package(path, members):
     return hashlib.sha256(open(path, "rb").read()).hexdigest()
 
 
-def good_package(tmp_path, addin_id="Widget", version="1.0.0", top_folder=True,
-                 body="pass"):
+def good_package(
+    tmp_path, addin_id="Widget", version="1.0.0", top_folder=True, body="pass"
+):
     """A package Fusion would actually load: <id>/<id>.manifest + code."""
     prefix = f"{addin_id}/" if top_folder else ""
     path = tmp_path / f"{addin_id}.ptaddin"
     sha = write_package(
         str(path),
         {
-            f"{prefix}{addin_id}.manifest":
-                '{"type": "addin", "version": "%s"}' % version,
+            f"{prefix}{addin_id}.manifest": '{"type": "addin", "version": "%s"}'
+            % version,
             f"{prefix}{addin_id}.py": f"# {body}\n",
         },
     )
@@ -80,7 +81,9 @@ def sandbox(tmp_path, monkeypatch):
 def test_sha256_of_matches_hashlib(tmp_path):
     target = tmp_path / "blob.bin"
     target.write_bytes(b"power tools")
-    assert installer.sha256_of(str(target)) == hashlib.sha256(b"power tools").hexdigest()
+    assert (
+        installer.sha256_of(str(target)) == hashlib.sha256(b"power tools").hexdigest()
+    )
 
 
 def test_identical_bytes_are_not_a_change(tmp_path):
@@ -138,7 +141,9 @@ def test_locate_package_root_finds_the_single_top_level_folder(tmp_path):
     package, _ = good_package(tmp_path, top_folder=True)
     dest = tmp_path / "out"
     installer.safe_extract(package, str(dest))
-    assert os.path.basename(installer.locate_package_root(str(dest), "Widget")) == "Widget"
+    assert (
+        os.path.basename(installer.locate_package_root(str(dest), "Widget")) == "Widget"
+    )
 
 
 def test_locate_package_root_handles_a_flat_archive(tmp_path):
@@ -159,7 +164,9 @@ def test_locate_package_root_ignores_macos_metadata(tmp_path):
     )
     dest = tmp_path / "out"
     installer.safe_extract(str(package), str(dest))
-    assert os.path.basename(installer.locate_package_root(str(dest), "Widget")) == "Widget"
+    assert (
+        os.path.basename(installer.locate_package_root(str(dest), "Widget")) == "Widget"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -216,9 +223,7 @@ def test_manifest_version_tolerates_a_bom(tmp_path):
     assert installer.read_manifest_version(str(root), "Widget") == "1.2.3"
 
 
-@pytest.mark.parametrize(
-    "body", ['{"type":"addin"}', "not json at all", "[]", ""]
-)
+@pytest.mark.parametrize("body", ['{"type":"addin"}', "not json at all", "[]", ""])
 def test_missing_or_unreadable_version_is_empty_not_fatal(tmp_path, body):
     # Add-in authors frequently omit or never update this, so it can never be
     # load-bearing.
@@ -270,7 +275,9 @@ def test_install_refuses_to_overwrite_powertools(monkeypatch, tmp_path, sandbox)
 
 def test_install_places_the_folder_and_reports_the_declared_version(tmp_path, sandbox):
     package, sha = good_package(tmp_path, version="1.4.0")
-    result = installer.install_package(ref(), package, "install", str(tmp_path / "work"))
+    result = installer.install_package(
+        ref(), package, "install", str(tmp_path / "work")
+    )
 
     assert result.ok and result.started and not result.restart_required
     assert result.version == "1.4.0"
@@ -287,7 +294,9 @@ def test_install_reports_restart_when_reload_is_disabled(tmp_path, sandbox):
     assert (sandbox / "Widget" / "Widget.manifest").is_file()
 
 
-def test_install_stops_the_old_addin_before_replacing_it(monkeypatch, tmp_path, sandbox):
+def test_install_stops_the_old_addin_before_replacing_it(
+    monkeypatch, tmp_path, sandbox
+):
     old = sandbox / "Widget"
     old.mkdir(parents=True)
     (old / "stale.py").write_text("old code")
@@ -308,7 +317,9 @@ def test_install_stops_the_old_addin_before_replacing_it(monkeypatch, tmp_path, 
     assert "new code" in (old / "Widget.py").read_text()
 
 
-def test_install_stages_pending_when_the_folder_is_locked(monkeypatch, tmp_path, sandbox):
+def test_install_stages_pending_when_the_folder_is_locked(
+    monkeypatch, tmp_path, sandbox
+):
     old = sandbox / "Widget"
     old.mkdir(parents=True)
     cache = tmp_path / "cache"

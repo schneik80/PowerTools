@@ -112,8 +112,15 @@ def fake_app(projects=None, hub_name="Acme", hub_id="hub1", no_hub=False):
 
 @pytest.mark.parametrize(
     "name",
-    ["Shared Addins", "Shared AddIns", "shared addins", "Shared add-ins",
-     "SharedAddins", "Shared  Addins", "shared_addins"],
+    [
+        "Shared Addins",
+        "Shared AddIns",
+        "shared addins",
+        "Shared add-ins",
+        "SharedAddins",
+        "Shared  Addins",
+        "shared_addins",
+    ],
 )
 def test_existing_folder_is_adopted_however_it_is_spelled(name):
     # Teams name this folder by hand. An exact-only match would quietly create

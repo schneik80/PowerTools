@@ -298,7 +298,9 @@ def load_addin(dest_path: str, addin_id: str) -> bool:
             if script.isAddIn:
                 script.isRunOnStartup = True
         except Exception as exc:
-            ptutil.log(f"Team Add-ins: could not set isRunOnStartup for {addin_id}: {exc}")
+            ptutil.log(
+                f"Team Add-ins: could not set isRunOnStartup for {addin_id}: {exc}"
+            )
 
         if not script.isRunning:
             script.run()
@@ -405,7 +407,8 @@ def install_package(
         result.started = load_addin(dest_path, addin_id)
         result.restart_required = not result.started
         result.message = (
-            "Loaded and running." if result.started
+            "Loaded and running."
+            if result.started
             else "Installed. Restart Fusion to activate it."
         )
     else:

@@ -205,9 +205,7 @@ def check_and_apply(
         folder = team_fs.resolve_folder(app)
     except team_fs.NotConfigured as exc:
         report.status = STATUS_NOT_CONFIGURED
-        report.headline = (
-            f"No '{team_fs.SHARED_ADDINS_FOLDER_NAME}' folder in this hub"
-        )
+        report.headline = f"No '{team_fs.SHARED_ADDINS_FOLDER_NAME}' folder in this hub"
         report.detail = (
             f"PowerTools Preferences → Team Add-ins can create it in the "
             f"'{team_fs.ASSETS_PROJECT_NAME}' project."
@@ -382,7 +380,9 @@ def check_and_apply(
 
     installed_count = sum(1 for r in report.rows if r.state != "failed")
     report.status = (
-        STATUS_APPLIED if installed_count else (STATUS_ERROR if failures else STATUS_UP_TO_DATE)
+        STATUS_APPLIED
+        if installed_count
+        else (STATUS_ERROR if failures else STATUS_UP_TO_DATE)
     )
     report.headline = _headline(
         installed_count, len(failures), report.restart_required, skipped_identical
@@ -390,7 +390,9 @@ def check_and_apply(
     return report
 
 
-def _headline(installed: int, failures: int, restart_required: bool, skipped: int) -> str:
+def _headline(
+    installed: int, failures: int, restart_required: bool, skipped: int
+) -> str:
     parts = []
     if installed:
         noun = "add-in" if installed == 1 else "add-ins"

@@ -96,8 +96,14 @@ def hub(tmp_path, monkeypatch):
             self.dir = hub_dir
             self.addins_dir = addins_dir
 
-        def drop(self, addin_id, version="1.0.0", body="pass", corrupt=False,
-                 suffix=".ptaddin"):
+        def drop(
+            self,
+            addin_id,
+            version="1.0.0",
+            body="pass",
+            corrupt=False,
+            suffix=".ptaddin",
+        ):
             """Put a package in the folder, bumping its hub revision."""
             pkg = hub_dir / f"{addin_id}{suffix}"
             if corrupt:
@@ -313,7 +319,8 @@ def test_one_bad_package_does_not_block_the_others(hub):
     report = run()
 
     assert {r.addin_id: r.state for r in report.rows} == {
-        "Good": "loaded", "Bad": "failed"
+        "Good": "loaded",
+        "Bad": "failed",
     }
     assert (hub.addins_dir / "Good").is_dir()
     assert not (hub.addins_dir / "Bad").exists()

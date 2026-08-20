@@ -144,8 +144,7 @@ def find_shared_addins_folder(project, create: bool = False):
         created = folders.add(SHARED_ADDINS_FOLDER_NAME)
     except Exception as exc:
         raise TeamFsError(
-            f"Could not create '{SHARED_ADDINS_FOLDER_NAME}' in "
-            f"'{project.name}': {exc}"
+            f"Could not create '{SHARED_ADDINS_FOLDER_NAME}' in '{project.name}': {exc}"
         ) from exc
 
     if created is None:
@@ -153,9 +152,7 @@ def find_shared_addins_folder(project, create: bool = False):
             f"Could not create '{SHARED_ADDINS_FOLDER_NAME}' in "
             f"'{project.name}'. Check your permissions on that project."
         )
-    ptutil.log(
-        f"Team Add-ins: created {project.name}/{SHARED_ADDINS_FOLDER_NAME}."
-    )
+    ptutil.log(f"Team Add-ins: created {project.name}/{SHARED_ADDINS_FOLDER_NAME}.")
     return created
 
 
@@ -224,7 +221,9 @@ def folder_status(app: adsk.core.Application) -> dict:
     status["state"] = "ready"
     try:
         status["packageCount"] = sum(
-            1 for name, _ in list_folder(folder) if name.lower().endswith(PACKAGE_SUFFIXES)
+            1
+            for name, _ in list_folder(folder)
+            if name.lower().endswith(PACKAGE_SUFFIXES)
         )
     except TeamFsError:
         status["packageCount"] = 0

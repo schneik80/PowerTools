@@ -72,8 +72,20 @@ def test_valid_ids(value):
 
 @pytest.mark.parametrize(
     "value",
-    ["", ".", "..", "../escape", "a/b", "a\\b", ".hidden", "-lead", "has space",
-     "X" * 101, None, 123],
+    [
+        "",
+        ".",
+        "..",
+        "../escape",
+        "a/b",
+        "a\\b",
+        ".hidden",
+        "-lead",
+        "has space",
+        "X" * 101,
+        None,
+        123,
+    ],
 )
 def test_invalid_ids(value):
     assert not catalog.is_valid_addin_id(value)
@@ -223,6 +235,10 @@ def test_removed_package_is_an_orphan_never_a_removal():
 
 
 def test_orphans_are_sorted():
-    installed = {"c": {"hub_version": 1}, "a": {"hub_version": 1}, "b": {"hub_version": 1}}
+    installed = {
+        "c": {"hub_version": 1},
+        "a": {"hub_version": 1},
+        "b": {"hub_version": 1},
+    }
     plan = catalog.plan_changes([], installed)
     assert plan.orphans == ["a", "b", "c"]

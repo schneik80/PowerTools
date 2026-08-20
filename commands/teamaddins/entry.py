@@ -246,7 +246,9 @@ def _run_startup_check():
     # more go, quietly, then leave it to the manual button.
     if team_hub_missing() and not _retry_used:
         _retry_used = True
-        ptutil.log(f"{CMD_NAME}: no active hub yet; retrying in {_HUB_RETRY_SECONDS:.0f}s.")
+        ptutil.log(
+            f"{CMD_NAME}: no active hub yet; retrying in {_HUB_RETRY_SECONDS:.0f}s."
+        )
         _startup_pending_report = pending_report
         _schedule_check(_HUB_RETRY_SECONDS)
         return
