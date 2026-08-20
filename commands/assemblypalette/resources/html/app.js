@@ -24,6 +24,103 @@
     // Full unfiltered Recent list, kept so filtering never round-trips.
     var recentAll = [];
 
+    // --- Lazy thumbnails ---
+    // The backend sends galleries as metadata only; thumbnails are fetched per
+    // card, and only for cards that actually come into view. A Recent list is
+    // routinely a few hundred documents, so shipping every cached PNG up front
+    // meant a multi-megabyte payload to paint about a dozen visible cards.
+    //
+    // thumbUrls  — dataFileId -> data: URL, so a re-render (filtering, tab
+    //              switch) repaints from memory instead of re-asking.
+    // thumbAsked — dataFileId -> true once requested. Never cleared: the
+    //              backend answers a request it cannot satisfy with silence
+    //              (no cloud thumbnail exists), and retrying would be a cloud
+    //              round-trip per card per keystroke.
+    var thumbUrls = {};
+    var thumbAsked = {};
+    var thumbWanted = {};
+    var thumbTimer = null;
+
+    // Cards entering view are batched briefly before asking, so a flick-scroll
+    // past fifty cards is one request rather than fifty.
+    var THUMB_BATCH_MS = 80;
+
+    // Start fetching a little before a card is actually on screen so it is
+    // usually painted by the time it arrives.
+    var THUMB_ROOT_MARGIN = '200px';
+
+    function scheduleThumbRequest() {
+        if (thumbTimer) return;
+        thumbTimer = setTimeout(function () {
+            thumbTimer = null;
+            var ids = Object.keys(thumbWanted);
+            thumbWanted = {};
+            if (!ids.length) return;
+            ids.forEach(function (id) { thumbAsked[id] = true; });
+            send('requestThumbs', { ids: ids });
+        }, THUMB_BATCH_MS);
+    }
+
+    function wantThumb(id) {
+        if (!id || thumbUrls[id] || thumbAsked[id] || thumbWanted[id]) return;
+        thumbWanted[id] = true;
+        scheduleThumbRequest();
+    }
+
+    var thumbObserver = null;
+    if (typeof IntersectionObserver === 'function') {
+        thumbObserver = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+                if (!entry.isIntersecting) return;
+                // One request per card is enough — a thumbnail never changes
+                // while the palette is open.
+                thumbObserver.unobserve(entry.target);
+                wantThumb(entry.target.getAttribute('data-df-id'));
+            });
+        }, {
+            // The panes are the scroll container; falling back to the viewport
+            // still works (ancestor clipping is accounted for) but the margin
+            // would be measured against the wrong box.
+            root: document.querySelector('.tab-panes') || null,
+            rootMargin: THUMB_ROOT_MARGIN
+        });
+    }
+
+    // Paint a thumbnail into whichever cards currently show that document.
+    // Both galleries are scanned: the same document never appears in both, but
+    // a card may have been re-rendered by a filter keystroke since the request
+    // went out, so the element that asked is not necessarily the one that gets
+    // the answer.
+    function paintThumb(id, url) {
+        var frames = document.querySelectorAll('.doc-thumb[data-df-id]');
+        for (var i = 0; i < frames.length; i++) {
+            var frame = frames[i];
+            if (frame.getAttribute('data-df-id') !== id) continue;
+            if (frame.querySelector('img')) continue;
+            var img = document.createElement('img');
+            img.alt = '';
+            img.addEventListener('error', function () {
+                var parent = this.parentNode;
+                if (parent) parent.classList.add('broken');
+                this.remove();
+            });
+            img.src = url;
+            frame.classList.remove('broken');
+            frame.appendChild(img);
+        }
+    }
+
+    function setThumbs(map) {
+        if (!map) return;
+        Object.keys(map).forEach(function (id) {
+            var url = map[id];
+            if (!url) return;
+            thumbUrls[id] = url;
+            thumbAsked[id] = true;
+            paintThumb(id, url);
+        });
+    }
+
     function applyTheme(theme) {
         document.body.classList.remove('dark', 'light');
         document.body.classList.add(theme === 'light' ? 'light' : 'dark');
@@ -66,7 +163,13 @@
 
         var root = document.getElementById(rootId);
         if (!root) return;
-        // Wipe and rebuild.
+        // Wipe and rebuild. Drop the outgoing cards from the observer first —
+        // it holds a strong reference to every target, and this gallery is
+        // rebuilt on every filter keystroke.
+        if (thumbObserver) {
+            var stale = root.querySelectorAll('.doc-thumb[data-df-id]');
+            for (var s = 0; s < stale.length; s++) thumbObserver.unobserve(stale[s]);
+        }
         root.innerHTML = '';
         if (all.length === 0) {
             var empty = document.createElement('div');
@@ -95,16 +198,22 @@
 
             // The intent class rides on the thumb too: with no thumbnail (or one
             // that fails to load) `.broken` swaps in this type's 32px icon.
-            var thumbClass = 'doc-thumb' + (intent ? ' ' + intent : '');
-            var thumbHtml;
-            if (doc.thumbUrl) {
-                thumbHtml = '<div class="' + thumbClass + '">' +
-                    '<img src="' + escapeHtml(doc.thumbUrl) + '" alt="" ' +
-                    'onerror="this.parentNode.classList.add(\'broken\');this.remove();" />' +
-                    '</div>';
-            } else {
-                thumbHtml = '<div class="' + thumbClass + ' broken"></div>';
-            }
+            // Every card starts broken and is filled in by paintThumb once the
+            // backend answers, so the placeholder is the honest initial state
+            // rather than a flash of empty frame.
+            // The id is attached as a property below rather than interpolated
+            // here: escapeHtml escapes text content, not attribute values (it
+            // leaves `"` alone), so a document id is not safe to splice into an
+            // attribute even though a DataFile URN never contains a quote.
+            var known = thumbUrls[doc.dataFileId];
+            var thumbClass = 'doc-thumb' + (intent ? ' ' + intent : '') +
+                (known ? '' : ' broken');
+            var thumbHtml = '<div class="' + thumbClass + '">' +
+                (known
+                    ? '<img src="' + escapeHtml(known) + '" alt="" ' +
+                      'onerror="this.parentNode.classList.add(\'broken\');this.remove();" />'
+                    : '') +
+                '</div>';
 
             var iconHtml = intent
                 ? '<span class="intent-icon ' + intent + '" role="img" ' +
@@ -125,6 +234,19 @@
                 });
             });
             root.appendChild(card);
+
+            // Ask for this card's thumbnail when it scrolls into view. Without
+            // IntersectionObserver there is nothing to scroll-detect with, so
+            // fall back to requesting every rendered card — still bounded by
+            // RECENT_RENDER_CAP, and still far less than the whole list.
+            var frame = card.querySelector('.doc-thumb');
+            if (frame) {
+                frame.setAttribute('data-df-id', doc.dataFileId);
+                if (!known) {
+                    if (thumbObserver) thumbObserver.observe(frame);
+                    else wantThumb(doc.dataFileId);
+                }
+            }
         });
         if (all.length > shown.length) {
             var note = document.createElement('div');
@@ -333,6 +455,10 @@
                     var recent = [];
                     try { recent = JSON.parse(data) || []; } catch (e) { recent = []; }
                     setRecentDocs(recent);
+                } else if (action === 'setThumbs') {
+                    var thumbs = {};
+                    try { thumbs = JSON.parse(data) || {}; } catch (e) { thumbs = {}; }
+                    setThumbs(thumbs);
                 } else if (action === 'setTargetProject') {
                     applyTargetProject(data);
                 }

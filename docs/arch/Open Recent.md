@@ -69,10 +69,14 @@ list, oldest-first:
 - `intent` — `part` / `hybrid` / `assembly`.
 - `location` — folder lineage captured while the document was open, shown in the tooltip. Absent on entries written before this field existed (tooltip degrades to name-only).
 
-Thumbnails are cached separately as PNGs under the OS temp dir, keyed by
-`md5(dataFileId)`, rendered from the live root component with
-`Component.createThumbnail` while the document is open. The menu item's tooltip
-tool-clip (`CommandDefinition.toolClipFilename`) points at that PNG.
+Thumbnails are cached separately as PNGs under `cache/thumbs` (falling back to
+the OS temp dir on a read-only install), keyed by `md5(dataFileId)`. The menu
+item's tooltip tool-clip (`CommandDefinition.toolClipFilename`) points at that
+PNG. This command only ever *reads* the cache; both writers live elsewhere —
+`Component.createThumbnail` on `documentActivated`, and the cloud download
+[Assembly Palette](./Assembly%20Palette.md) drives through `DataFile.thumbnail`
+as the user browses its galleries. Opening that palette therefore fills in
+tool-clips here too.
 
 ## Component diagram
 
@@ -91,7 +95,7 @@ C4Component
     Container_Boundary(shared, "Shared recents layer") {
         Component(recents, "recents_utils", "lib/ptAddInUtils", "Cache read/write/touch, thumbnail render + cache, list_recent, remember_recent_if_eligible")
         ComponentDb(cache, "recent_docs.json", "Local JSON", "Recently-touched part/hybrid/assembly DataFile ids + name + intent + location")
-        ComponentDb(thumbs, "Thumbnail cache", "OS temp PNGs", "Per-DataFile thumbnails keyed by md5(id)")
+        ComponentDb(thumbs, "Thumbnail cache", "cache/thumbs PNGs", "Per-DataFile thumbnails keyed by md5(id)")
     }
 
     System_Ext(fusion, "Fusion API", "adsk.core, adsk.fusion")
@@ -105,7 +109,7 @@ C4Component
     Rel(recents, thumbs, "Renders + reads cached thumbnails")
     Rel(newasm, recents, "Recent gallery uses the same helpers")
     Rel(entry, fusion, "documentActivated / documentOpened; data.findFileById; documents.open")
-    Rel(recents, fusion, "createThumbnail; parentFolder lineage")
+    Rel(recents, fusion, "createThumbnail; DataFile.thumbnail; parentFolder lineage")
 ```
 
 ## Execution flow

@@ -45,10 +45,19 @@ is available for free) so the Open Recent tooltip needs no cloud round-trip.
 Entries written before this field existed simply omit it and degrade to a
 name-only tooltip.
 
-Thumbnails are rendered from the live root component with
-``Component.createThumbnail`` while a document is open — the only time Fusion can
-render one — and cached on disk keyed by ``md5(dataFileId)``. Closed documents
-reuse whatever PNG was cached when they were last open.
+Thumbnails reach the disk cache (keyed by ``md5(dataFileId)``) two ways:
+
+* ``Component.createThumbnail`` renders the live root component while a document
+  is open. Local and instant, but only available for an open document.
+* ``DataFile.thumbnail`` downloads the 256x256 PNG Fusion already holds in the
+  cloud. Asynchronous, and the only route for a *closed* document — which is
+  most of the Recent gallery, all of it right after a hub switch. Assembly
+  Palette drives that fetch lazily; this module just owns where the result
+  lands, via ``store_thumbnail_object``.
+
+A document with no cloud thumbnail (never saved through Fusion's thumbnail
+pipeline) resolves to "" and the caller falls back to a design-intent
+placeholder.
 
 The pure cache helpers (``touch_entries``, ``read_recent_cache``,
 ``write_recent_cache``) deliberately avoid any ``adsk`` dependency so they stay
@@ -85,12 +94,46 @@ _native_cache: dict = {}
 # caches under ``cache/``.
 RECENT_CACHE_PATH = os.path.join(CACHE_FOLDER, "recent_docs.json")
 
-# Per-document thumbnail cache. The historical directory name is kept so
-# thumbnails rendered by earlier builds remain valid (the key scheme is
-# ``md5(dataFileId)``). It lives in the OS temp dir because the bundled add-in
-# cache folder can be read-only on locked-down installs.
-THUMB_DIR = os.path.join(tempfile.gettempdir(), "powertools_assembly_thumbs")
-THUMB_SIZE = 86  # px; small enough for a gallery card or a menu tool-clip.
+# Per-document thumbnail cache, keyed by ``md5(dataFileId)``.
+#
+# This used to live only in the OS temp dir, because the bundled add-in cache
+# folder can be read-only on locked-down installs. That trade cost more than it
+# bought: macOS purges ``/var/folders/…/T`` on its own schedule, so a cache that
+# can only be refilled by re-opening each document individually was being wiped
+# out from under the user. The add-in cache folder is now preferred and the temp
+# dir is the fallback, chosen once at import by actually writing a probe file
+# rather than by guessing at permissions.
+#
+# Lineage URNs are globally unique, so the flat md5 keying needs no per-hub
+# namespace — two hubs can never collide on the same key.
+_LEGACY_THUMB_DIR = os.path.join(tempfile.gettempdir(), "powertools_assembly_thumbs")
+
+
+def _resolve_thumb_dir() -> str:
+    """Pick the thumbnail cache directory, preferring the add-in cache folder.
+
+    Falls back to the OS temp dir when ``cache/`` cannot be written — a real
+    case on locked-down installs, which is why the probe is a write rather than
+    an ``os.access`` check (the latter lies on Windows network shares).
+    """
+    preferred = os.path.join(CACHE_FOLDER, "thumbs")
+    try:
+        os.makedirs(preferred, exist_ok=True)
+        probe = os.path.join(preferred, ".writable")
+        with open(probe, "w", encoding="utf-8") as fh:
+            fh.write("")
+        os.remove(probe)
+        return preferred
+    except Exception:
+        return _LEGACY_THUMB_DIR
+
+
+THUMB_DIR = _resolve_thumb_dir()
+
+# px. Matches the fixed 256x256 that ``DataFile.thumbnail`` returns from the
+# cloud, so a locally-rendered thumbnail and a downloaded one are
+# interchangeable on a card and in a menu tool-clip.
+THUMB_SIZE = 256
 
 # Cap on how many entries the cache retains (newest kept). Sized to cover
 # Fusion's own list rather than a gallery page: this cache is now the memo that
@@ -223,9 +266,26 @@ def touch_recent(
 
 
 def thumb_path_for(df_id: str) -> str:
-    """On-disk PNG path (whether or not it exists) for *df_id*'s thumbnail."""
-    safe = hashlib.md5(df_id.encode("utf-8")).hexdigest()
-    return os.path.join(THUMB_DIR, f"{safe}.png")
+    """On-disk PNG path (whether or not it exists) for *df_id*'s thumbnail.
+
+    Always the *write* target. Reads also consider the legacy temp-dir location
+    via ``cached_thumbnail_path`` so thumbnails rendered before the cache moved
+    are not re-downloaded.
+    """
+    return os.path.join(THUMB_DIR, f"{_thumb_key(df_id)}.png")
+
+
+def _thumb_key(df_id: str) -> str:
+    """Cache filename stem for *df_id*."""
+    return hashlib.md5(df_id.encode("utf-8")).hexdigest()
+
+
+def _is_usable_png(path: str) -> bool:
+    """True when *path* is a non-empty file we can treat as a cached PNG."""
+    try:
+        return os.path.exists(path) and os.path.getsize(path) > 0
+    except OSError:
+        return False
 
 
 def png_to_data_url(path: str) -> str:
@@ -239,12 +299,22 @@ def png_to_data_url(path: str) -> str:
 
 
 def cached_thumbnail_path(df_id: str) -> str:
-    """Return the cached PNG path for *df_id* if one exists on disk, else ""."""
+    """Return the cached PNG path for *df_id* if one exists on disk, else "".
+
+    Checks the current cache directory first, then the legacy temp-dir location
+    a previous build wrote to. Falling back rather than migrating keeps this
+    free: the legacy directory is only consulted on a miss, and it disappears on
+    its own once the OS purges it.
+    """
     if not df_id:
         return ""
     path = thumb_path_for(df_id)
-    if os.path.exists(path) and os.path.getsize(path) > 0:
+    if _is_usable_png(path):
         return path
+    if THUMB_DIR != _LEGACY_THUMB_DIR:
+        legacy = os.path.join(_LEGACY_THUMB_DIR, f"{_thumb_key(df_id)}.png")
+        if _is_usable_png(legacy):
+            return legacy
     return ""
 
 
@@ -292,6 +362,25 @@ def _save_thumbnail_object(data_object, cache_path: str) -> str:
     return ""
 
 
+def store_thumbnail_object(data_object, df_id: str) -> str:
+    """Persist a ``DataObject`` holding PNG bytes as *df_id*'s cached thumbnail.
+
+    The counterpart to ``render_thumbnail_for_doc`` for thumbnails that come off
+    the cloud rather than out of a live design: ``DataFile.thumbnail`` hands back
+    a ``DataObject`` once its future finishes, and this is where it lands in the
+    same cache both galleries and the Open Recent tool-clip already read.
+
+    Returns the cache path on success, or "" — never raises.
+    """
+    if not df_id or data_object is None:
+        return ""
+    try:
+        os.makedirs(THUMB_DIR, exist_ok=True)
+        return _save_thumbnail_object(data_object, thumb_path_for(df_id))
+    except Exception:
+        return ""
+
+
 def render_thumbnail_for_doc(doc, df_id: str) -> str:
     """Render *doc*'s root component to a cached PNG and return a data: URL.
 
@@ -302,9 +391,10 @@ def render_thumbnail_for_doc(doc, df_id: str) -> str:
     """
     if not df_id:
         return ""
+    existing = cached_thumbnail_path(df_id)
+    if existing:
+        return png_to_data_url(existing)
     cache_path = thumb_path_for(df_id)
-    if os.path.exists(cache_path) and os.path.getsize(cache_path) > 0:
-        return png_to_data_url(cache_path)
     try:
         os.makedirs(THUMB_DIR, exist_ok=True)
         product = doc.products.itemByProductType("DesignProductType")

@@ -30,7 +30,7 @@ File ▾
 
 - The entries and their order come from Fusion's own recents history for the signed-in account on the active hub, which Fusion rewrites as you open documents. Switching hubs switches the list.
 - PowerTools keeps a small cache of its own (`cache/recent_docs.json`) alongside it. Every time you activate a **saved** Part, Hybrid, or Assembly document, it is recorded there together with its thumbnail and location. That cache supplies the two things Fusion's history does not carry — the thumbnail, and the design intent for documents Fusion recorded none for — and it becomes the whole list if Fusion's history cannot be read (for example when you are signed out).
-- Thumbnails are cached on disk, so they appear in the tooltip even after the document is closed. A document that has not been open since you installed this version shows a name-and-location tooltip until the first time you open it.
+- Thumbnails are cached on disk, so they appear in the tooltip even after the document is closed. The cache is shared with the Assembly Palette, which downloads thumbnails from the cloud as you browse its galleries — so opening that palette also fills in tool-clips here. A document with no thumbnail from either route shows a name-and-location tooltip.
 - The currently-active document is omitted from the list (you already have it open); it reappears once you switch away from it.
 - The flyout shows up to the 15 most recent documents.
 

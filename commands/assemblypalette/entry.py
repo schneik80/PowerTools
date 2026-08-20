@@ -24,6 +24,8 @@
 import json
 import os
 import threading
+import time
+import traceback
 
 import adsk.core
 import adsk.fusion
@@ -106,6 +108,42 @@ _EDIT_POSITION_CMD_IDS = (
 _FINISH_EVENT_ID = "PTAT_assemblyPalette_finishInsert"
 _FINISH_DELAY_SECONDS = 0.35
 
+# Custom event that drives the lazy thumbnail pump — same deferral trick as the
+# post-insert chain, for a different reason. ``DataFile.thumbnail`` returns a
+# DataObjectFuture with no completion event (adsk.core.Future exposes only
+# ``state``), so the only way to collect one is to poll. Polling inline the way
+# commands/refrences does — adsk.doEvents() + time.sleep against a deadline — is
+# fine behind a modal progress bar and unacceptable in a palette, which has to
+# stay responsive while the user scrolls. So each poll is one turn of a
+# timer-fired custom event instead, and the UI thread is never held.
+_THUMB_EVENT_ID = "PTAT_assemblyPalette_thumbTick"
+_THUMB_TICK_SECONDS = 0.15
+
+# New DataFiles resolved per tick. ``Data.findFileById`` is a cloud round-trip on
+# the main thread, so this is deliberately small: the cost of a visible gallery
+# is spread over several turns rather than spent in one stall.
+_THUMB_START_PER_TICK = 3
+
+# Downloads allowed in flight at once. Futures cost nothing to wait on — only
+# starting them is expensive — so this is just a ceiling on outstanding work.
+_THUMB_MAX_INFLIGHT = 12
+
+# A future that never leaves ProcessingFutureState is abandoned after this so a
+# single wedged download cannot keep the pump ticking for the whole session.
+_THUMB_FUTURE_TIMEOUT_SECONDS = 20.0
+
+# Re-arm a tick that was scheduled this long ago but never ran. fireCustomEvent
+# is documented to return True on success and observably returns False even when
+# it works (see _schedule_finish_insert), so its return value cannot be trusted
+# to tell us the tick is really coming; this bounds the damage if one is lost.
+_THUMB_TICK_STALE_SECONDS = 2.0
+
+# adsk.core.FutureStates, as plain ints. Named locally so the pump stays
+# readable and testable outside Fusion, matching what commands/refrences does
+# with the same enum.
+_FUTURE_PROCESSING = 0
+_FUTURE_FINISHED = 1
+
 # How long to keep pumping events before believing ui.activeCommand. A command
 # started by execute() does not become active in the same turn — reading it after a
 # single doEvents() said "SelectCommand" for a command that visibly did start.
@@ -175,6 +213,19 @@ _show_children = False
 _finish_event_handler = None
 _pending_finish = None
 
+# Lazy thumbnail pump state. All of it is touched only on the main thread (the
+# HTML event and the custom-event handler); the timer thread does nothing but
+# fire the event.
+#   _thumb_queue    — ids the page asked for that still need a DataFile resolved
+#   _thumb_inflight — id -> (DataObjectFuture, monotonic start), downloading now
+#   _thumb_missing  — ids with no cloud thumbnail, so the pump stops retrying
+_thumb_queue: list[str] = []
+_thumb_inflight: dict[str, tuple] = {}
+_thumb_missing: set[str] = set()
+_thumb_event_handler = None
+_thumb_tick_pending = False
+_thumb_tick_scheduled_at = 0.0
+
 # The Document we last popped the palette for (or had open when palette closed).
 # Compared via Python identity (`is`) — NOT id(), which can collide across
 # short-lived Fusion Document wrappers and previously caused the popup to be
@@ -189,7 +240,7 @@ _palette_was_open_for = None
 
 
 def start():
-    global _finish_event_handler
+    global _finish_event_handler, _thumb_event_handler
 
     # documentActivated is the reliable trigger across Fusion builds —
     # documentOpened isn't always emitted for File > New on macOS.
@@ -236,6 +287,16 @@ def start():
     _finish_event_handler = _FinishInsertHandler()
     finish_event.add(_finish_event_handler)
 
+    # Runner for the lazy thumbnail pump, registered the same way and for the
+    # same reason (a reload without a Fusion restart must not stack handlers).
+    try:
+        app.unregisterCustomEvent(_THUMB_EVENT_ID)
+    except Exception:
+        pass
+    thumb_event = app.registerCustomEvent(_THUMB_EVENT_ID)
+    _thumb_event_handler = _ThumbTickHandler()
+    thumb_event.add(_thumb_event_handler)
+
     _diag(f"start(): primary trigger=documentActivated. thumb dir = {_THUMB_DIR}")
 
 
@@ -251,6 +312,7 @@ def _launch_command_created(args: adsk.core.CommandCreatedEventArgs):
 
 def stop():
     global _palette_was_open_for, _finish_event_handler, _pending_finish
+    global _thumb_event_handler
     palette = ui.palettes.itemById(PALETTE_ID)
     if palette:
         try:
@@ -273,12 +335,15 @@ def stop():
     if cmd_def:
         cmd_def.deleteMe()
 
-    try:
-        app.unregisterCustomEvent(_FINISH_EVENT_ID)
-    except Exception:
-        pass
+    for event_id in (_FINISH_EVENT_ID, _THUMB_EVENT_ID):
+        try:
+            app.unregisterCustomEvent(event_id)
+        except Exception:
+            pass
     _finish_event_handler = None
     _pending_finish = None
+    _thumb_event_handler = None
+    _reset_thumb_pump()
 
     _inserted_in_session.clear()
     _palette_was_open_for = None
@@ -383,8 +448,11 @@ def _on_document_opened(args: adsk.core.DocumentEventArgs):
 
 def _show_palette():
     # Fresh palette open → forget which docs were inserted during a prior open
-    # so the user can deliberately insert them again in this new session.
+    # so the user can deliberately insert them again in this new session, and
+    # start the thumbnail pump from empty (including its negative cache, so a
+    # thumbnail generated cloud-side since the last open is picked up).
     _inserted_in_session.clear()
+    _reset_thumb_pump()
 
     palettes = ui.palettes
     palette = palettes.itemById(PALETTE_ID)
@@ -642,36 +710,240 @@ def _list_open_docs() -> list[dict]:
                 "dataFileId": df_id,
                 "name": getattr(df, "name", "") or doc.name,
                 "intent": intent_name,
-                # Cache-only here so building the gallery never blocks on a
-                # synchronous Component.createThumbnail render. The cache is
-                # pre-warmed by _remember_recent_if_eligible on documentActivated
-                # (see its docstring), so activated docs already have a thumb;
-                # any not-yet-rendered doc simply shows blank until then.
-                "thumbUrl": _cached_thumbnail(df_id),
+                # No thumbnail in the payload — the page asks for the cards it
+                # actually shows (see _action_request_thumbs). An open doc's
+                # thumbnail is cheap to produce on demand, so these fill in
+                # almost immediately.
             }
         )
     return out
 
 
-# Thumbnail rendering and the per-document thumbnail cache now live in
-# lib/ptAddInUtils/recents_utils (shared with the Open Recent command). The
-# open-doc render is invoked via recents.remember_recent_if_eligible below.
+# Thumbnail rendering and the per-document thumbnail cache live in
+# lib/ptAddInUtils/recents_utils (shared with the Open Recent command). Both
+# routes into it are used from here: the open-doc render via
+# recents.remember_recent_if_eligible, and the cloud download the pump above
+# drives through recents.store_thumbnail_object.
 
 
-def _thumbnail_for_open_doc(doc, df_id: str) -> str:
-    """Render *doc*'s live root component to a cached PNG and return a data: URL.
-
-    Delegates to the shared thumbnail store; kept as a thin wrapper for the
-    Open gallery path's readability."""
-    return recents.render_thumbnail_for_doc(doc, df_id)
+# ---------------------------------------------------------------------------
+# Lazy thumbnail retrieval
+# ---------------------------------------------------------------------------
 
 
-def _cached_thumbnail(df_id: str) -> str:
-    """Cached thumbnail as a data: URL, or "" — delegated to the shared store.
+def _reset_thumb_pump() -> None:
+    """Drop all pump state. Called when the palette opens or goes away.
 
-    Recent (closed) documents cannot be rendered live, so both galleries reuse
-    the PNG cached while the document was last open."""
-    return recents.cached_thumbnail_data_url(df_id)
+    ``_thumb_missing`` is cleared too, deliberately: a document with no cloud
+    thumbnail today may well have one by the next time the palette is opened
+    (Fusion generates them server-side after a save), and a negative cache that
+    outlived the session would hide it forever.
+    """
+    _thumb_queue.clear()
+    _thumb_inflight.clear()
+    _thumb_missing.clear()
+
+
+def _open_docs_by_data_file_id() -> dict:
+    """Map every open document's DataFile id to its Document.
+
+    Built once per request batch rather than scanned per id: a request covers
+    every card that just scrolled into view, and rescanning ``app.documents``
+    for each one turns a handful of API reads into a few hundred.
+
+    Lets the pump answer Open-tab cards from a local render instead of a cloud
+    download — no round-trip, and it works for a document whose cloud thumbnail
+    does not exist yet.
+    """
+    out: dict = {}
+    documents = app.documents
+    for i in range(documents.count):
+        try:
+            doc = documents.item(i)
+            if doc is None:
+                continue
+            df_id = getattr(doc.dataFile, "id", "")
+            if df_id:
+                out.setdefault(df_id, doc)
+        except Exception:
+            continue
+    return out
+
+
+def _action_request_thumbs(palette, data: dict) -> None:
+    """Serve the page's per-card thumbnail request.
+
+    Anything already on disk (or renderable from an open document) goes back in
+    the same turn; the rest is queued for the pump. Ids already queued, already
+    downloading, or already known to have no cloud thumbnail are dropped, so the
+    page can re-ask freely as cards scroll in and out of view.
+    """
+    ids = [str(i) for i in (data.get("ids") or []) if i]
+    wanted = [i for i in ids if i not in _thumb_missing and i not in _thumb_inflight]
+    if not wanted:
+        return
+
+    ready: dict[str, str] = {}
+    open_docs = None  # resolved lazily — a fully-cached batch never needs it
+    for df_id in wanted:
+        url = recents.cached_thumbnail_data_url(df_id)
+        if not url:
+            if open_docs is None:
+                open_docs = _open_docs_by_data_file_id()
+            doc = open_docs.get(df_id)
+            if doc is not None:
+                url = recents.render_thumbnail_for_doc(doc, df_id)
+        if url:
+            ready[df_id] = url
+        elif df_id not in _thumb_queue:
+            _thumb_queue.append(df_id)
+    if ready:
+        _send_thumbs(palette, ready)
+    _schedule_thumb_tick()
+
+
+def _send_thumbs(palette, mapping: dict[str, str]) -> None:
+    """Push a batch of ``dataFileId -> data: URL`` to the page."""
+    if not palette or not mapping:
+        return
+    try:
+        palette.sendInfoToHTML("setThumbs", json.dumps(mapping))
+    except Exception as e:
+        _diag(f"sendInfoToHTML(setThumbs) failed: {e}")
+
+
+def _future_state(future) -> int:
+    """*future*'s state as a plain int, or the failed state if unreadable."""
+    try:
+        return int(future.state)
+    except Exception:
+        return _FUTURE_FINISHED + 1  # anything not Processing/Finished = failed
+
+
+def _start_thumb_download(df_id: str):
+    """Kick off *df_id*'s cloud thumbnail download, returning its future or None.
+
+    This is the expensive call in the whole pump: ``findFileById`` is a cloud
+    round-trip. Reading ``.thumbnail`` afterwards only *starts* the download.
+    """
+    try:
+        data_file = _find_data_file_by_id(df_id)
+        if data_file is None:
+            return None
+        return getattr(data_file, "thumbnail", None)
+    except Exception:
+        return None
+
+
+def _collect_finished_thumbs() -> dict[str, str]:
+    """Harvest every in-flight future that has settled since the last tick."""
+    ready: dict[str, str] = {}
+    now = time.monotonic()
+    for df_id, (future, started) in list(_thumb_inflight.items()):
+        state = _future_state(future)
+        if state == _FUTURE_PROCESSING:
+            if now - started > _THUMB_FUTURE_TIMEOUT_SECONDS:
+                del _thumb_inflight[df_id]
+                _thumb_missing.add(df_id)
+            continue
+        del _thumb_inflight[df_id]
+        url = ""
+        if state == _FUTURE_FINISHED:
+            # FailedFutureState is the documented answer for "this DataFile has
+            # no thumbnail", so a miss here is expected, not an error.
+            data_object = getattr(future, "dataObject", None)
+            path = recents.store_thumbnail_object(data_object, df_id)
+            url = recents.png_to_data_url(path) if path else ""
+        if url:
+            ready[df_id] = url
+        else:
+            _thumb_missing.add(df_id)
+    return ready
+
+
+def _start_queued_thumbs() -> None:
+    """Begin up to _THUMB_START_PER_TICK new downloads from the queue."""
+    started = 0
+    while (
+        _thumb_queue
+        and started < _THUMB_START_PER_TICK
+        and len(_thumb_inflight) < _THUMB_MAX_INFLIGHT
+    ):
+        df_id = _thumb_queue.pop(0)
+        if df_id in _thumb_inflight or df_id in _thumb_missing:
+            continue
+        started += 1
+        future = _start_thumb_download(df_id)
+        if future is None:
+            _thumb_missing.add(df_id)
+        else:
+            _thumb_inflight[df_id] = (future, time.monotonic())
+
+
+def _pump_thumbs() -> None:
+    """One turn of the thumbnail pump. Runs on the main thread.
+
+    Harvest what finished, start a little more, push whatever landed, and
+    re-arm only while there is still work. Nothing here blocks: an unfinished
+    future is simply looked at again next tick.
+    """
+    global _thumb_tick_pending
+    _thumb_tick_pending = False
+
+    palette = ui.palettes.itemById(PALETTE_ID)
+    if palette is None or not palette.isVisible:
+        # Nobody is looking — abandon the queue rather than spending
+        # round-trips on cards that are no longer on screen.
+        _reset_thumb_pump()
+        return
+
+    ready = _collect_finished_thumbs()
+    _start_queued_thumbs()
+    if ready:
+        _send_thumbs(palette, ready)
+    _schedule_thumb_tick()
+
+
+def _schedule_thumb_tick() -> None:
+    """Arm the next pump turn, unless one is already coming or there is no work."""
+    global _thumb_tick_pending, _thumb_tick_scheduled_at
+    if not _thumb_queue and not _thumb_inflight:
+        return
+    now = time.monotonic()
+    if (
+        _thumb_tick_pending
+        and now - _thumb_tick_scheduled_at < _THUMB_TICK_STALE_SECONDS
+    ):
+        return
+    _thumb_tick_pending = True
+    _thumb_tick_scheduled_at = now
+    timer = threading.Timer(_THUMB_TICK_SECONDS, _fire_thumb_event)
+    timer.daemon = True  # never hold Fusion open on a pending download
+    timer.start()
+
+
+def _fire_thumb_event() -> None:
+    """Hand the next pump turn to the main thread. Runs on the timer thread.
+
+    As with _fire_finish_event, nothing here may touch the Fusion API beyond
+    fireCustomEvent — ptutil.log calls Application.log and is not thread-safe.
+    """
+    try:
+        app.fireCustomEvent(_THUMB_EVENT_ID)
+    except Exception:
+        pass
+
+
+class _ThumbTickHandler(adsk.core.CustomEventHandler):
+    """Runs _pump_thumbs on the main thread, one timer tick at a time."""
+
+    def notify(self, args):
+        try:
+            _pump_thumbs()
+        except Exception:
+            # A pump failure must never surface as a dialog over the palette;
+            # the worst case is a card keeping its placeholder.
+            _diag(f"thumbnail pump raised: {traceback.format_exc()}")
 
 
 def _find_data_file_by_id(df_id: str):
@@ -738,8 +1010,10 @@ def _list_recent_docs() -> list[dict]:
     electronics files have no meaning here.
 
     The whole list goes to the page, which renders the newest slice and filters
-    across all of it. Any cached thumbnails ride along as data URIs, which is the
-    payload the lazy per-card fetch is meant to replace.
+    across all of it. Metadata only: thumbnails used to ride along as data URIs,
+    which made this payload scale with the cache rather than with what the user
+    can see. The page now requests them per card as they scroll into view (see
+    ``_action_request_thumbs``).
     """
     exclude = set(_inserted_in_session)
     try:
@@ -749,22 +1023,16 @@ def _list_recent_docs() -> list[dict]:
     except Exception:
         pass
 
-    out: list[dict] = []
-    for item in recents.list_recent(
-        exclude_ids=exclude, limit=RECENT_PAYLOAD_LIMIT, file_types=("f3d",)
-    ):
-        # Cached PNGs only: a closed document cannot be rendered with
-        # Component.createThumbnail, so cards without one fall back to the
-        # design-intent placeholder.
-        out.append(
-            {
-                "dataFileId": item["dataFileId"],
-                "name": item["name"],
-                "intent": item["intent"],
-                "thumbUrl": _cached_thumbnail(item["dataFileId"]),
-            }
+    return [
+        {
+            "dataFileId": item["dataFileId"],
+            "name": item["name"],
+            "intent": item["intent"],
+        }
+        for item in recents.list_recent(
+            exclude_ids=exclude, limit=RECENT_PAYLOAD_LIMIT, file_types=("f3d",)
         )
-    return out
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -848,6 +1116,14 @@ def _palette_incoming(html_args: adsk.core.HTMLEventArgs):
         # Only the Open list depends on this — re-send just that.
         if palette:
             palette.sendInfoToHTML("setOpenDocs", json.dumps(_list_open_docs()))
+        html_args.returnData = "OK"
+        return
+
+    if action == "requestThumbs":
+        # Per-card thumbnail demand from the page, driven by what is actually
+        # on screen. Answers from cache in this turn and queues the rest.
+        if palette:
+            _action_request_thumbs(palette, data)
         html_args.returnData = "OK"
         return
 

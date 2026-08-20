@@ -101,6 +101,110 @@ def test_thumb_path_is_stable_and_md5_keyed(tmp_path, monkeypatch) -> None:
     assert recents.thumb_path_for("urn:def") != p1
 
 
+def test_resolve_thumb_dir_prefers_the_addin_cache_folder(
+    tmp_path, monkeypatch
+) -> None:
+    """The cache folder wins when it is writable — the temp dir gets purged."""
+    monkeypatch.setattr(recents, "CACHE_FOLDER", str(tmp_path / "cache"))
+    assert recents._resolve_thumb_dir() == str(tmp_path / "cache" / "thumbs")
+
+
+def test_resolve_thumb_dir_falls_back_when_the_cache_folder_is_unwritable(
+    tmp_path, monkeypatch
+) -> None:
+    """Locked-down installs can have a read-only add-in folder; temp still works.
+
+    The probe is a real write, so this simulates the failure at ``open`` rather
+    than by faking a permission bit — which is the case ``os.access`` misses.
+    """
+    monkeypatch.setattr(recents, "CACHE_FOLDER", str(tmp_path / "cache"))
+
+    import builtins
+
+    real_open = builtins.open
+
+    def deny(path, *args, **kwargs):
+        if str(path).endswith(".writable"):
+            raise PermissionError("read-only install")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", deny)
+    assert recents._resolve_thumb_dir() == recents._LEGACY_THUMB_DIR
+
+
+def test_cached_thumbnail_path_finds_a_legacy_temp_dir_png(
+    tmp_path, monkeypatch
+) -> None:
+    """A thumbnail written before the cache moved is reused, not re-downloaded."""
+    current = tmp_path / "current"
+    legacy = tmp_path / "legacy"
+    current.mkdir()
+    legacy.mkdir()
+    monkeypatch.setattr(recents, "THUMB_DIR", str(current))
+    monkeypatch.setattr(recents, "_LEGACY_THUMB_DIR", str(legacy))
+
+    key = recents._thumb_key("urn:abc")
+    stale = legacy / f"{key}.png"
+    stale.write_bytes(b"PNG")
+
+    assert recents.cached_thumbnail_path("urn:abc") == str(stale)
+
+
+def test_cached_thumbnail_path_prefers_the_current_dir_over_the_legacy_one(
+    tmp_path, monkeypatch
+) -> None:
+    """With both present the current cache wins, so a refresh actually takes."""
+    current = tmp_path / "current"
+    legacy = tmp_path / "legacy"
+    current.mkdir()
+    legacy.mkdir()
+    monkeypatch.setattr(recents, "THUMB_DIR", str(current))
+    monkeypatch.setattr(recents, "_LEGACY_THUMB_DIR", str(legacy))
+
+    key = recents._thumb_key("urn:abc")
+    (legacy / f"{key}.png").write_bytes(b"old")
+    fresh = current / f"{key}.png"
+    fresh.write_bytes(b"new")
+
+    assert recents.cached_thumbnail_path("urn:abc") == str(fresh)
+
+
+def test_cached_thumbnail_path_ignores_a_zero_byte_file(tmp_path, monkeypatch) -> None:
+    """A truncated write must not masquerade as a usable thumbnail."""
+    monkeypatch.setattr(recents, "THUMB_DIR", str(tmp_path))
+    monkeypatch.setattr(recents, "_LEGACY_THUMB_DIR", str(tmp_path))
+    (tmp_path / f"{recents._thumb_key('urn:abc')}.png").write_bytes(b"")
+
+    assert recents.cached_thumbnail_path("urn:abc") == ""
+
+
+def test_store_thumbnail_object_writes_the_cloud_png_into_the_cache(
+    tmp_path, monkeypatch
+) -> None:
+    """A downloaded DataObject lands where both galleries and Open Recent read."""
+    dest = tmp_path / "thumbs"
+    monkeypatch.setattr(recents, "THUMB_DIR", str(dest))
+
+    class FakeDataObject:
+        """DataObject that only exposes the base64 route, as the cloud one does."""
+
+        def getAsBase64String(self):
+            import base64
+
+            return base64.b64encode(b"PNGDATA").decode("ascii")
+
+    path = recents.store_thumbnail_object(FakeDataObject(), "urn:abc")
+
+    assert path == str(dest / f"{recents._thumb_key('urn:abc')}.png")
+    assert (dest / f"{recents._thumb_key('urn:abc')}.png").read_bytes() == b"PNGDATA"
+
+
+def test_store_thumbnail_object_tolerates_a_null_object(tmp_path, monkeypatch) -> None:
+    """A failed future hands back None; storing it is a quiet no-op."""
+    monkeypatch.setattr(recents, "THUMB_DIR", str(tmp_path))
+    assert recents.store_thumbnail_object(None, "urn:abc") == ""
+
+
 def test_touch_recent_skips_the_write_when_nothing_changed(
     tmp_path, monkeypatch
 ) -> None:

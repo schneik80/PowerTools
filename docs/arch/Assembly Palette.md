@@ -30,18 +30,18 @@ C4Container
     Container(palette, "HTML Palette", "resources/html/index.html", "Create form, no-project banner, Open/Recent tabbed galleries, theme")
     ContainerDb(init, "init.js", "Generated sidecar", "window.__ptInit: theme, doc name, open + recent docs, target project")
     ContainerDb(recent, "recent_docs.json", "Local cache (recents_utils)", "Recently-touched part/hybrid/assembly DataFile ids; shared with Open Recent")
-    ContainerDb(thumbs, "Thumbnail cache", "OS temp PNGs (recents_utils)", "Per-DataFile thumbnails keyed by md5(id); shared with Open Recent")
+    ContainerDb(thumbs, "Thumbnail cache", "cache/thumbs PNGs (recents_utils)", "Per-DataFile thumbnails keyed by md5(id); shared with Open Recent")
   }
 
   System_Ext(fusion, "Fusion API", "adsk.core, adsk.fusion")
 
   Rel(user, palette, "Fills create form; clicks document cards; toggles Show referenced children")
-  Rel(palette, python, "fusionSendData('createComponent' / 'insertDoc' / 'setShowChildren' / 'refresh')")
-  Rel(python, palette, "sendInfoToHTML('setOpenDocs' / 'setRecentDocs' / 'setTheme')")
+  Rel(palette, python, "fusionSendData('createComponent' / 'insertDoc' / 'setShowChildren' / 'requestThumbs' / 'refresh')")
+  Rel(python, palette, "sendInfoToHTML('setOpenDocs' / 'setRecentDocs' / 'setThumbs' / 'setTheme')")
   Rel(python, init, "Writes state before palette open")
   Rel(python, recent, "Reads / appends recent entries")
-  Rel(python, thumbs, "Renders + reads cached thumbnails")
-  Rel(python, fusion, "addNewExternalComponent, addByInsert, createThumbnail")
+  Rel(python, thumbs, "Renders, downloads + reads cached thumbnails")
+  Rel(python, fusion, "addNewExternalComponent, addByInsert, createThumbnail, DataFile.thumbnail")
 ```
 
 ```mermaid
@@ -54,9 +54,9 @@ C4Component
     Component(state, "Palette state", "_gather_palette_state", "Theme, doc name, open docs, recent docs, target project")
     Component(open, "Open enumerator", "_list_open_docs", "Top-level filter (documentReferences), dedup by id, excludes active/unsaved/inserted")
     Component(recent, "Recent enumerator", "_list_recent_docs", "Cache filtered to not-open + not-inserted; newest-first; dedup")
-    Component(thumbs, "Thumbnail engine", "_thumbnail_for_open_doc", "Component.createThumbnail -> PNG cache -> data URL")
+    Component(thumbs, "Thumbnail pump", "_pump_thumbs", "Disk cache / createThumbnail / DataFile.thumbnail future -> PNG cache -> data URL")
     Component(project, "Target-project resolver", "cache.resolve_target_folder", "Saved doc's folder -> activeProject.rootFolder; None -> no-project banner + Create disabled")
-    Component(actions, "Action router", "_palette_incoming", "createComponent / insertDoc / setShowChildren / launch handoffs / launchFasteners / refresh / recheckProject")
+    Component(actions, "Action router", "_palette_incoming", "createComponent / insertDoc / setShowChildren / requestThumbs / launch handoffs / launchFasteners / refresh / recheckProject")
   }
 
   System_Ext(fusion, "Fusion API")
@@ -66,7 +66,7 @@ C4Component
   Rel(state, open, "Lists open documents")
   Rel(state, recent, "Lists recent documents")
   Rel(state, project, "Resolves target folder + label")
-  Rel(open, thumbs, "Renders thumbnails for open docs")
+  Rel(actions, thumbs, "requestThumbs queues the cards on screen")
   Rel(actions, project, "recheckProject re-resolves (no Fusion event)")
   Rel(actions, fusion, "addNewExternalComponent / addByInsert")
   Rel(project, fusion, "activeDocument.dataFile / activeHub / activeProject.rootFolder")
@@ -88,7 +88,7 @@ sequenceDiagram
     Fusion->>Trigger: documentActivated
     Trigger->>Trigger: Empty + unsaved + Assembly? not already shown?
     Trigger->>Python: _show_palette()
-    Python->>Python: _gather_palette_state() (open + recent docs, thumbnails, target project)
+    Python->>Python: _gather_palette_state() (open + recent docs as metadata, target project)
     Python->>Palette: write init.js + palettes.add()
 
     opt No target project (activeProject raises id.size())
@@ -159,11 +159,31 @@ Fusion answers this directly and instantly: `Document.documentReferences` raises
 ### Why a generated `init.js` instead of a message handshake?
 As with Assembly Builder, the palette loads asynchronously and `palettes.add()` rejects a query string on the URL. Writing `resources/html/init.js` (theme, document name, open docs, recent docs) **before** creating the palette lets the page read `window.__ptInit` synchronously and apply the correct theme before the first paint. A reopened palette is refreshed via `sendInfoToHTML` instead.
 
-### Why render thumbnails with `Component.createThumbnail`?
-The DataFile-backed cloud thumbnail did not resolve reliably in the target build. Rendering the live root component is dependable while a document is open, so thumbnails are generated for open documents and cached on disk (keyed by `md5(dataFileId)` in the OS temp folder). The Recent gallery — whose documents are closed and cannot be rendered — reuses whatever PNG was cached while the document was last open, falling back to a placeholder.
+### Where do thumbnails come from?
+Two sources, because neither covers the whole gallery on its own:
+
+* **`Component.createThumbnail`** renders the live root component. Local and instant, but it needs an open design — so it only serves the Open tab (and pre-warms the cache on `documentActivated`).
+* **`DataFile.thumbnail`** downloads the 256×256 PNG Fusion already holds in the cloud. This is the only route for a **closed** document, which is most of the Recent gallery and *all* of it right after a hub switch.
+
+An earlier note here claimed the DataFile-backed thumbnail "did not resolve reliably in the target build", and the palette was built on `createThumbnail` alone as a result. That was wrong, and the cost was severe: a card only ever had a thumbnail if that document had been opened on *this machine* since the cache was last wiped. Switching hubs produced a gallery of placeholders that could only be filled by opening several hundred documents one at a time. `commands/refrences/entry.py` had a working `DataFile.thumbnail` implementation the whole time, and the debug log records it succeeding. A `FailedFutureState` is the API's documented answer for *"this DataFile has no thumbnail"* — a per-file miss, not a broken mechanism.
+
+### Why a thumbnail *pump* rather than a straight fetch?
+`DataFile.thumbnail` returns a `DataObjectFuture`, and `adsk.core.Future` exposes only `state` — there is no completion event, so a result can only be collected by polling. Reference Manager polls inline (`adsk.doEvents()` + `time.sleep` against a 5 s deadline), which is fine behind a modal progress bar and unacceptable in a palette the user is scrolling.
+
+So each poll is one turn of a timer-fired `customEvent` (`_THUMB_EVENT_ID`), reusing the deferral mechanism the post-insert chain already needed. Each turn harvests whatever settled, starts a few more downloads, pushes the batch to the page, and re-arms only while work remains. The UI thread is never held.
+
+The throttles matter for one reason: `Data.findFileById` is a cloud round-trip on the main thread, and it is the *only* expensive call — reading `.thumbnail` afterwards merely starts an async download. Hence `_THUMB_START_PER_TICK` (few new resolutions per turn, spreading the cost over several turns instead of one stall) against a much larger `_THUMB_MAX_INFLIGHT` (waiting on a future is free).
+
+Failure modes are all bounded: a future stuck in `ProcessingFutureState` is abandoned after `_THUMB_FUTURE_TIMEOUT_SECONDS`; an id with no cloud thumbnail goes into a negative cache so it is never retried; and because `fireCustomEvent` is observed to return `False` even when it works, a tick that never arrives is re-armed once it goes stale rather than wedging the queue.
+
+### Why are thumbnails fetched per card instead of shipped with the gallery?
+The Recent payload carries up to 300 entries so the page can filter across all of them, but it renders 40 and shows about a dozen. Embedding every cached PNG as a data URI made the payload scale with the *cache* rather than with what the user can see — megabytes to paint a handful of cards. Galleries are now metadata only; the page watches cards with an `IntersectionObserver` and asks for a batch (`requestThumbs`) shortly before each scrolls into view, and the backend answers with `setThumbs` as results land. Answers are memoised in the page, so filtering and tab switches repaint from memory without re-asking.
+
+### Why did the thumbnail cache move out of the OS temp dir?
+It was in `$TMPDIR` because the bundled add-in folder can be read-only on locked-down installs. That trade cost more than it bought: macOS purges `/var/folders/…/T` on its own schedule, so a cache that could only be refilled by re-opening each document individually was being wiped out from under the user. `cache/thumbs` is now preferred and the temp dir is the fallback, chosen once at import by writing a probe file rather than by guessing at permissions (`os.access` lies on Windows network shares). The old location is still *read* on a cache miss, so thumbnails from earlier builds are not re-downloaded. Lineage URNs are globally unique, so the flat `md5(dataFileId)` keying needs no per-hub namespace.
 
 ### Why is the recents cache shared with Open Recent?
-The recents cache (`cache/recent_docs.json`) and the per-document thumbnail store were originally private to this command. The [Open Recent](./Open%20Recent.md) File-menu flyout surfaces the same list, so the data layer — cache format/location, thumbnail key scheme and rendering, and the `read`/`write`/`touch`/`list`/`remember` helpers — was extracted into `lib/ptAddInUtils/recents_utils` (mirroring how `cache_utils` owns the Global Parameters cache formats). Assembly Palette now delegates its recents helpers to that module, keeping one source of truth so the palette gallery and the File-menu flyout can never drift.
+The recents cache (`cache/recent_docs.json`) and the per-document thumbnail store (`cache/thumbs`) were originally private to this command. The [Open Recent](./Open%20Recent.md) File-menu flyout surfaces the same list, so the data layer — cache format/location, thumbnail key scheme and rendering, and the `read`/`write`/`touch`/`list`/`remember` helpers — was extracted into `lib/ptAddInUtils/recents_utils` (mirroring how `cache_utils` owns the Global Parameters cache formats). Assembly Palette now delegates its recents helpers to that module, keeping one source of truth so the palette gallery and the File-menu flyout can never drift.
 
 ### Why a "no target project" banner (and manual re-check)?
 A new external component needs a target `DataFolder` for its eventual save. The backend resolves one via `cache.resolve_target_folder()` — the active document's own folder when it is already saved, otherwise `app.data.activeProject.rootFolder`. That `activeProject` access raises `InternalValidationError('id.size()')` when the Data Panel has no project in context. Because a raise inside the palette's `incomingFromHTML` handler is swallowed by the `DEBUG`-gated `handle_error()`, this previously read to the user as **nothing happening** on *New Component*. The palette now surfaces an unresolved project as a banner and disables *New Component* until one is available. Fusion exposes **no active-project-changed event** (`Data.activeProject` is a plain property with no event), so the palette can't observe the user picking a project: it re-checks on demand instead — via a **Re-check** button on the banner and automatically when the palette page regains focus (a lightweight `recheckProject` message that re-resolves only the target folder). The same resolver and banner back the Assembly Builder's *Create Assembly* gate.
