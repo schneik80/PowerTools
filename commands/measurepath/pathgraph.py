@@ -414,6 +414,33 @@ def shortest(graph, starts, ends, kinds=None, seed=None, tail=None):
     return None, 0.0
 
 
+def traversal(segs, start_candidates):
+    """Return (seg, entry_node) pairs for an ordered chain, in traversal order.
+
+    Seg is deliberately undirected, so the sense of each step exists only as the
+    node the chain arrived from. Anything drawing a direction needs that node,
+    and re-deriving it means chaining forward from the origin endpoints() found.
+
+    Args:
+        segs: Segments in traversal order.
+        start_candidates: Nodes the chain might have started from.
+
+    Returns:
+        A list of (seg, entry_node) pairs, empty when the chain does not chain
+        cleanly from any candidate - better than guessing a sense the caller
+        would then draw backwards.
+    """
+    origin, _ = endpoints(segs, start_candidates)
+    if origin is None:
+        return []
+    node = origin
+    pairs = []
+    for seg in segs:
+        pairs.append((seg, node))
+        node = seg.other(node)
+    return pairs
+
+
 def resolve(graph, starts, ends, kinds_order, choices=None, seeds=None, tail=None):
     """Try to find a chain, escalating through the disambiguation rules.
 

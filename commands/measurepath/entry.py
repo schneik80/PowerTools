@@ -110,6 +110,18 @@ _COLOR_HOVER = (255, 255, 255, 255)
 _COLOR_START = (70, 200, 120, 255)
 _COLOR_END = (235, 95, 95, 255)
 
+# Pixel geometry of the per-segment direction markers on a resolved chain. They
+# sit at each segment's midpoint, so they are smaller than the branch cones -
+# which sit alone at a fork and have to be easy to click.
+_PATH_CONE_PX_LENGTH = 22.0
+_PATH_CONE_PX_RADIUS = 6.5
+_PATH_LABEL_PX_SIZE = 10.5
+_PATH_LABEL_PX_OFFSET = 9.0
+# Above this many segments the per-segment markers are skipped: a cone plus a
+# label each, rebuilt every preview cycle, stalls the viewport long before the
+# numbers become legible. The status box says when this bites.
+_MAX_PATH_MARKERS = 250
+
 # Command state. Module globals, matching every other command in this add-in.
 _graph = None
 _node_coords = ()
@@ -139,6 +151,9 @@ _marker_gfx = {}
 # Nodes carrying the Start / End labels.
 _marker_start = ()
 _marker_end = ()
+# Resolved chain the preview draws per-segment markers for. Empty while the
+# chain is unresolved or above the marker cap.
+_path_segs = []
 
 
 def _is_design_workspace(workspace) -> bool:
@@ -344,6 +359,8 @@ def _reset_state() -> None:
     global _picks
     global _press_xy, _last_pick_xy, _pending_node
     global _preview_pending, _marker_gfx, _marker_start, _marker_end
+    global _path_segs
+    _path_segs = []
     _press_xy = None
     _last_pick_xy = None
     _pending_node = None
@@ -759,7 +776,7 @@ def _resolve_and_draw(inputs) -> None:
             return
         _result_cm = length
         result_box.text = _format(length)
-        status_box.text = f"Shortest path, {len(segs)} segment(s)."
+        status_box.text = f"Shortest path, {len(segs)} segment(s).{_marker_note(segs)}"
         branch_sel.isVisible = False
         undo.isVisible = False
         _fill_table(table, segs)
@@ -795,7 +812,9 @@ def _resolve_and_draw(inputs) -> None:
             "edges": "Ambiguous overall; resolved as the only all-edge chain.",
             "sketch": "Ambiguous overall; resolved as the only all-sketch chain.",
         }.get(how, "Chain resolved.")
-        status_box.text = f"{note} {len(result.segs)} segment(s)."
+        status_box.text = (
+            f"{note} {len(result.segs)} segment(s).{_marker_note(result.segs)}"
+        )
         branch_sel.isVisible = False
         _fill_table(table, result.segs)
         _request_preview()
@@ -836,16 +855,26 @@ def _report_unreachable(result_box, status_box, branch_sel, undo, table) -> None
     _request_preview()
 
 
+def _marker_note(segs) -> str:
+    """Say so when a chain is too long to mark up, rather than silently not."""
+    if len(segs) <= _MAX_PATH_MARKERS:
+        return ""
+    return f" Segment markers hidden above {_MAX_PATH_MARKERS} segments."
+
+
 def _set_markers(segs, resolved) -> None:
-    """Decide where the Start and End labels go.
+    """Decide where the Start and End labels go, and what the preview marks up.
 
     A resolved chain gets exactly one of each, at its real terminals, which is
     what tells the user the path's sense. While a chain is still partial the
     target end anchors are labelled instead, so the markers show where the
     measurement is heading rather than where it has got to.
     """
-    global _marker_start, _marker_end
+    global _marker_start, _marker_end, _path_segs
     origin, terminus = pathgraph.endpoints(segs, _start_nodes)
+    # Per-segment markers describe a finished answer, so a partial chain gets
+    # none - numbering a chain that is about to change would mislead.
+    _path_segs = list(segs) if resolved and len(segs) <= _MAX_PATH_MARKERS else []
     if resolved and origin is not None and terminus is not None:
         _marker_start = (origin,)
         _marker_end = (terminus,)
@@ -1050,6 +1079,10 @@ def command_execute_preview(args: adsk.core.CommandEventArgs) -> None:
         _hit_targets.clear()
         _marker_gfx.clear()
         _draw_terminals()
+        # Mutually exclusive with the candidate cones below: _path_segs is only
+        # populated for a resolved chain, _candidates only for an unresolved one.
+        if _path_segs:
+            _draw_path_markers(_path_segs)
         if _candidates and _pending_node is not None:
             _draw_candidates(_pending_node, _candidates)
         adsk.core.Application.get().activeViewport.refresh()
@@ -1198,6 +1231,96 @@ def _draw_candidates(node, candidates) -> None:
         ptutil.log(f"{CMD_NAME}: manipulator draw failed\n{traceback.format_exc()}")
 
 
+def _ramp(index: int, count: int) -> tuple:
+    """RGBA at position *index* of *count* on the Start-green to End-red ramp.
+
+    Reusing the terminal colours as the ends of the ramp is what ties the
+    per-segment markers to the Start and End dots: the chain visibly runs from
+    one colour to the other rather than carrying an unrelated palette.
+    """
+    fraction = 0.0 if count < 2 else index / (count - 1)
+    return tuple(
+        int(round(first + (second - first) * fraction))
+        for first, second in zip(_COLOR_START, _COLOR_END, strict=True)
+    )
+
+
+def _draw_path_markers(segs) -> None:
+    """Raise a numbered direction cone at the midpoint of each resolved segment.
+
+    Each cone runs base to apex along its own segment in the direction the chain
+    travels, so the markers show the path's sense and not just its route, and
+    the number ties each one to its row in the Segments table. The colour ramps
+    green to red across the chain, which is what makes a long path readable in
+    order rather than as an undifferentiated highlight.
+
+    These cones are deliberately kept out of _hit_targets and _marker_gfx: those
+    drive the branch manipulator, and a resolved chain has nothing to pick.
+    """
+    try:
+        pairs = pathgraph.traversal(segs, _start_nodes)
+        if not pairs:
+            return
+        group = _group()
+        if group is None:
+            return
+
+        temp = adsk.fusion.TemporaryBRepManager.get()
+        total = len(pairs)
+
+        for index, (seg, node) in enumerate(pairs):
+            if node >= len(_node_coords):
+                continue
+            scale = _px_per_cm(_node_coords[node])
+            if scale:
+                length_cm = _PATH_CONE_PX_LENGTH / scale
+                radius_cm = _PATH_CONE_PX_RADIUS / scale
+                text_cm = _PATH_LABEL_PX_SIZE / scale
+                offset_cm = _PATH_LABEL_PX_OFFSET / scale
+            else:
+                # No usable projection (segment near-parallel to the view axis):
+                # fall back to sizing off the segment itself.
+                length_cm = min(0.15 * seg.length, 0.8)
+                radius_cm = max(length_cm * 0.3, 0.04)
+                text_cm = 0.2
+                offset_cm = 0.14
+
+            # Keep the whole cone on its own segment, straddling the midpoint.
+            limit = _MARKER_MAX_FRAC * seg.length
+            if length_cm > limit:
+                radius_cm *= limit / max(length_cm, 1e-6)
+                length_cm = limit
+            middle = seg.length * 0.5
+            half = length_cm * 0.5
+
+            base = _point_along(seg, node, middle - half)
+            apex = _point_along(seg, node, middle + half)
+            if base is None or apex is None:
+                continue
+
+            colour = _color(_ramp(index, total))
+            body = temp.createCylinderOrCone(
+                base, radius_cm, apex, radius_cm * _CONE_APEX_FRAC
+            )
+            if body is not None:
+                marker = group.addBRepBody(body)
+                marker.color = colour
+                marker.depthPriority = 2
+                marker.isSelectable = False
+
+            _billboard_text(
+                group,
+                (apex.x, apex.y, apex.z),
+                str(index + 1),
+                colour,
+                text_cm,
+                offset_cm,
+            )
+
+    except Exception:
+        ptutil.log(f"{CMD_NAME}: segment marker draw failed\n{traceback.format_exc()}")
+
+
 def _draw_terminals() -> None:
     """Mark and label where the measured path starts and ends.
 
@@ -1246,9 +1369,16 @@ def _draw_terminal(group, node, rgba, label) -> None:
         dot.depthPriority = 3
         dot.isSelectable = False
 
-    # addText places the string parallel to X-Y with its origin at the upper-left
-    # corner, so on its own it would be edge-on from most viewpoints. Billboarding
-    # turns it to face the camera; the transform only carries position.
+    _billboard_text(group, point, label, colour, text_cm, offset_cm)
+
+
+def _billboard_text(group, point, label, colour, text_cm, offset_cm) -> None:
+    """Place *label* near *point*, turned to face the camera.
+
+    addText places the string parallel to X-Y with its origin at the upper-left
+    corner, so on its own it would be edge-on from most viewpoints. Billboarding
+    turns it to face the camera; the transform only carries position.
+    """
     label_point = adsk.core.Point3D.create(
         point[0] + offset_cm, point[1] + offset_cm, point[2]
     )
@@ -1505,7 +1635,8 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs) -> None:
 
 def _reset_graph_only() -> None:
     global _graph, _start_nodes, _end_nodes, _seeds, _tail, _candidates
-    global _pending_node, _marker_start, _marker_end
+    global _pending_node, _marker_start, _marker_end, _path_segs
+    _path_segs = []
     _graph = None
     _start_nodes = ()
     _end_nodes = ()

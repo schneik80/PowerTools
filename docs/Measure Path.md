@@ -45,6 +45,7 @@ The path is annotated as you go:
 | Highlighted curves | The chain currently being measured |
 | Green dot labelled **Start** | Where the measurement begins |
 | Red dot labelled **End** | Where it finishes |
+| Numbered cone, green through red | One per segment of a **finished** path, at that segment's midpoint, pointing the way the path runs |
 | Amber cone | An available direction at a fork, its point aimed the way that branch runs |
 | White cone | The direction under your cursor |
 
@@ -56,6 +57,19 @@ terminals. That is what tells you the path's **sense** — which matters as soon
 chain doubles back on itself, or the two objects you picked look alike. While a path
 is still unresolved, End sits on the target you picked, so you can see where the
 measurement is heading rather than only where it has got to.
+
+### Segment numbers
+
+The numbered cones appear only once a path is complete, and each carries the number of
+its row in the **Segments** table — so a row and a piece of geometry can always be
+matched up. Each cone sits at its segment's midpoint and points the way the path
+travels, which shows the path's sense along its whole length rather than only at the
+two ends.
+
+Their colour ramps from the green of the Start dot to the red of the End dot across
+the chain. That is what lets you read a long path in order at a glance instead of as
+one undifferentiated highlight. Above 250 segments the cones are skipped and the
+status line says so.
 
 ## Shortest path, or steer it yourself
 

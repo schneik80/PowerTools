@@ -40,6 +40,7 @@ C4Component
         Component(highlight, "_highlight()", "Python", "Highlights the chain via a limits-0,0 SelectionCommandInput")
         Component(preview, "command_execute_preview()", "Python", "The ONLY place custom graphics are created")
         Component(terminals, "_draw_terminals()", "Python", "Start/End dots with billboarded text labels")
+        Component(markers, "_draw_path_markers()", "Python", "Numbered, green-to-red direction cone per resolved segment")
         Component(cones, "_draw_candidates()", "Python", "A direction cone per branch candidate, base on the curve")
         Component(mouse, "command_mouse_up() / _hit()", "Python", "Drag-guarded, de-duplicated cone hit test")
         Component(preselect, "command_pre_select()", "Python", "Restricts picking to the current candidate set")
@@ -51,6 +52,7 @@ C4Component
         Component(short, "shortest()", "Python", "Dijkstra over arc length")
         Component(res, "resolve()", "Python", "The disambiguation ladder")
         Component(ends, "endpoints()", "Python", "Locates the chain's true terminals")
+        Component(trav, "traversal()", "Python", "Re-derives the node each segment is entered from")
     }
     System_Ext(fusion, "Autodesk Fusion", "Topology, selection, custom graphics")
     Rel(created, changed, "Registers handler")
@@ -64,6 +66,8 @@ C4Component
     Rel(resolve_ui, ends, "To place Start/End")
     Rel(resolve_ui, preview, "Requests a cycle")
     Rel(preview, terminals, "Draws")
+    Rel(preview, markers, "Draws when the chain is resolved")
+    Rel(markers, trav, "Asks which way each segment runs")
     Rel(preview, cones, "Draws when a branch is pending")
     Rel(mouse, resolve_ui, "Commits a branch choice")
     Rel(preselect, fusion, "Rejects non-candidates")
@@ -141,6 +145,31 @@ segment already in the chain, so a curve picked as *both* start and end counts o
 The reported **Length** is therefore always exactly the sum of the **Segments** rows.
 `tests/test_measurepath_pathgraph.py::test_total_always_equals_the_sum_of_the_breakdown`
 brute-forces that invariant over every start/end/seed/tail combination.
+
+### Per-segment markers are derived, not stored
+
+`Seg` is deliberately undirected: `a` and `b` are two node indices with no sense
+between them, and traversal order lives only in a list's ordering. The per-segment
+cones need to know which way each segment runs, so `traversal()` re-derives it by
+chaining forward from the origin `endpoints()` found, returning `(seg, entry_node)`
+pairs. It returns **empty** when the chain does not chain cleanly, rather than
+guessing a sense that would then be drawn backwards.
+
+Each cone is built from two `_point_along()` calls straddling the arc-length midpoint,
+so it follows a curved segment instead of chording it, and its base-to-apex sense is
+the direction of travel. The colour ramp runs between `_COLOR_START` and `_COLOR_END` —
+the terminal dot colours — so the markers read as part of the same annotation rather
+than an unrelated palette, and the number on each is its row in the Segments table.
+
+Markers are drawn only for a **resolved** chain: `_set_markers()` populates
+`_path_segs` only when `resolved`, because numbering a chain that is about to change
+would mislead. They are kept out of `_hit_targets` and `_marker_gfx` — those drive the
+branch manipulator, and a resolved chain has nothing left to pick. The two cone
+families can never coexist: `_path_segs` is non-empty only when `_candidates` is empty,
+and vice versa.
+
+`_MAX_PATH_MARKERS` caps the count at 250, and `_marker_note()` says so in the status
+box when it bites, so a silently unannotated path cannot be mistaken for a short one.
 
 ### Custom graphics only in `executePreview`
 
@@ -233,6 +262,7 @@ Each has a logged fallback rather than an exception:
 | `createCylinderOrCone` with a sliver apex radius | Returns null → cone skipped |
 | `doExecutePreview()` from a mouse handler | Input-driven changes get their own preview |
 | Occurrence-proxy `vertex.geometry` being root-space | Logged for diagnosis |
+| Per-segment marker cost at the 250-segment cap | Cap plus a status note; typical paths are an order of magnitude smaller |
 
 ---
 

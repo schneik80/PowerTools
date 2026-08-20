@@ -78,6 +78,25 @@ def chain():
     return build(CHAIN)
 
 
+E = (1.0, 1.0, 0.0)
+F = (0.0, 1.0, 0.0)
+
+# A unit square: A -q1- B -q2- E -q3- F -q4- back to A. A chain that comes back
+# to the node it left is rare but reachable - pick a curve as Start and its own
+# far endpoint as End - and traversal() has to keep its footing on one.
+SQUARE = (
+    ("q1", A, B, 1.0, EDGE),
+    ("q2", B, E, 1.0, EDGE),
+    ("q3", E, F, 1.0, EDGE),
+    ("q4", F, A, 1.0, EDGE),
+)
+
+
+@pytest.fixture
+def square():
+    return build(SQUARE)
+
+
 # --------------------------------------------------------------------------
 # Welding
 # --------------------------------------------------------------------------
@@ -410,6 +429,42 @@ def test_endpoints_of_a_chain_that_doubles_back():
     )
     segs = [graph.segs[key] for key in ("a", "b", "c")]
     assert pathgraph.endpoints(segs, [node_of[A]]) == (node_of[A], node_of[back])
+
+
+# --------------------------------------------------------------------------
+# Traversal sense, used to point the per-segment direction cones
+# --------------------------------------------------------------------------
+
+
+def test_traversal_reports_the_node_each_segment_is_entered_from(chain):
+    graph, node_of = chain
+    segs = [graph.segs[key] for key in ("e1", "e2", "e3")]
+    pairs = pathgraph.traversal(segs, [node_of[A]])
+    assert [(seg.key, node) for seg, node in pairs] == [
+        ("e1", node_of[A]),
+        ("e2", node_of[B]),
+        ("e3", node_of[C]),
+    ]
+
+
+def test_traversal_of_a_circuit_runs_all_the_way_round(square):
+    """A circuit's origin and terminus are the same node, which must not stall it."""
+    graph, node_of = square
+    segs = [graph.segs[key] for key in ("q1", "q2", "q3", "q4")]
+    assert [node for _seg, node in pathgraph.traversal(segs, [node_of[A]])] == [
+        node_of[A],
+        node_of[B],
+        node_of[E],
+        node_of[F],
+    ]
+
+
+def test_traversal_of_an_unchainable_list_is_empty(chain):
+    """No sense at all beats a plausible wrong one drawn as arrows."""
+    graph, node_of = chain
+    segs = [graph.segs[key] for key in ("e1", "e2", "e3")]
+    assert pathgraph.traversal(segs, [node_of[C]]) == []
+    assert pathgraph.traversal([], [node_of[A]]) == []
 
 
 # --------------------------------------------------------------------------
