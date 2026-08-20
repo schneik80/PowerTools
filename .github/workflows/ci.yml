@@ -17,7 +17,7 @@ jobs:
       # Pin ruff to the version the repo was formatted with so
       # `ruff format --check` does not drift between ruff releases.
       - name: Install tools
-        run: python -m pip install "ruff==0.15.12" "pytest>=8.0"
+        run: python -m pip install "ruff==0.15.20" "pytest>=8.0"
 
       # Hard gate: the whole tree must stay `ruff format`-clean.
       - name: Formatting (ruff format --check)

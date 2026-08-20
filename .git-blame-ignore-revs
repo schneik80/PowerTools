@@ -10,3 +10,6 @@
 
 # style: apply mechanical ruff fixes (imports, f-strings, loop vars)
 89f298d60b48cec6cce1a4881fc9e3d0dd0bf994
+
+# style: ruff format the Team Add-ins package and config.py
+ef424c699e43822fd171592cc327a84c383cb5bf
