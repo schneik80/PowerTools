@@ -105,8 +105,8 @@ Most commands appear in **Design › Tools › Power Tools**. Some appear in oth
 
 | Command | Location | Description |
 | --- | --- | --- |
-| [Create Related Data](./docs/Related%20Data.md) | Design › Solid | Create related documents from configured templates. |
-| [Select Related Data Folder](./docs/Select%20Related%20Data%20Folder.md) | File › PowerTools Settings | Configure the hub/project/folder used for related data. |
+| [Create Related Data](./docs/Related%20Data.md) | Design › Solid | Create a new document referencing the active document from a folder in team of pre-created start documents. |
+| [Select Related Data Folder](./docs/Select%20Related%20Data%20Folder.md) | File › PowerTools Settings | Configure the hub/project/folder used for related data start documents. |
 
 ### Team Add-ins
 
