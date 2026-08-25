@@ -96,19 +96,19 @@ Most commands appear in **Design › Tools › Power Tools**. Some appear in oth
 | Command | Location | Description |
 | --- | --- | --- |
 | [Sketch Repair](./docs/SketchFix.md) | Sketch › Modify | Repair common sketch profile issues automatically. |
-| [Round Sketch Dimensions](./docs/Round%20Sketch%20Dimensions.md) | Sketch › Modify | Round the active sketch's dimensions to an adjustable increment, with a live preview. Especialy useful for updating a sketch after autoconstrain. |
+| [Round Sketch Dimensions](./docs/Round%20Sketch%20Dimensions.md) | Sketch › Modify | Round the active sketch's dimensions to an adjustable increment. Especialy useful for updating a sketch after autoconstrain. |
 | [Under-Constrained Sketch](./docs/SketchUnder.md) | Sketch | Highlight under-constrained sketch geometry. |
 | [Radial Hole Circle](./docs/RadialHoleCircle.md) | Sketch | Add center points for a radial pattern of holes. |
 | [Mirror Derive](./docs/MirrorDerive.md) | Design › Solid | Create a mirrored derived component. |
 | [Hide Objects](./docs/HideObjects.md) | Design › Tools | Quickly hide objects from a list of options. |
-| [Timeline Compute Times](./docs/Timeline%20Compute%20Times.md) | Design › Solid | Measure per-feature timeline compute timesand display a relative time report. |
-| [Measure Path](./docs/Measure%20Path.md) | Design › Inspect | Total the length of a connected chain of edges and sketch curves. |
+| [Timeline Compute Times](./docs/Timeline%20Compute%20Times.md) | Design › Solid | Measure per-feature timeline compute times and display a relative report. |
+| [Measure Path](./docs/Measure%20Path.md) | Design › Inspect | Total the length of a chain of edges and sketch curves. |
 
 ### Animation
 
 | Command | Location | Description |
 | --- | --- | --- |
-| [Save Named View](./docs/Animation%20Named%20View.md) | Animation › Power Tools | Save the Animation viewport camera as a named view on the design, named from the active storyboard. Panel sits after **View**, before **Publish**. Very handy for saving the view in wich you crete an exploded view in the animation workspace. |
+| [Save Named View](./docs/Animation%20Named%20View.md) | Animation › Power Tools | Save the Animation viewport camera as a named view on the design, named from the active storyboard. Very handy for saving the view in which you crete an exploded view in the animation workspace. |
 
 ### Related Data
 
@@ -130,7 +130,7 @@ Share add-ins across a team through one hub folder — `Assets / Shared Addins` 
 
 | Command | Location | Description |
 | --- | --- | --- |
-| [Scripts and Add-ins](./docs/Scripts%20and%20Add-ins.md) | QAT › File menu | Open Fusion's built-in Scripts and Add-Ins manager from the File menu, above PowerTools Preferences. When using home tab this allows access to to the scripts and add-ins manager when no document is open. |
+| [Scripts and Add-ins](./docs/Scripts%20and%20Add-ins.md) | QAT › File menu | Open Fusion's built-in Scripts and Add-Ins manager from the File menu. When using home tab, this allows access to to the scripts and add-ins manager when no document is open. |
 
 ### Share
 
@@ -138,7 +138,7 @@ All sharing commands appear in the **Share Menu** flyout on the right-hand Quick
 
 | Command | Location | Description |
 | --- | --- | --- |
-| [Get a Share Link](./docs/Get%20a%20Share%20Link.md) | QAT › Share Menu | Create or copy a public share link for the active document. |
+| [Get a Share Link](./docs/Get%20a%20Share%20Link.md) | QAT › Share Menu | Create and copy a public share link for the active document. |
 | [Change Share Settings](./docs/Change%20Share%20Settings.md) | QAT › Share Menu | Manage download and password protection for the share link. |
 | [Get Open on Desktop Link](./docs/Get%20Open%20on%20Desktop%20Link.md) | QAT › Share Menu | Get a link that opens the document in the Fusion desktop client. |
 | [Get Open in Team Link](./docs/Get%20Open%20in%20Team%20Link.md) | QAT › Share Menu | Get a link that opens the document in Autodesk Fusion Team web client. |
