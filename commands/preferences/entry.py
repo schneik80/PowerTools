@@ -57,8 +57,6 @@ CONFIG_TEAM_ADDINS_CMD_ID = (
     f"{config.COMPANY_NAME}_{config.ADDIN_NAME}_configTeamAddins"
 )
 
-local_handlers = []
-
 
 # ---------------------------------------------------------------------------
 # Lifecycle — a single entry in the QAT File dropdown
@@ -158,12 +156,19 @@ def stop():
 
 
 def command_created(args: adsk.core.CommandCreatedEventArgs):
-    ptutil.add_handler(
-        args.command.execute, command_execute, local_handlers=local_handlers
-    )
+    """Open the palette straight from the click.
 
-
-def command_execute(args: adsk.core.CommandEventArgs):
+    Deliberately *not* by way of the command's execute event. This item has no
+    CommandInputs and no dialog, so there is nothing for execute to commit —
+    and execute only fires when Fusion runs the command through its
+    document-scoped pipeline. With no document open the control was live and
+    commandCreated fired, but the command terminated without executing, so the
+    palette never opened and nothing appeared in the log because nothing had
+    raised. The File-menu commands that already work with no document (Close
+    All Documents, Toggle Data Pane, Scripts and Add-Ins) all do their work
+    here for the same reason.
+    """
+    ptutil.log(f"{CMD_NAME}: opening palette.")
     _show_palette()
 
 

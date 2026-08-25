@@ -301,6 +301,40 @@ sequenceDiagram
 > advance while a command with `CommandInputs` holds the main thread.
 > `ptutil.upload_utils.wait_for_upload()` polls such saves to completion.
 
+### `execute` does not fire when no document is open
+
+"Commands that present no dialog inputs execute immediately after creation"
+holds only while a document is open. Fusion runs a command through a
+**document-scoped** pipeline: with nothing open, the control is still live and
+`commandCreated` still fires, but the command terminates without ever raising
+`execute`.
+
+For anything reachable from the QAT File dropdown — which is usable on the
+start screen, before any document exists — that means **a command with no
+`CommandInputs` must do its work in `commandCreated`, not in `execute`.** There
+is nothing for `execute` to commit in that case, so the extra hop buys nothing
+and costs the no-document case entirely.
+
+This is why `closealldocuments`, `datatoggle`, and `scriptsmanager` all act
+directly from `commandCreated`, and it is why **Preferences** — the one
+File-menu command that used an `execute` handler — did nothing when clicked
+with no document open. That failure is silent and leaves no trace: nothing
+raises, so the `try/except handle_error` wrapper in `event_utils.add_handler`
+has nothing to log, even on a DEBUG build. Absence of a traceback is *not*
+evidence the handler ran.
+
+Note this is a distinct failure from the one fixed in `2afdbe1`, where the
+QAT File dropdown was unresolvable at add-in load and the menu entry was never
+placed. Both present as "Preferences needs a document"; only the placement one
+is a timing problem. Confirm which is which by checking whether the entry
+appears in the DEBUG log's `Open Recent: File dropdown control IDs = [...]`
+dump — it lists every control actually in the menu.
+
+Still on `execute` handlers, and reachable without a document: each **Open
+Recent** flyout item registers an `execute` handler
+(`commands/openrecent/entry.py:352-362`), so opening a recent file from the
+start screen is expected to hit the same wall.
+
 ---
 
 ## Shared utility library — `lib/ptAddInUtils`
