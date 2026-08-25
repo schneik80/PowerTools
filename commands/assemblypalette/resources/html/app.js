@@ -7,6 +7,7 @@
         openDocs: [],
         recentDocs: [],
         showChildren: false,
+        handoffs: {},
         hasTargetProject: true,
         targetProject: ''
     };
@@ -286,6 +287,33 @@
         if (sel && lbl) lbl.textContent = sel.value;
     }
 
+    // Hand-off buttons for other PowerTools commands. A command the user has
+    // switched off in Preferences never registers its definition, so the button
+    // would lead nowhere — hide the whole row, and the rule above it, rather
+    // than leave a dead control on screen. An absent answer means "show it", so
+    // a stale init.js can never blank out working buttons.
+    function applyHandoffs(state) {
+        if (typeof state === 'string') {
+            try { state = JSON.parse(state); } catch (e) { state = {}; }
+        }
+        state = state || {};
+        setHandoffVisible('btnAssemblyBuilder', state.assemblyBuilder !== false);
+        setHandoffVisible('btnGlobalParameters', state.globalParameters !== false);
+    }
+
+    function setHandoffVisible(buttonId, visible) {
+        var btn = document.getElementById(buttonId);
+        var row = btn ? btn.closest('.action-row') : null;
+        if (!row) return;
+        row.hidden = !visible;
+        // Each hand-off is preceded by its own divider; hiding the row alone
+        // would leave a rule with nothing under it.
+        var divider = row.previousElementSibling;
+        if (divider && divider.classList.contains('divider')) {
+            divider.hidden = !visible;
+        }
+    }
+
     // Toggle the "no target project" banner and enable/disable New Component
     // accordingly. Accepts either the backend's {hasProject, name} object or a
     // JSON string form of it. When no project is available, creating a
@@ -339,6 +367,7 @@
     renderGallery('openGallery', 'openEmpty', ptInit.openDocs);
     setRecentDocs(ptInit.recentDocs);
     updateIntentLabel();
+    applyHandoffs(ptInit.handoffs);
     applyTargetProject({
         hasProject: ptInit.hasTargetProject,
         name: ptInit.targetProject
@@ -459,6 +488,8 @@
                     var thumbs = {};
                     try { thumbs = JSON.parse(data) || {}; } catch (e) { thumbs = {}; }
                     setThumbs(thumbs);
+                } else if (action === 'setHandoffs') {
+                    applyHandoffs(data);
                 } else if (action === 'setTargetProject') {
                     applyTargetProject(data);
                 }

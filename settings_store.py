@@ -213,6 +213,54 @@ def is_command_enabled(key: str) -> bool:
     return bool(load().get("commands", {}).get(key, {}).get("enabled", True))
 
 
+def is_enabled(group: dict, cmd: dict, prefs: dict) -> bool:
+    """Whether a registry (group, command) pair should run, per *prefs*.
+
+    The single rule behind both the start-up gating loop in
+    ``commands/__init__.py`` and :func:`is_command_available`, so the two can
+    never disagree about what is running.
+
+    Args:
+        group: A registry group dict (needs ``key``).
+        cmd: A registry command dict (needs ``module``, may have ``beta``).
+        prefs: An already-loaded preferences dict, as returned by load().
+
+    Returns:
+        True when the group is enabled, beta mode covers the command, and the
+        command itself is enabled.
+    """
+    if not prefs.get("groups", {}).get(group["key"], {}).get("enabled", True):
+        return False
+    if cmd.get("beta") and not prefs.get("general", {}).get("beta_mode", False):
+        return False
+    # A COMMAND_SETS member runs on its lead command's flag — the set shares
+    # one Preferences checkbox, and a member's own stored flag is inert.
+    key = SET_LEAD.get(cmd["module"], cmd["module"])
+    return bool(prefs.get("commands", {}).get(key, {}).get("enabled", True))
+
+
+def is_command_available(module: str) -> bool:
+    """True if *module* is registered and will actually be running this session.
+
+    Commands that offer a hand-off to another command use this so they do not
+    advertise a button for something the user has switched off in Preferences
+    — a disabled command never registers its command definition, so the
+    hand-off would be a dead end.
+
+    Args:
+        module: The command's registry key (its folder name under commands/).
+
+    Returns:
+        True when the command is registered and enabled; False otherwise,
+        including for a module that is not in the registry at all.
+    """
+    prefs = load()
+    for group, cmd in registry.iter_commands():
+        if cmd["module"] == module:
+            return is_enabled(group, cmd, prefs)
+    return False
+
+
 def command_setting(module: str, sub: str, default=None):
     return load().get("command_settings", {}).get(module, {}).get(sub, default)
 

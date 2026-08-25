@@ -30,7 +30,7 @@ import traceback
 import adsk.core
 import adsk.fusion
 
-from ... import config
+from ... import config, settings_store
 from ...lib import ptAddInUtils as ptutil
 from ...lib.ptAddInUtils import cache_utils as cache
 from ...lib.ptAddInUtils import intent_icons
@@ -75,6 +75,11 @@ _RECENT_LIMIT = recents.RECENT_LIMIT
 # Commands we hand off to from the palette.
 _ASSEMBLY_BUILDER_CMD_ID = "PTAT_AssemblyBuilder"
 _GLOBAL_PARAMETERS_CMD_ID = "PTAT_globalParameters"
+# Their registry keys, so the hand-off buttons can be hidden when the user
+# has switched a command off in PowerTools preferences. A disabled command
+# never registers its definition, so the button would be a dead end.
+_ASSEMBLY_BUILDER_MODULE = "assemblybuilder"
+_GLOBAL_PARAMETERS_MODULE = "globalParameters"
 # Fusion's own Fasteners command — the ASSEMBLY > INSERT panel button, defined by
 # Fusion as FusionFastenersCommand in its ribbon and command-definition
 # resources. There is no public insert API (FastenerOccurrenceDefinition only
@@ -529,12 +534,22 @@ def _show_palette():
 def _gather_palette_state() -> dict:
     doc = app.activeDocument
     folder = cache.resolve_target_folder(CMD_NAME)
+    handoffs = {
+        "assemblyBuilder": settings_store.is_command_available(
+            _ASSEMBLY_BUILDER_MODULE
+        ),
+        "globalParameters": settings_store.is_command_available(
+            _GLOBAL_PARAMETERS_MODULE
+        ),
+    }
     return {
         "docName": getattr(doc, "name", ""),
         "theme": _theme_str(),
         "showChildren": _show_children,
         "openDocs": _list_open_docs(),
         "recentDocs": _list_recent_docs(),
+        # Hand-off buttons for commands the user can turn off in Preferences.
+        "handoffs": handoffs,
         # Drives the "no target project" banner + New Component enablement.
         "hasTargetProject": folder is not None,
         "targetProject": cache.target_project_label(folder),
@@ -610,6 +625,7 @@ def _send_palette_init(palette: adsk.core.Palette):
     palette.sendInfoToHTML("setTheme", state["theme"])
     palette.sendInfoToHTML("setOpenDocs", json.dumps(state["openDocs"]))
     palette.sendInfoToHTML("setRecentDocs", json.dumps(state["recentDocs"]))
+    palette.sendInfoToHTML("setHandoffs", json.dumps(state["handoffs"]))
     palette.sendInfoToHTML(
         "setTargetProject",
         json.dumps(
@@ -1111,14 +1127,12 @@ def _palette_incoming(html_args: adsk.core.HTMLEventArgs):
         return
 
     if action == "launchAssemblyBuilder":
-        _hide_palette(palette)
-        _execute_command(_ASSEMBLY_BUILDER_CMD_ID)
+        _launch_handoff(palette, _ASSEMBLY_BUILDER_MODULE, _ASSEMBLY_BUILDER_CMD_ID)
         html_args.returnData = "OK"
         return
 
     if action == "launchGlobalParameters":
-        _hide_palette(palette)
-        _execute_command(_GLOBAL_PARAMETERS_CMD_ID)
+        _launch_handoff(palette, _GLOBAL_PARAMETERS_MODULE, _GLOBAL_PARAMETERS_CMD_ID)
         html_args.returnData = "OK"
         return
 
@@ -1180,6 +1194,30 @@ def _palette_incoming(html_args: adsk.core.HTMLEventArgs):
 def _hide_palette(palette) -> None:
     if palette:
         palette.isVisible = False
+
+
+def _launch_handoff(palette, module: str, cmd_id: str) -> None:
+    """Hide the palette and start another PowerTools command.
+
+    The button is not rendered when the command is switched off in Preferences,
+    so this only fires for a page that was loaded before the setting changed.
+    Checking again keeps the palette on screen instead of dismissing it for a
+    command that will not open.
+
+    Args:
+        palette: The palette to hide once the hand-off is going ahead.
+        module: The target command's registry key.
+        cmd_id: The target command's Fusion command-definition id.
+    """
+    if not settings_store.is_command_available(module):
+        ui.messageBox(
+            "That command is turned off in PowerTools preferences.\n\n"
+            "Turn it back on in Power Tools > Preferences, then restart Fusion.",
+            CMD_NAME,
+        )
+        return
+    _hide_palette(palette)
+    _execute_command(cmd_id)
 
 
 def _execute_command(cmd_id: str) -> None:

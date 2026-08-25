@@ -90,6 +90,9 @@ body {
 .card-header .card-title { margin-bottom: 0; }
 
 .action-row { display: flex; flex-direction: column; gap: 4px; }
+/* A class selector beats the UA's [hidden] { display: none }, so a hidden
+   hand-off row (and its divider) needs saying explicitly. */
+.action-row[hidden], .divider[hidden] { display: none; }
 .create-row {
     display: grid;
     grid-template-columns: 1fr auto auto;

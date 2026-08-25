@@ -42,17 +42,6 @@ def load_command(module_key: str):
 _started = []
 
 
-def _should_start(group, cmd, prefs) -> bool:
-    if not prefs.get("groups", {}).get(group["key"], {}).get("enabled", True):
-        return False
-    if cmd.get("beta") and not prefs.get("general", {}).get("beta_mode", False):
-        return False
-    # A COMMAND_SETS member runs on its lead command's flag — the set shares
-    # one Preferences checkbox, and a member's own stored flag is inert.
-    key = settings_store.SET_LEAD.get(cmd["module"], cmd["module"])
-    return bool(prefs.get("commands", {}).get(key, {}).get("enabled", True))
-
-
 def start():
     # Shared "Power Tools" panel is created once, before any command registers.
     try:
@@ -67,9 +56,12 @@ def start():
     except Exception:
         ptutil.handle_error("preferences")
 
+    # settings_store.is_enabled is the single enablement rule; commands that
+    # offer a hand-off to another command read the same rule through
+    # settings_store.is_command_available().
     prefs = settings_store.load()
     for group, cmd in registry.iter_commands():
-        if not _should_start(group, cmd, prefs):
+        if not settings_store.is_enabled(group, cmd, prefs):
             continue
         try:
             # Import happens here, lazily, only for commands that will start.

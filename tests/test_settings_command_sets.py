@@ -4,7 +4,8 @@ The three Global Parameters commands (globalParameters, linkGlobalParameters,
 refreshGlobalParametersCache) are one capability: the satellites mean nothing
 with the others off. Preferences therefore offers a single checkbox for the
 set, and enablement resolves through the lead command's flag everywhere it is
-read -- the start-up gate in ``commands/__init__.py`` and the
+read -- ``is_enabled`` (the single rule behind the start-up gate in
+``commands/__init__.py`` and ``is_command_available``) and the
 ``is_command_enabled`` accessor. A member's own entry in preferences.json is
 inert, so an old selectively-disabled state heals itself without migration.
 
@@ -18,7 +19,6 @@ from pathlib import Path
 PT_PKG = Path(__file__).resolve().parent.parent.name
 settings_store = importlib.import_module(f"{PT_PKG}.settings_store")
 registry = importlib.import_module(f"{PT_PKG}.command_registry")
-commands_pkg = importlib.import_module(f"{PT_PKG}.commands")
 
 LEAD = "globalParameters"
 MEMBERS = ("linkGlobalParameters", "refreshGlobalParametersCache")
@@ -124,7 +124,7 @@ def test_non_set_command_still_reads_its_own_flag(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# The start-up gate applies the same rule
+# is_enabled (the start-up gate's rule) applies the same resolution
 # ---------------------------------------------------------------------------
 
 
@@ -132,7 +132,7 @@ def _cmd(module: str) -> dict:
     return {"module": module, "beta": False}
 
 
-def test_should_start_gates_members_on_the_lead():
+def test_is_enabled_gates_members_on_the_lead():
     # Arrange
     prefs = _prefs(
         commands={
@@ -142,12 +142,12 @@ def test_should_start_gates_members_on_the_lead():
     )
 
     # Act / Assert: neither the lead nor its members start.
-    assert commands_pkg._should_start(ASSEMBLY_GROUP, _cmd(LEAD), prefs) is False
+    assert settings_store.is_enabled(ASSEMBLY_GROUP, _cmd(LEAD), prefs) is False
     for member in MEMBERS:
-        assert commands_pkg._should_start(ASSEMBLY_GROUP, _cmd(member), prefs) is False
+        assert settings_store.is_enabled(ASSEMBLY_GROUP, _cmd(member), prefs) is False
 
 
-def test_should_start_runs_members_when_the_lead_is_on():
+def test_is_enabled_runs_members_when_the_lead_is_on():
     # Arrange: a member's own stale disable is ignored.
     prefs = _prefs(
         commands={
@@ -158,10 +158,10 @@ def test_should_start_runs_members_when_the_lead_is_on():
 
     # Act / Assert
     for member in MEMBERS:
-        assert commands_pkg._should_start(ASSEMBLY_GROUP, _cmd(member), prefs) is True
+        assert settings_store.is_enabled(ASSEMBLY_GROUP, _cmd(member), prefs) is True
 
 
-def test_should_start_still_honours_the_group_gate_for_members():
+def test_is_enabled_still_honours_the_group_gate_for_members():
     # Arrange: set enabled, whole Assembly group off.
     prefs = _prefs(
         commands={LEAD: {"enabled": True}},
@@ -169,6 +169,6 @@ def test_should_start_still_honours_the_group_gate_for_members():
     )
 
     # Act / Assert
-    assert commands_pkg._should_start(ASSEMBLY_GROUP, _cmd(LEAD), prefs) is False
+    assert settings_store.is_enabled(ASSEMBLY_GROUP, _cmd(LEAD), prefs) is False
     for member in MEMBERS:
-        assert commands_pkg._should_start(ASSEMBLY_GROUP, _cmd(member), prefs) is False
+        assert settings_store.is_enabled(ASSEMBLY_GROUP, _cmd(member), prefs) is False

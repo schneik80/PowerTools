@@ -7,7 +7,7 @@ The Assembly Palette command opens a docked quick-start palette that helps you p
 ## What you can do
 
 - **Create a component in place** — type a name, pick **Part**, **Hybrid**, or **Assembly** intent, and generate an external component in the active design with `addNewExternalComponent`. The chosen design intent is applied to the new component automatically.
-- **Hand off to related commands** — open **Assembly Builder** to design a multi-level hierarchy, or **Global Parameters** to define a shared parameter set, without hunting for them on the toolbar. The palette hides while the handed-off command runs.
+- **Hand off to related commands** — open **Assembly Builder** to design a multi-level hierarchy, or **Global Parameters** to define a shared parameter set, without hunting for them on the toolbar. The palette hides while the handed-off command runs. If you have turned either command off in **Preferences**, its button is not shown at all.
 - **Insert an open document** — the **Open** tab shows a thumbnail gallery of your currently-open Part/Hybrid/Assembly documents. Click a card to insert that document into the active design as a referenced component (`addByInsert`).
 - **Show only what you opened** — by default the Open tab lists only **top-level documents** (the ones you opened directly). Tick **Show referenced children** to also list the sub-assemblies and parts that Fusion loaded as references of an open assembly.
 - **Insert a recent document** — the **Recent** tab shows a gallery of your recently-used Part/Hybrid/Assembly documents, drawn from the recents list Fusion itself keeps for your account. It is populated from the first launch, including documents you opened before installing PowerTools, and it is the same list the [Open Recent](./Open%20Recent.md) File-menu flyout shows. The newest 40 are shown as cards; type in the filter box to reach the rest by name.
@@ -37,6 +37,8 @@ The Assembly Palette command opens a docked quick-start palette that helps you p
 6. **To design a hierarchy or manage parameters:** select **Assembly Builder…** or **Global Parameters…**. The palette hides and the chosen command opens.
 
 > **Note:** A document you insert during a palette session is removed from both galleries on the next refresh, so a second click cannot silently create a duplicate occurrence. Use the **↻** refresh button to re-scan open and recent documents at any time.
+
+> **Note:** The **Assembly Builder…** and **Global Parameters…** buttons follow your PowerTools preferences. A command you have switched off (or whose group you have switched off) never registers with Fusion, so its button is hidden rather than left on screen leading nowhere. Re-enable it in **Power Tools > Preferences** and restart Fusion to get the button back.
 
 > **Note:** Fusion itself disables Fasteners for part-intent and direct-modeling designs, in the Form environment, for library and AnyCAD-derived components, and when the document is not on a Fusion hub. When that is the case the link reports why instead of hiding the palette on a click that would do nothing.
 
