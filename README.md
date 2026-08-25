@@ -16,7 +16,7 @@ The add-in includes a dedicated prefrences which allows you to customize certain
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Commands](#commands)
-- [Architecture](#architecture)
+- [Dev-Notes](#dev-notes)
 - [Support](#support)
 - [License](#license)
 
@@ -38,6 +38,8 @@ Before you install and run this add-in, confirm that you have the following:
 6. Select **PowerTools** in the list, then click **Run**.
 
 To have the add-in load automatically each time Fusion starts, select **Run on Startup** before clicking **Run**.
+
+---
 
 ## Commands
 
@@ -143,7 +145,9 @@ All sharing commands appear in the **Share Menu** flyout on the right-hand Quick
 | [Invite to Project](./docs/Invite%20to%20Project.md) | QAT › Share Menu | Invite a collaborator to the active project. |
 | [Document Project Members](./docs/Document%20Project%20Members.md) | QAT › Share Menu | List the members of the active project. |
 
-## Dev Notes
+---
+
+## Dev-Notes
 
 For developer-oriented documentation — system context, C4 diagrams, the add-in lifecycle, the shared-access-point model, and the command-module pattern — see **[docs/arch/architecture.md](./docs/arch/architecture.md)**.
 
@@ -153,8 +157,6 @@ For local development setup, tooling, and how to debug the add-in in VS Code or 
 
 This add-in is developed and maintained by IMA LLC.
 
----
-
 ## License
 
 Copyright (C) Industrial Machine Arts LLC WA, USA — All Rights Reserved.
@@ -162,7 +164,5 @@ Copyright (C) Industrial Machine Arts LLC WA, USA — All Rights Reserved.
 This software is proprietary and confidential. It is protected under international copyright law; all rights are reserved by the copyright holders. It is only available to authorized individuals with the permission of the copyright holders. See [LICENSE](LICENSE) for the full notice.
 
 The three Autodesk-sample-derived modules in `lib/ptAddInUtils` — `general_utils.py`, `event_utils.py`, and `attributes_utils.py` — remain under Autodesk, Inc.'s original, permissive license terms (see each file's header), which require that their copyright notice be retained in all copies. The proprietary terms above do not apply to those Autodesk-derived portions.
-
----
 
 *Copyright © Industrial Machine Arts LLC WA, USA. All rights reserved.*
