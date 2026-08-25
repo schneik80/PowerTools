@@ -22,6 +22,8 @@
             --accent: #0696d7;
             --accent-hover: #0aa3e8;
             --accent-root: #9ca3af;
+            --accent-locked: #6b7280;
+            --bg-node-locked: #2f3a49;
             --port-bg: #4a5568;
             --port-border: #6b7280;
             --connection-color: #6b7280;
@@ -52,6 +54,8 @@
             --accent: #0696d7;
             --accent-hover: #0580b8;
             --accent-root: #9ca3af;
+            --accent-locked: #9ca3af;
+            --bg-node-locked: #f3f4f6;
             --port-bg: #d1d5db;
             --port-border: #9ca3af;
             --connection-color: #9ca3af;
@@ -202,6 +206,32 @@
             border-left: 3px solid var(--accent-root);
             background: var(--bg-node-root);
         }
+        /* Components already in the design: seeded, locked, not restructurable */
+        .drawflow .drawflow-node.is-existing {
+            border-left: 3px solid var(--accent-locked);
+            background: var(--bg-node-locked);
+        }
+        .drawflow .drawflow-node.is-existing.selected {
+            background: var(--bg-node-locked);
+        }
+        .drawflow .drawflow-node.is-existing .node-name-input { cursor: default; }
+        /* Dashed, unfilled input port: this end of the wire is not a drop
+           target for a parent, only for a global-parameter link. */
+        .drawflow .drawflow-node.is-existing .input {
+            background: transparent;
+            border-style: dashed;
+        }
+        .node-lock {
+            float: right;
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            border: 1px solid var(--border-color);
+            border-radius: 3px;
+            padding: 0 4px;
+        }
+
         /* Global-parameter source node */
         .drawflow .drawflow-node.is-paramdoc {
             border-left: 3px solid #a855f7;
@@ -427,6 +457,11 @@
     // Whether a target project could be resolved for new external components.
     // Undefined (older init) is treated as present so we never false-block.
     var hasProject = ptInit.hasTargetProject !== false;
+    // "assembly" or "hybrid" — the Builder never produces a Part root.
+    var rootType = (ptInit.rootType === 'hybrid') ? 'hybrid' : 'assembly';
+    // Components already in the design, newest state pushed on reopen. Each is
+    // {path, name, type, transient}; see _snapshot_existing in entry.py.
+    var existingSeed = ptInit.existing || [];
 
     // --- Drawflow init ---
     var container = document.getElementById('drawflow');
@@ -444,6 +479,64 @@
     };
 
     editor.start();
+
+    // --- Locked nodes -----------------------------------------------------
+    // A seeded node stands for a component that exists in the design right
+    // now. Its document may still be in memory (created by the Assembly
+    // Palette, written on the next save), so re-parenting it is not something
+    // we can carry out — and a graph that let the user try would be lying.
+    // Locked nodes accept new children and global-parameter links; nothing
+    // else. The root is locked too: deleting it would orphan every seeded node.
+    var lockedNodes = {};
+    // Set while the seed is being laid down, so the connections it makes into
+    // locked nodes are not undone by the repair pass below.
+    var seeding = false;
+
+    function isLocked(id) {
+        return !!lockedNodes[String(id)];
+    }
+
+    function isParamNodeId(id) {
+        try {
+            return editor.getNodeFromId(id).name === 'paramdoc';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // Drawflow offers exactly two delete routes — the Delete key and the
+    // context menu's delete button — and both funnel through removeNodeId()
+    // and removeConnection(), so wrapping the pair covers every case.
+    var baseRemoveNodeId = editor.removeNodeId.bind(editor);
+    editor.removeNodeId = function(id) {
+        if (isLocked(String(id).replace('node-', ''))) return;
+        return baseRemoveNodeId(id);
+    };
+
+    var baseRemoveConnection = editor.removeConnection.bind(editor);
+    editor.removeConnection = function() {
+        var sel = editor.connection_selected;
+        if (sel && sel.parentElement) {
+            // classList is [connection, node_in_node-<child>, node_out_node-<parent>, ...]
+            var cls = sel.parentElement.classList;
+            var childId = (cls[1] || '').slice(13);
+            var parentId = (cls[2] || '').slice(14);
+            // A locked node's structural parent is fixed, but a parameter link
+            // into it is the user's to add and remove.
+            if (isLocked(childId) && !isParamNodeId(parentId)) return;
+        }
+        return baseRemoveConnection();
+    };
+
+    // Suppress Drawflow's context menu (and so its delete button) on a locked
+    // node rather than relying only on the wrappers above.
+    container.addEventListener('contextmenu', function(e) {
+        var node = e.target.closest ? e.target.closest('.drawflow-node') : null;
+        if (node && isLocked(String(node.id).replace('node-', ''))) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    }, true);
 
     // --- Node templates ---
     var nodeTypes = {
@@ -464,14 +557,23 @@
         return nodeTypes[typeKey].type + ' ' + typeCounters[typeKey];
     }
 
-    function nodeHtml(typeKey, name) {
+    function nodeHtml(typeKey, name, lockLabel) {
         var t = nodeTypes[typeKey];
-        // Parameter-set nodes are not user-renamable — keep the name read-only.
-        if (typeKey === 'paramdoc') {
-            return '<div class="node-header"><span class="node-type">' + escapeHtml(t.type) + '</span></div>' +
-                   '<input class="node-name-input" type="text" df-name value="' + escapeHtml(name) + '" readonly>';
+        var header = '<div class="node-header"><span class="node-type">' +
+                     escapeHtml(t.type) + '</span>';
+        if (lockLabel) {
+            header += '<span class="node-lock" title="Already in this design ' + '—' +
+                      ' it cannot be renamed, moved, or deleted here.">' +
+                      escapeHtml(lockLabel) + '</span>';
         }
-        return '<div class="node-header"><span class="node-type">' + escapeHtml(t.type) + '</span></div>' +
+        header += '</div>';
+        // Parameter-set nodes and nodes seeded from the design are not renamable.
+        if (typeKey === 'paramdoc' || lockLabel) {
+            return header +
+                   '<input class="node-name-input" type="text" df-name value="' +
+                   escapeHtml(name) + '" readonly>';
+        }
+        return header +
                '<input class="node-name-input" type="text" df-name value="' + escapeHtml(name) + '" ' +
                'readonly onfocus="this.removeAttribute(\'readonly\')" onblur="this.setAttribute(\'readonly\',\'\')">';
     }
@@ -485,16 +587,82 @@
                 if (Object.prototype.hasOwnProperty.call(extraData, k)) data[k] = extraData[k];
             }
         }
-        return editor.addNode(typeKey, t.inputs, t.outputs, x, y, t.className, data, nodeHtml(typeKey, n));
+        // A node seeded from the design stands for a component that exists
+        // right now, so it is drawn locked and carries the index path the
+        // backend matches it against.
+        var seeded = !!data.existingPath;
+        var lockLabel = seeded ? (data.transient ? 'in design, unsaved' : 'in design') : '';
+        var className = t.className;
+        if (seeded) {
+            className = (className + ' is-existing').trim();
+        }
+        // Keep the output port only where a new child could actually be made:
+        // the component's document must still be in memory and owned by this
+        // design. A saved referenced component belongs to another document.
+        var outputs = t.outputs;
+        if (seeded && !(data.transient && (typeKey === 'assembly' || typeKey === 'hybrid'))) {
+            outputs = 0;
+        }
+        var id = editor.addNode(typeKey, t.inputs, outputs, x, y, className, data,
+                                nodeHtml(typeKey, n, lockLabel));
+        if (seeded) lockedNodes[String(id)] = true;
+        return id;
     }
 
     // --- Root node ---
     function createRoot() {
         var x = (container.offsetWidth / 2) - 80;
+        // The Builder only ever produces an Assembly or a Hybrid root, so the
+        // label reports which one this document already is.
+        nodeTypes.root.type = (rootType === 'hybrid') ? 'Root Hybrid' : 'Root Assembly';
         rootNodeId = addNode('root', x, 40, rootDocName);
+        // Deleting the root would strand every seeded node, so it is locked
+        // outright instead of being deleted and silently recreated.
+        lockedNodes[String(rootNodeId)] = true;
         updateStatus();
     }
     createRoot();
+
+    // --- Seed the components already in the design ------------------------
+    function pathKey(path) {
+        return 'p:' + path.join('.');
+    }
+
+    // Lay down one locked node per existing occurrence. Entries arrive
+    // depth-first with parents before their children, so a parent's Drawflow
+    // id is always known by the time its child needs to connect to it.
+    function seedExistingNodes() {
+        if (!existingSeed.length) return;
+        var idByPath = {};
+        var baseX = (container.offsetWidth / 2) - 80;
+        seeding = true;
+        try {
+            existingSeed.forEach(function(item, i) {
+                var path = item.path || [];
+                var typeKey = (item.type === 'assembly' || item.type === 'hybrid')
+                    ? item.type : 'part';
+                var id = addNode(typeKey, baseX, 170 + i * 40, item.name,
+                                 { existingPath: path, transient: !!item.transient });
+                idByPath[pathKey(path)] = id;
+                var parentId = (path.length > 1)
+                    ? idByPath[pathKey(path.slice(0, -1))]
+                    : rootNodeId;
+                if (parentId === undefined || parentId === null) return;
+                // A locked node without an output port cannot take children;
+                // leaving the child unwired beats corrupting the graph.
+                var parentNode = editor.getNodeFromId(parentId);
+                if (!parentNode || !parentNode.outputs || !parentNode.outputs.output_1) return;
+                try {
+                    editor.addConnection(parentId, id, 'output_1', 'input_1');
+                } catch (e) {
+                    console.log('seed addConnection failed:', e);
+                }
+            });
+        } finally {
+            seeding = false;
+        }
+        arrangeLayout();
+    }
 
     // --- Click-to-add from sidebar ---
     var addCounter = 0;
@@ -504,7 +672,10 @@
         if (selectedNodeId === null) return null;
         try {
             var p = editor.getNodeFromId(selectedNodeId);
-            if (p && nodeTypes[p.name] && nodeTypes[p.name].outputs > 0) return p;
+            // Read the node's own ports, not the template's: a locked node that
+            // cannot take children was created without an output port.
+            if (p && nodeTypes[p.name] && p.outputs &&
+                Object.keys(p.outputs).length > 0) return p;
         } catch (e) {}
         return null;
     }
@@ -564,6 +735,9 @@
         var data = editor.export();
         var nodes = data.drawflow.Home.data;
         for (var k in nodes) {
+            // Mirrors find_shared_nodes on the Fusion side: a locked node is
+            // never shared, so it must not trip the save-required gate.
+            if (isLocked(k)) continue;
             if (nodes[k].name === 'paramdoc') {
                 var pid = (nodes[k].data || {}).paramId;
                 if (pid) ids[pid] = true;
@@ -726,7 +900,22 @@
         refreshShareGate();
         refreshParamDocButtons();
     });
-    editor.on('connectionCreated', function() { refreshShareGate(); });
+    editor.on('connectionCreated', function(info) {
+        // Backstop: a locked node's parent is fixed. The dashed input port
+        // signals that, but this holds even if Drawflow's internals shift.
+        // A global-parameter link lands on the same port and is allowed.
+        if (!seeding && info && isLocked(info.input_id) && !isParamNodeId(info.output_id)) {
+            setTimeout(function() {
+                try {
+                    editor.removeSingleConnection(info.output_id, info.input_id,
+                                                  info.output_class, info.input_class);
+                } catch (e) { console.log('lock repair failed:', e); }
+                refreshShareGate();
+            }, 0);
+            return;
+        }
+        refreshShareGate();
+    });
     editor.on('connectionRemoved', function() { refreshShareGate(); });
     editor.on('zoom', function(zoom) {
         document.getElementById('zoomLevel').textContent = Math.round(zoom * 100) + '%';
@@ -735,7 +924,11 @@
     // Double-click to focus name input
     container.addEventListener('dblclick', function(e) {
         var input = e.target.closest('.node-name-input');
-        if (input) {
+        var node = input ? input.closest('.drawflow-node') : null;
+        // Seeded and parameter-set nodes carry a name Fusion owns.
+        var renamable = node && !node.classList.contains('is-existing') &&
+                        !node.classList.contains('is-paramdoc');
+        if (input && renamable) {
             input.removeAttribute('readonly');
             input.focus();
             input.select();
@@ -783,10 +976,12 @@
 
     window.clearAll = function() {
         editor.clear();
+        lockedNodes = {};
         rootNodeId = null;
         addCounter = 0;
         typeCounters = { assembly: 0, part: 0, hybrid: 0 };
         createRoot();
+        seedExistingNodes();
         refreshShareGate();
         refreshParamDocButtons();
     };
@@ -912,6 +1107,15 @@
         }
     };
 
+    // The page keeps its graph between shows, so a reopen only re-seeds when
+    // nothing has been built on top: silently discarding a hierarchy the user
+    // is part-way through would be worse than a slightly stale seed.
+    function reseedIfPristine() {
+        var ids = Object.keys(editor.export().drawflow.Home.data);
+        var untouched = ids.every(function(k) { return isLocked(k); });
+        if (untouched) clearAll();
+    }
+
     function updateStatus() {
         var data = editor.export();
         var count = Object.keys(data.drawflow.Home.data).length;
@@ -951,6 +1155,13 @@
                     try { list = JSON.parse(data) || []; } catch (e) { list = []; }
                     buildParamDocButtons(list);
                     refreshShareGate();
+                } else if (action === 'setRootType') {
+                    rootType = (data === 'hybrid') ? 'hybrid' : 'assembly';
+                } else if (action === 'setExisting') {
+                    var seed = [];
+                    try { seed = JSON.parse(data) || []; } catch (e) { seed = []; }
+                    existingSeed = seed;
+                    reseedIfPristine();
                 } else if (action === 'setTargetProject') {
                     // data is {hasProject, name}
                     var st = {};
@@ -964,6 +1175,10 @@
             return 'OK';
         }
     };
+
+    // Lay the seed down last, once arrangeLayout() and the editor event
+    // handlers defined above all exist.
+    seedExistingNodes();
 
     // Build the parameter-doc buttons from the URL-baked init — deterministic,
     // present on first paint. Fusion may still push setParamDocs later (e.g.

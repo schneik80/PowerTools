@@ -99,6 +99,163 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     )
 
 
+# ---------------------------------------------------------------------------
+# Design intent <-> graph node type
+# ---------------------------------------------------------------------------
+
+INTENT_MAP = {
+    "part": adsk.fusion.DesignIntentTypes.PartDesignIntentType,
+    "assembly": adsk.fusion.DesignIntentTypes.AssemblyDesignIntentType,
+    "hybrid": adsk.fusion.DesignIntentTypes.HybridDesignIntentType,
+}
+
+# Reverse lookup, for reading an existing component's intent back into the
+# graph node type that represents it.
+_NODE_TYPE_BY_INTENT = {v: k for k, v in INTENT_MAP.items()}
+
+
+def _occurrence_node_type(occ: adsk.fusion.Occurrence) -> str:
+    """Graph node type for an existing occurrence — "part" when unknown.
+
+    Fusion exposes designIntent on Design, not on Component, so an external
+    component's intent is read from its own parent design. A local component
+    has no design of its own; "part" is the honest answer there, since the
+    Builder can only ever treat it as a leaf.
+
+    Args:
+        occ: The occurrence to classify.
+
+    Returns:
+        One of "part", "assembly", or "hybrid".
+    """
+    try:
+        intent = occ.component.parentDesign.designIntent
+    except Exception:
+        return "part"
+    return _NODE_TYPE_BY_INTENT.get(intent, "part")
+
+
+def _occurrence_is_transient(occ: adsk.fusion.Occurrence) -> bool:
+    """True if the occurrence's component has no cloud DataFile yet.
+
+    An external component created by the Assembly Palette (or by an earlier
+    Builder pass) exists only in memory until the parent document is saved.
+    Reading dataFile on one of those raises rather than returning None, so an
+    unreadable answer is treated as transient.
+
+    Args:
+        occ: The occurrence to test.
+
+    Returns:
+        True when the component's document has not been flushed to the cloud.
+    """
+    try:
+        return occ.component.parentDesign.parentDocument.dataFile is None
+    except Exception:
+        return True
+
+
+def _walk_existing(design: adsk.fusion.Design) -> list[tuple]:
+    """Depth-first walk of every occurrence already present in *design*.
+
+    Each occurrence is keyed by its *index path* from the root — the chain of
+    occurrence indices that reaches it. entityToken is not persistent for
+    entities in an unsaved document (and the document may well be saved
+    mid-session to satisfy the shared-part gate), and fullPathName breaks on
+    rename; an index path is stable under everything the palette permits,
+    because a seeded node can never be restructured. Correctness comes from
+    re-running this walk at create time and checking the shape still matches.
+
+    Only components that could actually gain a child are descended into: a
+    transient external component (created this session, still in memory) or a
+    local one. A saved referenced sub-assembly owns its own contents, so
+    listing them would flood the canvas with nodes this document cannot touch.
+    Part-intent components are not descended into either, since the graph has
+    no way to hang a child off a part.
+
+    Args:
+        design: The design to walk.
+
+    Returns:
+        A list of ``(path, occurrence, entry)`` tuples, parents before their
+        children, where *entry* is the dict described in _snapshot_existing.
+    """
+    found: list[tuple] = []
+
+    def walk(occurrences, prefix: list[int]) -> None:
+        try:
+            count = occurrences.count
+        except Exception:
+            return
+        for index in range(count):
+            try:
+                occ = occurrences.item(index)
+                name = occ.component.name
+            except Exception:
+                continue
+            path = prefix + [index]
+            transient = _occurrence_is_transient(occ)
+            entry = {
+                "path": path,
+                "name": name,
+                "type": _occurrence_node_type(occ),
+                "transient": transient,
+            }
+            found.append((path, occ, entry))
+            try:
+                is_referenced = bool(occ.isReferencedComponent)
+                children = occ.childOccurrences
+            except Exception:
+                continue
+            # Only descend where the palette can draw a parent for the
+            # children: a part node has no output port, so anything under
+            # one would be seeded as an orphan.
+            can_parent = entry["type"] in ("assembly", "hybrid")
+            if children is not None and can_parent and (transient or not is_referenced):
+                walk(children, path)
+
+    try:
+        walk(design.rootComponent.occurrences, [])
+    except Exception as e:
+        ptutil.log(f"{CMD_NAME}: could not walk existing components — {e}")
+    return found
+
+
+def _snapshot_existing(design: adsk.fusion.Design) -> list[dict]:
+    """JSON-safe description of every occurrence already present in *design*.
+
+    Args:
+        design: The design to describe.
+
+    Returns:
+        A list of ``{"path": [int, ...], "name": str, "type": str,
+        "transient": bool}`` dicts, parents before their children.
+    """
+    return [entry for _path, _occ, entry in _walk_existing(design)]
+
+
+def _root_node_type(design: adsk.fusion.Design) -> str:
+    """Graph node type for the root — "assembly" unless it is already Hybrid.
+
+    Assembly Builder only ever produces an Assembly or a Hybrid root; Part
+    intent is refused at launch. Reading the current intent back keeps a Hybrid
+    document Hybrid instead of silently rewriting it to Assembly.
+
+    Args:
+        design: The active design, or None.
+
+    Returns:
+        Either "assembly" or "hybrid".
+    """
+    if design is None:
+        return "assembly"
+    try:
+        intent = design.designIntent
+    except Exception:
+        return "assembly"
+    return "hybrid" if _NODE_TYPE_BY_INTENT.get(intent) == "hybrid" else "assembly"
+
+
 def _design_is_empty(design: adsk.fusion.Design) -> bool:
     """True if the root component has nothing modeled — no child components,
     bodies, sketches, or timeline features."""
@@ -120,6 +277,28 @@ def _design_is_empty(design: adsk.fusion.Design) -> bool:
     return True
 
 
+def _design_is_structure_only(design: adsk.fusion.Design) -> bool:
+    """True if the root component holds no geometry of its own.
+
+    Child components are deliberately not counted here. An unsaved design that
+    the Assembly Palette has already populated is exactly the case Assembly
+    Builder now accepts — each existing occurrence is seeded into the graph
+    as a locked node. Bodies and sketches at the root are a different matter:
+    the Builder has no way to represent them, so they still block the launch.
+    """
+    root = design.rootComponent
+    try:
+        if root.bRepBodies.count > 0:
+            return False
+        if root.sketches.count > 0:
+            return False
+    except Exception:
+        # Unreadable on some design types. Do not block a launch we cannot
+        # prove is unsafe — the create pass only ever adds components.
+        return True
+    return True
+
+
 def command_execute(args: adsk.core.CommandEventArgs):
     ptutil.log(f"{CMD_NAME}: Command execute event.")
 
@@ -136,9 +315,12 @@ def command_execute(args: adsk.core.CommandEventArgs):
     design = adsk.fusion.Design.cast(product)
     doc = app.activeDocument
 
-    # Normally a new, unsaved document. Special case: a *saved* document is
-    # allowed too, but only if it is still empty (no features or child
-    # components) — anything already modeled would be disrupted.
+    # A *saved* document must still be completely empty — anything already
+    # modeled would be disrupted. An UNSAVED document may already hold child
+    # components: the Assembly Palette creates external components whose
+    # documents live only in memory until the first save, and handing off to
+    # the Builder from there is a supported flow. Those occurrences are seeded
+    # into the graph as locked nodes rather than turned away.
     if doc.isSaved and not _design_is_empty(design):
         ui.messageBox(
             "Assembly Builder works on a new document, or a saved document "
@@ -159,13 +341,12 @@ def command_execute(args: adsk.core.CommandEventArgs):
         )
         return
 
-    # Must have no existing children
-    root_comp = design.rootComponent
-    if root_comp.occurrences.count > 0:
+    if not doc.isSaved and not _design_is_structure_only(design):
         ui.messageBox(
-            "Assembly Builder only works on empty documents.\n\n"
-            "The active design already has components. "
-            "Please start with a new, empty Design.",
+            "Assembly Builder works on a design whose root has no geometry of "
+            "its own.\n\n"
+            "The active design has bodies or sketches at the root. Components "
+            "you have already created are fine — bodies and sketches are not.",
             CMD_NAME,
         )
         return
@@ -247,6 +428,7 @@ def _os_is_dark() -> bool:
 def _gather_palette_state() -> dict:
     """Collect the deterministic init state for the palette in one place."""
     doc = app.activeDocument
+    design = adsk.fusion.Design.cast(app.activeProduct)
 
     # userInterfaceTheme is one of: Classic(0)/LightGray(1) = light,
     # DarkBlue(2)/DarkGray(3) = dark, Device(4) = follow the OS.
@@ -287,6 +469,14 @@ def _gather_palette_state() -> dict:
         except Exception as e:
             ptutil.log(f"{CMD_NAME}: could not list parameter docs — {e}")
 
+    # Components already in the design. The Assembly Palette creates external
+    # components whose documents are in memory until the first save; the page
+    # seeds one locked node per occurrence so a hierarchy can be built around
+    # work the user has already done.
+    existing = _snapshot_existing(design) if design else []
+    if existing:
+        ptutil.log(f"{CMD_NAME}: seeding {len(existing)} existing component(s).")
+
     # Target folder for new external components. None → the Data Panel has no
     # project in context; the palette shows a banner and blocks Create Assembly
     # (create_assembly_from_graph would otherwise fail resolving a folder).
@@ -297,6 +487,8 @@ def _gather_palette_state() -> dict:
         "theme": "dark" if is_dark else "light",
         "saved": bool(doc.isSaved),
         "paramDocs": param_entries,
+        "rootType": _root_node_type(design),
+        "existing": existing,
         "hasTargetProject": folder is not None,
         "targetProject": cache.target_project_label(folder),
     }
@@ -324,6 +516,8 @@ def _send_palette_init(palette: adsk.core.Palette):
     palette.sendInfoToHTML("setTheme", state["theme"])
     palette.sendInfoToHTML("setSaveState", "saved" if state["saved"] else "unsaved")
     palette.sendInfoToHTML("setParamDocs", json.dumps(state["paramDocs"]))
+    palette.sendInfoToHTML("setRootType", state["rootType"])
+    palette.sendInfoToHTML("setExisting", json.dumps(state["existing"]))
     palette.sendInfoToHTML(
         "setTargetProject",
         json.dumps(
@@ -426,12 +620,6 @@ def palette_incoming(html_args: adsk.core.HTMLEventArgs):
 # Assembly creation from Drawflow graph
 # ---------------------------------------------------------------------------
 
-INTENT_MAP = {
-    "part": adsk.fusion.DesignIntentTypes.PartDesignIntentType,
-    "assembly": adsk.fusion.DesignIntentTypes.AssemblyDesignIntentType,
-    "hybrid": adsk.fusion.DesignIntentTypes.HybridDesignIntentType,
-}
-
 
 def get_child_ids(nodes: dict, parent_id: int) -> list:
     """Get child node IDs from a parent node's output connections."""
@@ -511,16 +699,82 @@ def find_root_node_id(nodes: dict) -> int:
     return None
 
 
-def find_shared_nodes(nodes: dict, root_node_id: int) -> set:
-    """Find component nodes that have more than one structural parent."""
+def find_shared_nodes(
+    nodes: dict, root_node_id: int, existing_ids: set | None = None
+) -> set:
+    """Find component nodes that have more than one structural parent.
+
+    Nodes seeded from components already in the design are skipped. They are
+    locked in the palette and can never gain a second parent, so counting them
+    would trip the save-required gate for a hierarchy the user never built.
+
+    Args:
+        nodes: The Drawflow node dict.
+        root_node_id: Id of the root node, which is never shared.
+        existing_ids: Node ids seeded from the design, or None.
+
+    Returns:
+        The set of node ids that have more than one structural parent.
+    """
     shared = set()
+    seeded = existing_ids or set()
     for node_id in nodes:
         nid = int(node_id)
-        if nid == root_node_id or is_param_node(nodes, nid):
+        if nid == root_node_id or is_param_node(nodes, nid) or nid in seeded:
             continue
         if len(get_structural_parent_ids(nodes, nid)) > 1:
             shared.add(nid)
     return shared
+
+
+_DESIGN_CHANGED_MSG = (
+    "Error: The design changed since Assembly Builder was opened, so the "
+    "components already in it can no longer be matched up. Close the palette "
+    "and run Assembly Builder again."
+)
+
+
+def _resolve_existing_nodes(nodes: dict, design: adsk.fusion.Design) -> tuple:
+    """Match graph nodes seeded from the design back onto live occurrences.
+
+    The palette may have been open for a while, so the design is walked afresh
+    rather than trusting occurrence proxies captured when it was shown. A node
+    counts as seeded when its data carries an "existingPath"; the name recorded
+    there must still match what the design reports at that path, which is what
+    catches a component renamed or deleted behind the palette's back.
+
+    Args:
+        nodes: The Drawflow node dict (drawflow.Home.data).
+        design: The active design.
+
+    Returns:
+        ``(occurrence_by_node_id, existing_node_ids, error_message)``. The error
+        is a non-empty string when the design no longer matches what the page
+        was seeded with, in which case the other two are empty.
+    """
+    live = {tuple(path): (occ, entry) for path, occ, entry in _walk_existing(design)}
+
+    occurrences: dict[int, adsk.fusion.Occurrence] = {}
+    ids: set[int] = set()
+    for node_id, node in nodes.items():
+        data = node.get("data", {}) or {}
+        path = data.get("existingPath")
+        if not path:
+            continue
+        try:
+            key = tuple(int(i) for i in path)
+        except (TypeError, ValueError):
+            return {}, set(), _DESIGN_CHANGED_MSG
+        found = live.get(key)
+        if found is None or found[1]["name"] != data.get("name"):
+            ptutil.log(
+                f"{CMD_NAME}: seeded node {node_id} no longer matches the "
+                f"design (path {path}, name {data.get('name')!r})."
+            )
+            return {}, set(), _DESIGN_CHANGED_MSG
+        occurrences[int(node_id)] = found[0]
+        ids.add(int(node_id))
+    return occurrences, ids, ""
 
 
 def _resolve_param_data_file(param_node: dict):
@@ -810,11 +1064,18 @@ def create_assembly_from_graph(graph_data: dict) -> str:
     if not design:
         return "Error: No active Fusion design."
 
+    # Nodes the palette seeded from components already in the design. They are
+    # locked there: never created, never re-parented, only walked through so
+    # NEW children land inside them.
+    existing_map, existing_ids, existing_error = _resolve_existing_nodes(nodes, design)
+    if existing_error:
+        return existing_error
+
     # Detect shared (reused) parts and global-parameter links. Both need the
     # root document to have a DataFile (shared: addByInsert; params: open the
     # external component to derive). The palette shows a banner and disables
     # Create until saved — this is a defensive fallback if that gate is missed.
-    shared_node_ids = find_shared_nodes(nodes, root_node_id)
+    shared_node_ids = find_shared_nodes(nodes, root_node_id, existing_ids)
     has_shared = len(shared_node_ids) > 0
     param_links = collect_param_links(nodes)
 
@@ -839,17 +1100,22 @@ def create_assembly_from_graph(graph_data: dict) -> str:
     root_comp = design.rootComponent
     transform = adsk.core.Matrix3D.create()
 
-    # Set root design intent
+    # Set root design intent. Assembly Builder only ever produces an Assembly
+    # or a Hybrid root — Part intent is refused at launch — so a root node
+    # carrying anything else must not rewrite what the document already has.
     root_node = nodes[str(root_node_id)]
     root_type = root_node.get("name", "root")
-    design.designIntent = INTENT_MAP.get(
-        root_type, adsk.fusion.DesignIntentTypes.AssemblyDesignIntentType
-    )
+    if root_type not in ("assembly", "hybrid"):
+        root_type = _root_node_type(design)
+    design.designIntent = INTENT_MAP[root_type]
 
     created_count = 0
     shared_insert_count = 0
     # Track created nodes: node_id -> occurrence (first creation)
     created_map: dict[int, adsk.fusion.Occurrence] = {}
+    # Seeded nodes resolve to occurrences that already exist, so the recursion
+    # below descends into them exactly as it does into ones it just created.
+    created_map.update(existing_map)
     # Repeat encounters of a shared node, resolved after a save flushes the
     # first instance's external document to a DataFile.
     #   [(parent_node_id, parent_comp, child_id), ...]
@@ -868,6 +1134,15 @@ def create_assembly_from_graph(graph_data: dict) -> str:
 
             child_name = child_node.get("data", {}).get("name", f"Component_{child_id}")
             child_type = child_node.get("name", "part")
+
+            # Seeded from a component already in the design. Nothing to
+            # create and nothing to defer — walk through it so any NEW
+            # children hung underneath land inside the right component.
+            if child_id in existing_ids:
+                seeded_occ = created_map.get(child_id)
+                if seeded_occ is not None and child_type in ("assembly", "hybrid"):
+                    create_children(seeded_occ.component, child_id)
+                continue
 
             # Shared node already created once. Its external document has no
             # DataFile until the root is saved, so addByInsert can't run yet —
@@ -971,6 +1246,12 @@ def create_assembly_from_graph(graph_data: dict) -> str:
         # step, pulls latest references into the root and saves it.
         derived_count, param_errors = _derive_param_links(
             param_links, root_node_id, design, created_map, doc
+        )
+
+    if not created_count and not shared_insert_count and not derived_count:
+        return (
+            "Nothing to create — every node on the canvas is already in the "
+            "design. Add Assembly, Part, or Hybrid nodes and try again."
         )
 
     # Hide the palette
