@@ -134,8 +134,6 @@ Share add-ins across a team through one hub folder — `Assets / Shared Addins` 
 
 ### Share
 
-All sharing commands appear in the **Share Menu** flyout on the right-hand Quick Access Toolbar.
-
 | Command | Location | Description |
 | --- | --- | --- |
 | [Get a Share Link](./docs/Get%20a%20Share%20Link.md) | QAT › Share Menu | Create and copy a public share link for the active document. |
