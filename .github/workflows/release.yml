@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+  # Manual dry-run: builds the zip and uploads it as a workflow artifact
+  # (nothing is attached to any release).
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The script needs only the stdlib and git; the version label is the
+      # release tag (or the branch name on a manual dry-run).
+      - name: Build release zip
+        run: python tools/release/build_release.py --version "${{ github.event.release.tag_name || github.ref_name }}"
+
+      - name: Attach zip to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/*.zip --clobber
+
+      - name: Upload dry-run artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: PowerTools-release-zip
+          path: dist/*.zip

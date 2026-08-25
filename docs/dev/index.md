@@ -162,7 +162,9 @@ it turns on two things at the same time:
    [Debugging](#debugging).
 
 Toggle debug mode by creating or deleting the file — no code change is required.
-Delete it before shipping.
+The [release build](release.md) works from the git-tracked file list, so the
+marker can never ship, but delete it before testing a build you intend to hand
+to anyone directly.
 
 On macOS you can follow the live log in Console.app; `lib/ptAddInUtils/log_utils.py`
 provides `open_live_log_viewer()` for a platform-native tail.
@@ -186,7 +188,7 @@ verification checklist, and how to disable debugging for a shipping build are in
 |---|---|---|
 | [`docs/`](..) | End users | Per-command usage guides. |
 | [`docs/arch/`](../arch) | Developers | Architecture — C4 diagrams, lifecycle, shared library, `config.py`. |
-| [`docs/dev/`](.) | Developers | This guide, the [debugging guide](debugging.md), the [insert-and-position recipe](Insert%20and%20position%20a%20component%20from%20a%20palette.md), and [custom graphics that stay painted](Custom%20graphics%20that%20stay%20painted.md). |
+| [`docs/dev/`](.) | Developers | This guide, the [debugging guide](debugging.md), the [release process](release.md), the [insert-and-position recipe](Insert%20and%20position%20a%20component%20from%20a%20palette.md), and [custom graphics that stay painted](Custom%20graphics%20that%20stay%20painted.md). |
 
 ---
 
