@@ -1,8 +1,8 @@
 # PowerTools for Autodesk Fusion
 
-PowerTools is an Autodesk Fusion all-in-one add-in that for a suite of productivity tools — assembly management, document and data tools, part-modeling helpers, exports, related-data templates, and document sharing — into a single installable add-in. It adds commands to the Design workspace toolbar, the Quick Access Toolbar (QAT), and the Drawing workspace that reduce the steps required for common design, data, and collaboration tasks.
+PowerTools is an Autodesk Fusion all-in-one Add-In that offers a suite of productivity tools for assembly management, document, and data tools, part-modeling, exports, related-data templates, and document sharing. It is deployed as a single installable Add-In. It adds commands to the Design workspace toolbar, the Quick Access Toolbar (QAT), and the Drawing workspace that reduce the steps required for design, data, and collaboration tasks.
 
-The add-in includes a dedicated prefrences which allows you to customize certain commands, as well as enable/disable any commands. The toos are seperate into functional categories:
+The add-in includes a dedicated preferences command which allows customization of commands, as well as enable/disable each command. The tools are separated into functional categories:
 
 - **Assembly Management**
 - **Document and Data Tools**
@@ -50,12 +50,12 @@ Most commands appear in **Design › Tools › Power Tools**. Some appear in oth
 | Command | Location | Description |
 | --- | --- | --- |
 | [Assembly Builder](./docs/Assembly%20Builder.md) | Design › Tools › Power Tools | Build and manage multi-component assemblies from a guided palette. Allows fast creation of assembly structures at the start of the design. |
-| [Assembly Palette](./docs/Assembly%20Palette.md) | Design › Solid | Quick-start palette for populating a new assembly: create components in place, or insert from open and recent documents. asses assembly builder, global paramamters a fasterner from shortcuts.|
+| [Assembly Palette](./docs/Assembly%20Palette.md) | Design › Solid | Quick-start palette for populating a new assembly: create components in place, or insert from open and recent documents. asses assembly builder, global parameters a fastener shortcuts.|
 | [Insert Step](./docs/Insert%20Step.md) | Design › Solid | Insert a STEP file as a referenced component. |
 | [Assembly Statistics](./docs/Assembly%20Statistics.md) | Design › Tools › Power Tools | Report component, occurrence, and reference counts for the active design. |
 | [Get and Update](./docs/Get%20and%20Update.md) | Design › Tools › Power Tools | Fetch and update referenced documents in one step. Often more reliable than Fusion's own update process. |
 | [Bottom-Up Update](./docs/Bottom-Up%20Update.md) | Design › Tools › Power Tools | Propagate changes from sub-components up through the assembly. |
-| [Externalize](./docs/Externalize.md) | Design › Tools › Power Tools | Externalize internal components into documents replacing them in the active assembly keeping positions intact. great for converting imported assemblies to distributed designs.|
+| [Externalize](./docs/Externalize.md) | Design › Tools › Power Tools | Externalize internal components into documents replacing them in the active assembly keeping positions intact. Great for converting imported assemblies to distributed designs.|
 | [Global Parameters](./docs/Global%20Parameters.md) | Design › Tools › Power Tools | View and manage project-wide global parameters. |
 | [Link Global Parameters](./docs/Link%20Global%20Parameters.md) | Design › Tools › Power Tools | Link the active design to project global parameters. |
 | [Refresh Global Parameters Cache](./docs/Refresh%20Global%20Parameters%20Cache.md) | File › PowerTools Settings | Rebuild the cached global-parameters folder and document index. |
@@ -82,7 +82,7 @@ Most commands appear in **Design › Tools › Power Tools**. Some appear in oth
 | [Show In Location](./docs/Show%20In%20Location.md) | File › PowerTools Settings | Open the active document's location in the data panel. Can be set to open on document open and document tab switch. |
 | [Close All Documents](./docs/Close%20All%20Documents.md) | File | Close every open document, saving or discarding unsaved changes as a group. |
 | [Toggle Data Pane](./docs/Toggle%20Data%20Pane.md) | Navigation bar | Toggle the visibility of the data panel. |
-| [Recovery Save](./docs/Recovery%20Save.md) | Design › Tools › Power Tools | Direct access to creating a recovery autosave for the active document. |
+| [Recovery Save](./docs/Recovery%20Save.md) | Design › Tools › Power Tools | Direct access to creating a recovery auto-save for the active document. |
 
 ### Exports
 
@@ -96,7 +96,7 @@ Most commands appear in **Design › Tools › Power Tools**. Some appear in oth
 | Command | Location | Description |
 | --- | --- | --- |
 | [Sketch Repair](./docs/SketchFix.md) | Sketch › Modify | Repair common sketch profile issues automatically. |
-| [Round Sketch Dimensions](./docs/Round%20Sketch%20Dimensions.md) | Sketch › Modify | Round the active sketch's dimensions to an adjustable increment. Especialy useful for updating a sketch after autoconstrain. |
+| [Round Sketch Dimensions](./docs/Round%20Sketch%20Dimensions.md) | Sketch › Modify | Round the active sketch's dimensions to an adjustable increment. Especialy useful for updating a sketch after auto-constrain. |
 | [Under-Constrained Sketch](./docs/SketchUnder.md) | Sketch | Highlight under-constrained sketch geometry. |
 | [Radial Hole Circle](./docs/RadialHoleCircle.md) | Sketch | Add center points for a radial pattern of holes. |
 | [Mirror Derive](./docs/MirrorDerive.md) | Design › Solid | Create a mirrored derived component. |
@@ -108,7 +108,7 @@ Most commands appear in **Design › Tools › Power Tools**. Some appear in oth
 
 | Command | Location | Description |
 | --- | --- | --- |
-| [Save Named View](./docs/Animation%20Named%20View.md) | Animation › Power Tools | Save the Animation viewport camera as a named view on the design, named from the active storyboard. Very handy for saving the view in which you crete an exploded view in the animation workspace. |
+| [Save Named View](./docs/Animation%20Named%20View.md) | Animation › Power Tools | Save the Animation viewport camera as a named view on the design, named from the active storyboard. Very handy for saving the view in which you create an exploded view in the animation workspace. |
 
 ### Related Data
 
@@ -130,7 +130,7 @@ Share add-ins across a team through one hub folder — `Assets / Shared Addins` 
 
 | Command | Location | Description |
 | --- | --- | --- |
-| [Scripts and Add-ins](./docs/Scripts%20and%20Add-ins.md) | QAT › File menu | Open Fusion's built-in Scripts and Add-Ins manager from the File menu. When using home tab, this allows access to to the scripts and add-ins manager when no document is open. |
+| [Scripts and Add-ins](./docs/Scripts%20and%20Add-ins.md) | QAT › File menu | Open Fusion's built-in Scripts and Add-Ins Manager from the File menu. When using home tab, this allows access to the scripts and Add-Ins Manager when no document is open. |
 
 ### Share
 
