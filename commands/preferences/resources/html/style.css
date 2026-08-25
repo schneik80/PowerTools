@@ -167,6 +167,18 @@ section > h2 {
 .row .row-settings label.inline { padding: 3px 0; font-size: 12px; }
 .row .row-settings .summary { margin-top: 4px; }
 
+/* Child commands rendered under their parent's row (CMD_CHILDREN). Same indent
+   treatment as inline settings, but these are whole commands that keep their
+   own checkbox and docs link, so they stay full .row elements. The lighter
+   name weight is what makes the parent read as the head of the group. */
+.row .row-children {
+    margin: 6px 0 0;
+    padding-left: 10px;
+    border-left: 2px solid var(--border-color);
+}
+.row .row-children .row { padding: 5px 0; }
+.row .row-children .name { font-weight: 400; }
+
 input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
 label.inline { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 6px 0; }
 

@@ -77,6 +77,22 @@
         // inside the Team Add-ins group section.
     };
 
+    // Commands that belong under another command's row rather than beside it.
+    // Global Parameters owns the parameter set; Link and Refresh only ever act
+    // on one, so listing all three as siblings in a 16-command group read as
+    // three unrelated features. Nesting gives them the same shape Show In
+    // Location already uses for the controls that belong to it.
+    var CMD_CHILDREN = {
+        globalParameters: ["linkGlobalParameters", "refreshGlobalParametersCache"]
+    };
+
+    // Reverse lookup, so the top-level pass can skip a command that will be
+    // drawn inside its parent instead.
+    var CHILD_OF = {};
+    Object.keys(CMD_CHILDREN).forEach(function (parent) {
+        CMD_CHILDREN[parent].forEach(function (child) { CHILD_OF[child] = parent; });
+    });
+
     // ── helpers ──────────────────────────────────────────────────────────────
     function send(action, payload) {
         try { adsk.fusionSendData(action, JSON.stringify(payload || {})); }
@@ -235,40 +251,69 @@
             body.appendChild(el("div", { class: "muted",
                 text: "No commands in this group are available." }));
         }
+        var byKey = {};
+        visible.forEach(function (c) { byKey[c.key] = c; });
         visible.forEach(function (c) {
-            var row = el("div", { class: "row" });
-            row.appendChild(checkbox(c.enabled, function (v) {
-                c.enabled = v; send("setCommand", { key: c.key, enabled: v }); render();
-            }));
-            var info = el("div", { class: "grow" });
-            var name = el("div", { class: "name" });
-            name.appendChild(document.createTextNode(c.name + " "));
-            if (c.beta) name.appendChild(el("span", { class: "badge", text: "beta" }));
-            info.appendChild(name);
-            // No title attribute: the summary already wraps and is fully
-            // visible, so a native tooltip only repeated it in an
-            // unthemed, unbounded-width browser popup.
-            if (c.summary) info.appendChild(el("div", { class: "summary", text: c.summary }));
-
-            // Settings flagged inline sit under their own command, gated
-            // on the enable checkbox above them, instead of repeating the
-            // command as a separate section further down.
-            var inlineDef = CMD_SECTIONS[c.key];
-            if (inlineDef && inlineDef.inline && c.enabled) {
-                var nested = el("div", { class: "row-settings" });
-                var cs = (S.commandSettings && S.commandSettings[c.key]) || {};
-                inlineDef.render(cs).forEach(function (node) { nested.appendChild(node); });
-                info.appendChild(nested);
-            }
-            row.appendChild(info);
-            row.appendChild(el("a", { class: "doc", href: "#", text: "docs ↗",
-                onclick: function (e) { e.preventDefault(); send("openDoc", { url: c.doc }); } }));
-            body.appendChild(row);
+            // A child is drawn inside its parent's row. If the parent is not in
+            // this list at all (filtered out as beta), the child stands on its
+            // own rather than vanishing along with it.
+            if (CHILD_OF[c.key] && byKey[CHILD_OF[c.key]]) return;
+            body.appendChild(commandRow(c, byKey));
         });
         grp.appendChild(body);
         sec.appendChild(grp);
         groupExtras(g).forEach(function (node) { sec.appendChild(node); });
         return sec;
+    }
+
+    // One command's row: enable checkbox, name + summary, any inline settings,
+    // any child commands, and the docs link.
+    function commandRow(c, byKey) {
+        var row = el("div", { class: "row" });
+        row.appendChild(checkbox(c.enabled, function (v) {
+            c.enabled = v; send("setCommand", { key: c.key, enabled: v }); render();
+        }));
+        var info = el("div", { class: "grow" });
+        var name = el("div", { class: "name" });
+        name.appendChild(document.createTextNode(c.name + " "));
+        if (c.beta) name.appendChild(el("span", { class: "badge", text: "beta" }));
+        info.appendChild(name);
+        // No title attribute: the summary already wraps and is fully
+        // visible, so a native tooltip only repeated it in an
+        // unthemed, unbounded-width browser popup.
+        if (c.summary) info.appendChild(el("div", { class: "summary", text: c.summary }));
+
+        // Settings flagged inline sit under their own command, gated
+        // on the enable checkbox above them, instead of repeating the
+        // command as a separate section further down.
+        var inlineDef = CMD_SECTIONS[c.key];
+        if (inlineDef && inlineDef.inline && c.enabled) {
+            var nested = el("div", { class: "row-settings" });
+            var cs = (S.commandSettings && S.commandSettings[c.key]) || {};
+            inlineDef.render(cs).forEach(function (node) { nested.appendChild(node); });
+            info.appendChild(nested);
+        }
+
+        // Child commands sit under their parent for the same reason inline
+        // settings do. They are deliberately NOT gated on the parent's
+        // checkbox: each is a separate command with its own enable state, and
+        // hiding one while the parent was off would take away the only way to
+        // turn it back on.
+        var children = (CMD_CHILDREN[c.key] || []).map(function (k) {
+            return byKey[k];
+        }).filter(Boolean);
+        if (children.length) {
+            var sub = el("div", { class: "row-children" });
+            children.forEach(function (child) {
+                sub.appendChild(commandRow(child, byKey));
+            });
+            info.appendChild(sub);
+        }
+
+        row.appendChild(info);
+        row.appendChild(el("a", { class: "doc", href: "#", text: "docs ↗",
+            onclick: function (e) { e.preventDefault(); send("openDoc", { url: c.doc }); } }));
+        return row;
     }
 
     function groupSectionId(key) {
