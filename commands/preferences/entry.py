@@ -330,26 +330,38 @@ def _team_addins_info() -> dict:
     return info
 
 
+def _command_display_name(module_key: str) -> str:
+    """Return a command's CMD_NAME for display, falling back to its key."""
+    mod = _module_for(module_key)
+    return getattr(mod, "CMD_NAME", None) or module_key
+
+
 def _gather_state() -> dict:
     prefs = settings_store.load()
     groups = []
     for g in registry.GROUPS:
         cmds = []
         for c in g["commands"]:
-            mod = _module_for(c["module"])
-            cmds.append(
-                {
-                    "key": c["module"],
-                    "name": getattr(mod, "CMD_NAME", None) or c["module"],
-                    "summary": getattr(mod, "CMD_Description", "") or "",
-                    "doc": config.DOCS_BASE_URL + urllib.parse.quote(c["doc"]),
-                    "beta": bool(c["beta"]),
-                    "hasSettings": bool(c["has_settings"]),
-                    "enabled": bool(
-                        prefs["commands"].get(c["module"], {}).get("enabled", True)
-                    ),
-                }
-            )
+            # A COMMAND_SETS member has no row of its own: the whole set is one
+            # capability, presented and enabled through its lead command.
+            if c["module"] in settings_store.SET_LEAD:
+                continue
+            entry = {
+                "key": c["module"],
+                "name": _command_display_name(c["module"]),
+                "summary": getattr(_module_for(c["module"]), "CMD_Description", "")
+                or "",
+                "doc": config.DOCS_BASE_URL + urllib.parse.quote(c["doc"]),
+                "beta": bool(c["beta"]),
+                "hasSettings": bool(c["has_settings"]),
+                "enabled": bool(
+                    prefs["commands"].get(c["module"], {}).get("enabled", True)
+                ),
+            }
+            members = settings_store.COMMAND_SETS.get(c["module"])
+            if members:
+                entry["setMembers"] = [_command_display_name(m) for m in members]
+            cmds.append(entry)
         groups.append(
             {
                 "key": g["key"],

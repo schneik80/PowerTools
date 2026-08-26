@@ -77,22 +77,6 @@
         // inside the Team Add-ins group section.
     };
 
-    // Commands that belong under another command's row rather than beside it.
-    // Global Parameters owns the parameter set; Link and Refresh only ever act
-    // on one, so listing all three as siblings in a 16-command group read as
-    // three unrelated features. Nesting gives them the same shape Show In
-    // Location already uses for the controls that belong to it.
-    var CMD_CHILDREN = {
-        globalParameters: ["linkGlobalParameters", "refreshGlobalParametersCache"]
-    };
-
-    // Reverse lookup, so the top-level pass can skip a command that will be
-    // drawn inside its parent instead.
-    var CHILD_OF = {};
-    Object.keys(CMD_CHILDREN).forEach(function (parent) {
-        CMD_CHILDREN[parent].forEach(function (child) { CHILD_OF[child] = parent; });
-    });
-
     // ── helpers ──────────────────────────────────────────────────────────────
     function send(action, payload) {
         try { adsk.fusionSendData(action, JSON.stringify(payload || {})); }
@@ -251,15 +235,7 @@
             body.appendChild(el("div", { class: "muted",
                 text: "No commands in this group are available." }));
         }
-        var byKey = {};
-        visible.forEach(function (c) { byKey[c.key] = c; });
-        visible.forEach(function (c) {
-            // A child is drawn inside its parent's row. If the parent is not in
-            // this list at all (filtered out as beta), the child stands on its
-            // own rather than vanishing along with it.
-            if (CHILD_OF[c.key] && byKey[CHILD_OF[c.key]]) return;
-            body.appendChild(commandRow(c, byKey));
-        });
+        visible.forEach(function (c) { body.appendChild(commandRow(c)); });
         grp.appendChild(body);
         sec.appendChild(grp);
         groupExtras(g).forEach(function (node) { sec.appendChild(node); });
@@ -267,8 +243,8 @@
     }
 
     // One command's row: enable checkbox, name + summary, any inline settings,
-    // any child commands, and the docs link.
-    function commandRow(c, byKey) {
+    // and the docs link.
+    function commandRow(c) {
         var row = el("div", { class: "row" });
         row.appendChild(checkbox(c.enabled, function (v) {
             c.enabled = v; send("setCommand", { key: c.key, enabled: v }); render();
@@ -283,6 +259,14 @@
         // unthemed, unbounded-width browser popup.
         if (c.summary) info.appendChild(el("div", { class: "summary", text: c.summary }));
 
+        // A command set (settings_store.COMMAND_SETS) is one capability behind
+        // one checkbox: the backend sends only the lead command, listing its
+        // members here so the row says what the switch covers.
+        if (c.setMembers && c.setMembers.length) {
+            info.appendChild(el("div", { class: "summary", text:
+                "One switch for the set — includes " + c.setMembers.join(" and ") + "." }));
+        }
+
         // Settings flagged inline sit under their own command, gated
         // on the enable checkbox above them, instead of repeating the
         // command as a separate section further down.
@@ -292,22 +276,6 @@
             var cs = (S.commandSettings && S.commandSettings[c.key]) || {};
             inlineDef.render(cs).forEach(function (node) { nested.appendChild(node); });
             info.appendChild(nested);
-        }
-
-        // Child commands sit under their parent for the same reason inline
-        // settings do. They are deliberately NOT gated on the parent's
-        // checkbox: each is a separate command with its own enable state, and
-        // hiding one while the parent was off would take away the only way to
-        // turn it back on.
-        var children = (CMD_CHILDREN[c.key] || []).map(function (k) {
-            return byKey[k];
-        }).filter(Boolean);
-        if (children.length) {
-            var sub = el("div", { class: "row-children" });
-            children.forEach(function (child) {
-                sub.appendChild(commandRow(child, byKey));
-            });
-            info.appendChild(sub);
         }
 
         row.appendChild(info);

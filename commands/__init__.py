@@ -47,7 +47,10 @@ def _should_start(group, cmd, prefs) -> bool:
         return False
     if cmd.get("beta") and not prefs.get("general", {}).get("beta_mode", False):
         return False
-    return bool(prefs.get("commands", {}).get(cmd["module"], {}).get("enabled", True))
+    # A COMMAND_SETS member runs on its lead command's flag — the set shares
+    # one Preferences checkbox, and a member's own stored flag is inert.
+    key = settings_store.SET_LEAD.get(cmd["module"], cmd["module"])
+    return bool(prefs.get("commands", {}).get(key, {}).get("enabled", True))
 
 
 def start():

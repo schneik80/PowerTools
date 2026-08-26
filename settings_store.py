@@ -53,6 +53,23 @@ DEFAULT_DISABLED_COMMANDS = frozenset(
     }
 )
 
+# Commands that are only usable together, keyed by the set's lead command.
+# Global Parameters owns the parameter documents; Link Global Parameters
+# derives them into a design and Refresh Global Parameters Cache rewarms their
+# cache — none of the satellites means anything with the others off, so
+# Preferences offers ONE checkbox for the whole set and enablement resolves
+# through the lead's flag. A member's own entry in preferences.json is inert:
+# ignoring it (rather than migrating it) means an old selectively-disabled
+# state heals itself the moment the lead is read.
+COMMAND_SETS = {
+    "globalParameters": ("linkGlobalParameters", "refreshGlobalParametersCache"),
+}
+
+# member module -> lead module, for enablement lookups.
+SET_LEAD = {
+    member: lead for lead, members in COMMAND_SETS.items() for member in members
+}
+
 # Per-command settings sections (defaults). Keyed by command module name.
 COMMAND_SETTING_DEFAULTS = {
     "componentwarn": {"warn_non_leaf": False},
@@ -183,6 +200,16 @@ def is_group_enabled(key: str) -> bool:
 
 
 def is_command_enabled(key: str) -> bool:
+    """Whether command *key* is enabled, resolving set members through their lead.
+
+    Args:
+        key: The command's registry key (its folder name under commands/).
+
+    Returns:
+        True when the command's flag — or, for a COMMAND_SETS member, its lead
+        command's flag — is enabled.
+    """
+    key = SET_LEAD.get(key, key)
     return bool(load().get("commands", {}).get(key, {}).get("enabled", True))
 
 
