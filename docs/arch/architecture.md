@@ -330,10 +330,12 @@ is a timing problem. Confirm which is which by checking whether the entry
 appears in the DEBUG log's `Open Recent: File dropdown control IDs = [...]`
 dump — it lists every control actually in the menu.
 
-Still on `execute` handlers, and reachable without a document: each **Open
-Recent** flyout item registers an `execute` handler
-(`commands/openrecent/entry.py:352-362`), so opening a recent file from the
-start screen is expected to hit the same wall.
+**Open Recent**'s flyout items were the other command reachable without a
+document that sat on `execute` handlers, and hit exactly this wall from the
+start screen; they now open from `commandCreated` too. The remaining
+`execute`-handler commands (autosave, exportbomcsv, exportmermaid, favorites)
+all operate on the active document, so the no-document case does not arise for
+them.
 
 ---
 

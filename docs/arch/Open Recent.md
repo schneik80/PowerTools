@@ -140,7 +140,7 @@ sequenceDiagram
     end
 
     User->>Flyout: Click a recent item
-    Flyout->>Entry: commandCreated → execute
+    Flyout->>Entry: commandCreated (execute never fires with no document)
     Entry->>Fusion: data.findFileById(dataFileId)
     alt Resolved
         Entry->>Fusion: documents.open(dataFile)
@@ -183,12 +183,19 @@ captured once, from the open document's `dataFile.parentFolder` chain (available
 in memory for free), and stored in the cache — so the tooltip renders instantly
 with no network access.
 
-### Why open in the `execute` handler?
-Each item is a button command definition. Its `commandCreated` handler registers
-an `execute` handler that resolves the `DataFile` and calls `documents.open()`,
-so the item's own command lifecycle completes cleanly before the document
-switch — the standard launcher pattern used by PowerTools Preferences and
-Scripts and Add-ins.
+### Why open from `commandCreated`?
+Each item is a button command definition whose `commandCreated` handler
+resolves the `DataFile` and calls `documents.open()` directly. An earlier
+version registered an `execute` handler instead, described here as "the
+standard launcher pattern used by PowerTools Preferences and Scripts and
+Add-ins" — a claim that was wrong on both counts: Scripts and Add-ins always
+acted from `commandCreated`, and Preferences moved off `execute` once the
+pattern's failure mode surfaced. Fusion runs commands through a
+document-scoped pipeline, so with no document open `execute` never fires; on
+the start screen — the one place a "recently used documents" menu matters most
+— clicking an item silently did nothing. These items have no `CommandInputs`,
+so there is nothing for `execute` to commit. See the execution-model note in
+[architecture.md](architecture.md) for the general rule.
 
 ---
 

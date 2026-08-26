@@ -349,15 +349,20 @@ def _rebuild_menu() -> None:
 
 
 def _make_open_handler(df_id: str, name: str):
-    """Return a commandCreated handler that opens *df_id* when executed."""
+    """Return a commandCreated handler that opens *df_id* when clicked.
+
+    The open happens directly in commandCreated, deliberately not by way of the
+    command's execute event. Fusion runs commands through a document-scoped
+    pipeline: with no document open — the start screen, exactly where this menu
+    matters most — commandCreated fires but the command terminates without ever
+    raising execute, so an execute-based open silently did nothing. These items
+    have no CommandInputs and no dialog, so there is nothing for execute to
+    commit. Same fix as PowerTools Preferences; see the execution-model note in
+    docs/arch/architecture.md.
+    """
 
     def _created(args: adsk.core.CommandCreatedEventArgs):
-        def _execute(exec_args: adsk.core.CommandEventArgs):
-            _open_recent(df_id, name)
-
-        ptutil.add_handler(
-            args.command.execute, _execute, local_handlers=local_handlers
-        )
+        _open_recent(df_id, name)
 
     return _created
 
