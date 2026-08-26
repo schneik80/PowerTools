@@ -122,6 +122,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs) -> None:
         inputs.addBoolValueInput("hide_joints", "Joints", True, "", True)
         inputs.addBoolValueInput("hide_sketches", "Sketches", True, "", True)
         inputs.addBoolValueInput("hide_canvas", "Canvas", True, "", True)
+        inputs.addBoolValueInput("hide_ucs", "User Coordinate Systems", True, "", True)
 
         ptutil.add_handler(
             args.command.execute, command_execute, local_handlers=local_handlers
@@ -153,6 +154,7 @@ def command_execute(args: adsk.core.CommandEventArgs) -> None:
         hide_joints = inputs.itemById("hide_joints").value
         hide_sketches = inputs.itemById("hide_sketches").value
         hide_canvas = inputs.itemById("hide_canvas").value
+        hide_ucs = inputs.itemById("hide_ucs").value
 
         all_components = design.allComponents
 
@@ -186,6 +188,13 @@ def command_execute(args: adsk.core.CommandEventArgs) -> None:
 
             if hide_canvas:
                 component.isCanvasFolderLightBulbOn = False
+
+            # User coordinate systems have no folder light bulb, and the
+            # collection is a preview-state API absent from some Fusion builds.
+            if hide_ucs and hasattr(component, "userCoordinateSystems"):
+                for ucs in component.userCoordinateSystems:
+                    if hasattr(ucs, "isLightBulbOn"):
+                        ucs.isLightBulbOn = False
 
         ptutil.log(f"{CMD_NAME} executed successfully.")
 

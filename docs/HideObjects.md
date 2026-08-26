@@ -37,6 +37,7 @@ The **Hide Objects** command is available in Fusion's **Tools** tab, in the **Ut
    | **Joints** | The joints folder for every component |
    | **Sketches** | All sketches in every component (sketch folder remains visible in browser) |
    | **Canvas** | The canvas folder for every component |
+   | **User Coordinate Systems** | All user coordinate systems in every component |
 
 3. All checkboxes are enabled by default. Uncheck any category you want to leave visible.
 4. Click **OK** to apply.
@@ -52,5 +53,6 @@ The **Hide Objects** command is available in Fusion's **Tools** tab, in the **Ut
 - The command hides objects in all components simultaneously. There is no per-component or per-object selection.
 - The command does not provide a corresponding **Show Objects** operation. Use the browser to restore visibility as needed.
 - Canvas visibility is controlled at the folder level. Individual canvases cannot be targeted independently.
+- User coordinate systems have no folder visibility switch, so they are hidden individually. On Fusion builds without the (preview) user coordinate system API, this category is skipped.
 
 > **Developers:** see the [architecture notes](./arch/HideObjects.md).

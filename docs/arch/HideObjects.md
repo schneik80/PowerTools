@@ -28,9 +28,9 @@ C4Component
     title Component Diagram — Hide Objects
     Container_Boundary(addin, "Hide Objects Command") {
         Component(button, "Command Button", "Fusion UI Control", "Toolbar button in Tools > Utility panel")
-        Component(dialog, "Command Dialog", "Fusion UI", "Eight checkboxes for object categories, all enabled by default")
+        Component(dialog, "Command Dialog", "Fusion UI", "Nine checkboxes for object categories, all enabled by default")
         Component(handler, "command_execute()", "Python", "Iterates design.allComponents and applies visibility flags per selected category")
-        Component(api, "Fusion Visibility API", "adsk.fusion", "isOriginFolderLightBulbOn, isLightBulbOn, isJointsFolderLightBulbOn, isSketchFolderLightBulbOn, isCanvasFolderLightBulbOn")
+        Component(api, "Fusion Visibility API", "adsk.fusion", "isOriginFolderLightBulbOn, isLightBulbOn, isJointsFolderLightBulbOn, isSketchFolderLightBulbOn, isCanvasFolderLightBulbOn, userCoordinateSystems item bulbs")
     }
     System_Ext(fusion, "Autodesk Fusion Design Engine", "Applies visibility changes to all components in the active design")
     Rel(button, dialog, "Opens")
