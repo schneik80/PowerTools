@@ -153,20 +153,38 @@ _COMMAND_START_WAIT_SECONDS = 0.4
 # running", so these ids mean "no real command is active".
 _IDLE_CMD_IDS = ("", "SelectCommand")
 
-# Toolbar button that manually launches the palette. Lives in the Assembly
-# Insert panel, directly below the Insert STEP command. The palette also pops
+# Toolbar buttons that manually launch the palette. The palette also pops
 # automatically on new empty Assembly docs (see the documentActivated trigger);
-# this button is the on-demand entry point.
+# these buttons are the on-demand entry points.
 LAUNCH_CMD_ID = "PTAT_assemblyPalette"
 LAUNCH_CMD_NAME = "Assembly Palette"
 LAUNCH_CMD_DESC = "Open the Assembly Palette quick-start palette."
 LAUNCH_WORKSPACE_ID = "FusionSolidEnvironment"
-LAUNCH_TAB_ID = "AssemblyTab"
-LAUNCH_TAB_NAME = "ASSEMBLY"
-LAUNCH_PANEL_ID = "InsertAssemblePanel"
-LAUNCH_PANEL_NAME = "INSERT"
-# Position the control immediately after (below) the Insert STEP command.
-LAUNCH_POSITION_REF = "PTAT_insertSTEP"
+# Two placements. The Assembly tab's Insert panel (assembly-intent documents)
+# is shared with insertSTEP and created on demand, with the control positioned
+# immediately after (below) Insert STEP. The Solid tab's ASSEMBLE panel is
+# Fusion's own, shown in hybrid-intent documents (id verified in Fusion,
+# 2026-08 build), with the control placed after Fusion's New Component button.
+# That panel is only looked up, never created: a lookup miss skips the button
+# rather than leaving a stray empty panel.
+LAUNCH_PLACEMENTS = [
+    {
+        "tab_id": "AssemblyTab",
+        "tab_name": "ASSEMBLY",
+        "panel_id": "InsertAssemblePanel",
+        "panel_name": "INSERT",
+        "position_ref": "PTAT_insertSTEP",
+        "create_missing": True,
+    },
+    {
+        "tab_id": "SolidTab",
+        "tab_name": "SOLID",
+        "panel_id": "AssemblePanel",
+        "panel_name": "ASSEMBLE",
+        "position_ref": "FusionCreateNewComponentCommand",
+        "create_missing": False,
+    },
+]
 
 local_handlers = []
 
@@ -258,7 +276,7 @@ def start():
         except Exception as e:
             _diag(f"documentOpened attach failed: {e}")
 
-    # Manual launch button in the Assembly Insert panel, below Insert STEP.
+    # Manual launch buttons, one per placement (see LAUNCH_PLACEMENTS).
     cmd_def = ui.commandDefinitions.itemById(LAUNCH_CMD_ID)
     if cmd_def is None:
         cmd_def = ui.commandDefinitions.addButtonDefinition(
@@ -268,14 +286,25 @@ def start():
 
     workspace = ui.workspaces.itemById(LAUNCH_WORKSPACE_ID)
     if workspace is not None:
-        toolbar_tab = workspace.toolbarTabs.itemById(LAUNCH_TAB_ID)
-        if toolbar_tab is None:
-            toolbar_tab = workspace.toolbarTabs.add(LAUNCH_TAB_ID, LAUNCH_TAB_NAME)
-        panel = toolbar_tab.toolbarPanels.itemById(LAUNCH_PANEL_ID)
-        if panel is None:
-            panel = toolbar_tab.toolbarPanels.add(LAUNCH_PANEL_ID, LAUNCH_PANEL_NAME)
-        control = panel.controls.addCommand(cmd_def, LAUNCH_POSITION_REF, False)
-        control.isPromoted = False
+        for placement in LAUNCH_PLACEMENTS:
+            toolbar_tab = workspace.toolbarTabs.itemById(placement["tab_id"])
+            if toolbar_tab is None:
+                if not placement["create_missing"]:
+                    continue
+                toolbar_tab = workspace.toolbarTabs.add(
+                    placement["tab_id"], placement["tab_name"]
+                )
+            panel = toolbar_tab.toolbarPanels.itemById(placement["panel_id"])
+            if panel is None:
+                if not placement["create_missing"]:
+                    continue
+                panel = toolbar_tab.toolbarPanels.add(
+                    placement["panel_id"], placement["panel_name"]
+                )
+            control = panel.controls.addCommand(
+                cmd_def, placement["position_ref"], False
+            )
+            control.isPromoted = False
 
     # Runner for the post-insert chain. unregister-then-register gives a clean
     # slate if the add-in was reloaded without restarting Fusion.
@@ -320,17 +349,21 @@ def stop():
         except Exception:
             pass
 
-    # Remove the launch button. Leave the shared Insert panel/tab in place —
-    # insertSTEP owns the conditional panel/tab cleanup.
+    # Remove the launch buttons. Leave the panels/tabs in place — insertSTEP
+    # owns the shared Insert panel's conditional cleanup, and the Solid tab's
+    # ASSEMBLE panel is Fusion's own.
     workspace = ui.workspaces.itemById(LAUNCH_WORKSPACE_ID)
     if workspace is not None:
-        toolbar_tab = workspace.toolbarTabs.itemById(LAUNCH_TAB_ID)
-        if toolbar_tab is not None:
-            panel = toolbar_tab.toolbarPanels.itemById(LAUNCH_PANEL_ID)
-            if panel is not None:
-                control = panel.controls.itemById(LAUNCH_CMD_ID)
-                if control:
-                    control.deleteMe()
+        for placement in LAUNCH_PLACEMENTS:
+            toolbar_tab = workspace.toolbarTabs.itemById(placement["tab_id"])
+            if toolbar_tab is None:
+                continue
+            panel = toolbar_tab.toolbarPanels.itemById(placement["panel_id"])
+            if panel is None:
+                continue
+            control = panel.controls.itemById(LAUNCH_CMD_ID)
+            if control:
+                control.deleteMe()
     cmd_def = ui.commandDefinitions.itemById(LAUNCH_CMD_ID)
     if cmd_def:
         cmd_def.deleteMe()

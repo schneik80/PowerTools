@@ -26,7 +26,7 @@ The Assembly Palette command opens a docked quick-start palette that helps you p
 ## How to use Assembly Palette
 
 1. In Autodesk Fusion, create a new design with **File > New Design** and confirm the design intent is **Assembly**. The palette opens automatically docked to the right.
-   - To open it manually at any time, select **Assembly Palette** in the **Assembly** tab's **Insert** panel (directly below **Insert STEP File**).
+   - To open it manually at any time, select **Assembly Palette** in the **Assembly** tab's **Insert** panel (directly below **Insert STEP File**). In a hybrid-intent document, it is in the **Solid** tab's **Assemble** panel instead.
 2. **To create a component:** enter a component name, choose **Part**, **Hybrid**, or **Assembly** from the dropdown, and select **New Component**. The external component is created in the active project's root folder and added to the active design.
    - If **New Component** is greyed out and a *No target project* banner is shown, there is no active project to store the component in. Open the **Data Panel**, click into the project you want to work in, then press **Re-check** on the banner (or simply click back into the palette — it re-checks automatically when it regains focus).
 3. **To insert an open document:** switch to the **Open** tab and click a thumbnail card. The document is inserted as a referenced component at the origin.
@@ -47,7 +47,7 @@ The Assembly Palette command opens a docked quick-start palette that helps you p
 | Method | Location |
 |---|---|
 | Automatic | Opens docked to the right when a **new, empty, Assembly-intent** design becomes active. |
-| Manual | **Assembly** tab > **Insert** panel > **Assembly Palette** (below **Insert STEP File**). |
+| Manual | **Assembly** tab > **Insert** panel > **Assembly Palette** (below **Insert STEP File**). In a hybrid-intent document: **Solid** tab > **Assemble** panel > **Assembly Palette**. |
 
 The palette docks to the right edge of the Fusion window. Closing it does not disable the automatic trigger — creating another new empty Assembly design opens it again.
 
