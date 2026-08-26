@@ -260,11 +260,14 @@
         if (c.summary) info.appendChild(el("div", { class: "summary", text: c.summary }));
 
         // A command set (settings_store.COMMAND_SETS) is one capability behind
-        // one checkbox: the backend sends only the lead command, listing its
-        // members here so the row says what the switch covers.
+        // one checkbox: the backend sends only the lead command plus its
+        // members' names. State the plain fact — every command this checkbox
+        // enables and disables, the lead itself included.
         if (c.setMembers && c.setMembers.length) {
+            var setNames = [c.name].concat(c.setMembers);
             info.appendChild(el("div", { class: "summary", text:
-                "One switch for the set — includes " + c.setMembers.join(" and ") + "." }));
+                "Enables and disables " + setNames.slice(0, -1).join(", ") +
+                ", and " + setNames[setNames.length - 1] + "." }));
         }
 
         // Settings flagged inline sit under their own command, gated
