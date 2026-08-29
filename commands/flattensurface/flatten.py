@@ -1,0 +1,1028 @@
+# Copyright (C) Industrial Machine Arts LLC WA, USA - All Rights Reserved
+#
+# This source code is protected under international copyright law.  All rights
+# reserved and protected by the copyright holders.
+#
+# This file is confidential and only available to authorized individuals with the
+# permission of the copyright holders.  If you encounter this file and do not have
+# permission, please contact the copyright holders and delete this file.
+#
+# Pure flattening core for the Flatten Surface command. Deliberately free of any
+# `adsk` import so it can be unit tested outside Fusion: entry.py tessellates the
+# selected faces into plain coordinate/index tuples, calls flatten_meshes(), and
+# then only draws and writes what comes back.
+#
+# Coordinates arriving here are (x, y, z) tuples in centimetres, already resolved
+# to root/world space by the caller. Everything returned is centimetres too.
+#
+# The pipeline is the standard one for fabrication flattening: weld the selected
+# faces into one patch, lay it out with a least-squares conformal map (LSCM), then
+# relax that layout as-rigid-as-possible (ARAP) so the error is spread between
+# angle and area instead of piling up in area alone. Distortion is read back from
+# the singular values of each triangle's 3D-to-2D Jacobian. Background, sources
+# and the algorithm survey behind these choices: docs/dev/Flatten Surface
+# research.md.
+
+import math
+from dataclasses import dataclass, field
+
+# Mesh nodes closer together than this (centimetres) are the same vertex. Fusion
+# tessellates each face independently, so the shared edge between two selected
+# faces arrives as two coincident rows of nodes; welding them is what turns a
+# selection into a single connected patch rather than a pile of loose triangles.
+DEFAULT_WELD_TOL = 1e-4
+
+# Cotangent weights go negative on obtuse triangles, which can make the ARAP
+# system indefinite and stall the solver. Clamping to a small positive floor
+# keeps it symmetric positive definite at the cost of a little accuracy on badly
+# shaped triangles.
+MIN_COTAN = 1e-3
+
+DEFAULT_ARAP_ITERATIONS = 10
+DEFAULT_CG_TOLERANCE = 1e-10
+DEFAULT_ISLAND_GAP = 0.5
+
+# Triangles smaller than this (cm^2) carry no usable frame, so they are skipped
+# when assembling the solver systems and reported as degenerate instead.
+MIN_TRIANGLE_AREA = 1e-12
+
+# Moreland's smooth cool-warm diverging map, sampled at nine stops. Blue is
+# compression, near-white is no distortion, red is stretch - the same convention
+# the Boundary First Flattening viewer uses. Deliberately not a rainbow ramp:
+# non-monotonic lightness invents edges that are not in the data.
+_COOLWARM = (
+    (0.000, (59, 76, 192)),
+    (0.125, (98, 130, 234)),
+    (0.250, (141, 176, 254)),
+    (0.375, (184, 208, 249)),
+    (0.500, (221, 221, 221)),
+    (0.625, (245, 196, 173)),
+    (0.750, (244, 154, 123)),
+    (0.875, (222, 96, 77)),
+    (1.000, (180, 4, 38)),
+)
+
+
+@dataclass
+class FlattenStats:
+    """Summary of one flattening run, for the dialog and the report.
+
+    Attributes:
+        vertices: Welded vertex count.
+        triangles: Triangle count.
+        islands: Number of disconnected patches laid out side by side.
+        area_3d: Total surface area in cm^2.
+        area_2d: Total flattened area in cm^2.
+        min_strain: Most negative signed area strain (compression).
+        min_vertex: Vertex index carrying *min_strain*.
+        max_strain: Most positive signed area strain (stretch).
+        max_vertex: Vertex index carrying *max_strain*.
+        mean_abs_strain: Area-weighted mean of absolute strain.
+        flipped: Triangles whose 2D winding is inverted; non-zero means the
+            layout folded over itself and the pattern is not trustworthy.
+        degenerate: Triangles too small to measure, skipped by the solver.
+    """
+
+    vertices: int = 0
+    triangles: int = 0
+    islands: int = 0
+    area_3d: float = 0.0
+    area_2d: float = 0.0
+    min_strain: float = 0.0
+    min_vertex: int = -1
+    max_strain: float = 0.0
+    max_vertex: int = -1
+    mean_abs_strain: float = 0.0
+    flipped: int = 0
+    degenerate: int = 0
+
+
+@dataclass
+class FlattenResult:
+    """A flattened patch and everything drawn or reported from it.
+
+    Attributes:
+        verts: Welded 3D coordinates in centimetres.
+        tris: Triangles as (i, j, k) index tuples into *verts*.
+        uvs: Flattened 2D coordinates in centimetres, parallel to *verts*.
+        strain: Signed area strain per vertex, parallel to *verts*.
+        boundary: Boundary loops as vertex index lists, outer loop first and
+            hole loops after it.
+        seams: Interior edges between two different selected faces, chained
+            into polylines of vertex indices.
+        stats: Summary of the run.
+    """
+
+    verts: list = field(default_factory=list)
+    tris: list = field(default_factory=list)
+    uvs: list = field(default_factory=list)
+    strain: list = field(default_factory=list)
+    boundary: list = field(default_factory=list)
+    seams: list = field(default_factory=list)
+    stats: FlattenStats = field(default_factory=FlattenStats)
+
+
+def _cell(point: tuple[float, float, float], tol: float) -> tuple[int, int, int]:
+    return (
+        int(round(point[0] / tol)),
+        int(round(point[1] / tol)),
+        int(round(point[2] / tol)),
+    )
+
+
+def weld_meshes(
+    meshes: list[tuple[list, list]], tol: float = DEFAULT_WELD_TOL
+) -> tuple[list, list, list]:
+    """Merge per-face meshes into one vertex-shared mesh.
+
+    Uses a spatial hash on a grid of cell size *tol*, probing the 27 cells around
+    each node so two nodes either side of a cell boundary still merge.
+
+    Args:
+        meshes: One (coords, triangles) pair per selected face, where coords is
+            a list of (x, y, z) tuples in centimetres and triangles is a list of
+            (i, j, k) index tuples into that face's own coords.
+        tol: Weld tolerance in centimetres. Must be positive.
+
+    Returns:
+        ``(verts, tris, tri_source)`` where verts holds the merged coordinates,
+        tris indexes into it, and tri_source[t] is the index of the mesh that
+        contributed triangle t.
+
+    Raises:
+        ValueError: If *tol* is not positive.
+    """
+    if tol <= 0.0:
+        raise ValueError("weld tolerance must be positive")
+
+    buckets: dict = {}
+    verts: list = []
+    tris: list = []
+    tri_source: list = []
+    tol_sq = tol * tol
+
+    for source, (coords, triangles) in enumerate(meshes):
+        remap = []
+        for point in coords:
+            base = _cell(point, tol)
+            found = None
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    for dz in (-1, 0, 1):
+                        for node in buckets.get(
+                            (base[0] + dx, base[1] + dy, base[2] + dz), ()
+                        ):
+                            existing = verts[node]
+                            ddx = existing[0] - point[0]
+                            ddy = existing[1] - point[1]
+                            ddz = existing[2] - point[2]
+                            if ddx * ddx + ddy * ddy + ddz * ddz <= tol_sq:
+                                found = node
+                                break
+                        if found is not None:
+                            break
+                    if found is not None:
+                        break
+                if found is not None:
+                    break
+
+            if found is None:
+                found = len(verts)
+                verts.append((float(point[0]), float(point[1]), float(point[2])))
+                buckets.setdefault(base, []).append(found)
+            remap.append(found)
+
+        for a, b, c in triangles:
+            ra, rb, rc = remap[a], remap[b], remap[c]
+            # A triangle whose corners welded together spans no area and would
+            # only feed zeroes into the solver.
+            if ra == rb or rb == rc or ra == rc:
+                continue
+            tris.append((ra, rb, rc))
+            tri_source.append(source)
+
+    return verts, tris, tri_source
+
+
+def split_islands(vert_count: int, tris: list) -> list:
+    """Group triangles into connected components.
+
+    A selection of faces that do not touch cannot be flattened as one patch, so
+    each component is solved on its own and the pieces are laid out side by side.
+
+    Args:
+        vert_count: Number of vertices the triangles index into.
+        tris: Triangles as (i, j, k) index tuples.
+
+    Returns:
+        A list of triangle-index lists, one per component, ordered by the first
+        triangle each component contains.
+    """
+    parent = list(range(vert_count))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for a, b, c in tris:
+        for u, v in ((a, b), (b, c)):
+            ru, rv = find(u), find(v)
+            if ru != rv:
+                parent[rv] = ru
+
+    groups: dict = {}
+    for index, (a, _b, _c) in enumerate(tris):
+        groups.setdefault(find(a), []).append(index)
+    return list(groups.values())
+
+
+def _triangle_frame(
+    p1: tuple, p2: tuple, p3: tuple
+) -> tuple[float, float, float, float]:
+    """Return (x2, x3, y3, area) for a triangle laid flat in its own plane.
+
+    The first corner sits at the origin and the second on the local x axis, so
+    x1, y1 and y2 are zero by construction and are not returned.
+    """
+    e1 = (p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2])
+    x2 = math.sqrt(e1[0] * e1[0] + e1[1] * e1[1] + e1[2] * e1[2])
+    if x2 <= 0.0:
+        return 0.0, 0.0, 0.0, 0.0
+    ux, uy, uz = e1[0] / x2, e1[1] / x2, e1[2] / x2
+
+    w = (p3[0] - p1[0], p3[1] - p1[1], p3[2] - p1[2])
+    x3 = w[0] * ux + w[1] * uy + w[2] * uz
+    nx = w[0] - x3 * ux
+    ny = w[1] - x3 * uy
+    nz = w[2] - x3 * uz
+    y3 = math.sqrt(nx * nx + ny * ny + nz * nz)
+    return x2, x3, y3, 0.5 * x2 * y3
+
+
+def _matvec(rows: list, x: list) -> list:
+    out = [0.0] * len(x)
+    for i, row in enumerate(rows):
+        total = 0.0
+        for j, value in row.items():
+            total += value * x[j]
+        out[i] = total
+    return out
+
+
+def solve_cg(
+    rows: list,
+    rhs: list,
+    x0: list | None = None,
+    tol: float = DEFAULT_CG_TOLERANCE,
+    max_iter: int = 0,
+) -> list:
+    """Solve a sparse symmetric positive definite system.
+
+    Jacobi-preconditioned conjugate gradient. Fusion's Python has no numpy, so
+    this is the whole linear algebra budget: both LSCM and every ARAP iteration
+    come through here.
+
+    Args:
+        rows: Matrix as one dict per row, mapping column index to value.
+        rhs: Right-hand side, same length as *rows*.
+        x0: Optional starting guess; warm-starting an ARAP iteration from the
+            previous one cuts the iteration count sharply.
+        tol: Convergence threshold on the squared residual norm.
+        max_iter: Iteration cap; defaults to twice the system size.
+
+    Returns:
+        The solution vector.
+    """
+    n = len(rhs)
+    if n == 0:
+        return []
+    if max_iter <= 0:
+        max_iter = max(4 * n, 50)
+
+    inverse_diagonal = []
+    for i, row in enumerate(rows):
+        d = row.get(i, 0.0)
+        inverse_diagonal.append(1.0 / d if d > 0.0 else 1.0)
+
+    x = list(x0) if x0 is not None else [0.0] * n
+    ax = _matvec(rows, x)
+    r = [rhs[i] - ax[i] for i in range(n)]
+    z = [r[i] * inverse_diagonal[i] for i in range(n)]
+    p = list(z)
+    rz = sum(r[i] * z[i] for i in range(n))
+
+    for _ in range(max_iter):
+        if sum(value * value for value in r) <= tol:
+            break
+        ap = _matvec(rows, p)
+        denominator = sum(p[i] * ap[i] for i in range(n))
+        if abs(denominator) < 1e-300:
+            break
+        alpha = rz / denominator
+        for i in range(n):
+            x[i] += alpha * p[i]
+            r[i] -= alpha * ap[i]
+        z = [r[i] * inverse_diagonal[i] for i in range(n)]
+        rz_next = sum(r[i] * z[i] for i in range(n))
+        if abs(rz) < 1e-300:
+            break
+        beta = rz_next / rz
+        for i in range(n):
+            p[i] = z[i] + beta * p[i]
+        rz = rz_next
+
+    return x
+
+
+def _farthest_pair(verts: list, indices: list) -> tuple[int, int]:
+    """Pick two well-separated vertices to pin, by two-pass farthest point."""
+    first = indices[0]
+    best = first
+    best_distance = -1.0
+    for index in indices:
+        p, q = verts[index], verts[first]
+        d = (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 + (p[2] - q[2]) ** 2
+        if d > best_distance:
+            best_distance = d
+            best = index
+    second = best
+    best = second
+    best_distance = -1.0
+    for index in indices:
+        p, q = verts[index], verts[second]
+        d = (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 + (p[2] - q[2]) ** 2
+        if d > best_distance:
+            best_distance = d
+            best = index
+    return second, best
+
+
+def lscm(verts: list, tris: list, local: list) -> list:
+    """Lay a patch flat with a least-squares conformal map.
+
+    Minimises the Cauchy-Riemann residual over the patch, which preserves angles
+    and pushes all the error into area - exactly the quantity the strain map
+    shows. Two pinned vertices remove the similarity null space; the result is
+    then scaled so the flattened area matches the surface area.
+
+    Args:
+        verts: All welded 3D coordinates in centimetres.
+        tris: Triangles of this island as (i, j, k) index tuples into *verts*.
+        local: Vertex indices belonging to this island.
+
+    Returns:
+        One (u, v) tuple per entry of *local*, in the same order.
+    """
+    slot = {index: position for position, index in enumerate(local)}
+    count = len(local)
+    if count < 3:
+        return [(0.0, 0.0)] * count
+
+    pin_a, pin_b = _farthest_pair(verts, local)
+    if pin_a == pin_b:
+        pin_b = local[1] if local[0] == pin_a else local[0]
+    pa, pb = verts[pin_a], verts[pin_b]
+    span = math.sqrt((pa[0] - pb[0]) ** 2 + (pa[1] - pb[1]) ** 2 + (pa[2] - pb[2]) ** 2)
+    pinned = {slot[pin_a]: (0.0, 0.0), slot[pin_b]: (span, 0.0)}
+
+    # Unknowns are the free vertices' u and v, interleaved.
+    free = [position for position in range(count) if position not in pinned]
+    column = {position: 2 * order for order, position in enumerate(free)}
+    size = 2 * len(free)
+    if size == 0:
+        return [pinned.get(position, (0.0, 0.0)) for position in range(count)]
+
+    rows: list = [dict() for _ in range(size)]
+    rhs = [0.0] * size
+
+    def accumulate(entries: list, constant: float) -> None:
+        """Fold one least-squares residual row into the normal equations."""
+        for col_i, coeff_i in entries:
+            target = rows[col_i]
+            for col_j, coeff_j in entries:
+                target[col_j] = target.get(col_j, 0.0) + coeff_i * coeff_j
+            rhs[col_i] -= coeff_i * constant
+
+    for a, b, c in tris:
+        x2, x3, y3, area = _triangle_frame(verts[a], verts[b], verts[c])
+        if area <= MIN_TRIANGLE_AREA:
+            continue
+        # Gradient coefficients of a linear function over the flattened
+        # triangle, scaled so each residual carries its triangle's area weight.
+        weight = 1.0 / (2.0 * math.sqrt(area))
+        d_y = ((0.0 - y3) * weight, (y3 - 0.0) * weight, (0.0 - 0.0) * weight)
+        d_x = ((x3 - x2) * weight, (0.0 - x3) * weight, (x2 - 0.0) * weight)
+        corners = (slot[a], slot[b], slot[c])
+
+        # The two Cauchy-Riemann residuals: du/dx - dv/dy and du/dy + dv/dx.
+        for coeff_u, coeff_v, sign in ((d_y, d_x, -1.0), (d_x, d_y, 1.0)):
+            entries = []
+            constant = 0.0
+            for corner, cu, cv in zip(corners, coeff_u, coeff_v, strict=True):
+                pin = pinned.get(corner)
+                if pin is None:
+                    base = column[corner]
+                    entries.append((base, cu))
+                    entries.append((base + 1, sign * cv))
+                else:
+                    constant += cu * pin[0] + sign * cv * pin[1]
+            accumulate(entries, constant)
+
+    solution = solve_cg(rows, rhs)
+
+    uvs = [(0.0, 0.0)] * count
+    for position in range(count):
+        pin = pinned.get(position)
+        if pin is not None:
+            uvs[position] = pin
+        else:
+            base = column[position]
+            uvs[position] = (solution[base], solution[base + 1])
+    return uvs
+
+
+def _cotangent_rows(verts: list, tris: list, slot: dict, count: int) -> list:
+    """Assemble the clamped cotangent Laplacian for one island."""
+    rows: list = [dict() for _ in range(count)]
+    for a, b, c in tris:
+        weights = _triangle_cotangents(verts[a], verts[b], verts[c])
+        corners = (slot[a], slot[b], slot[c])
+        # Weight k belongs to the edge opposite corner k.
+        for k, weight in enumerate(weights):
+            i = corners[(k + 1) % 3]
+            j = corners[(k + 2) % 3]
+            rows[i][i] = rows[i].get(i, 0.0) + weight
+            rows[j][j] = rows[j].get(j, 0.0) + weight
+            rows[i][j] = rows[i].get(j, 0.0) - weight
+            rows[j][i] = rows[j].get(i, 0.0) - weight
+    return rows
+
+
+def _triangle_cotangents(p1: tuple, p2: tuple, p3: tuple) -> tuple[float, float, float]:
+    """Cotangent of each corner angle, clamped positive, indexed by corner."""
+    points = (p1, p2, p3)
+    out = []
+    for k in range(3):
+        at = points[k]
+        u = points[(k + 1) % 3]
+        v = points[(k + 2) % 3]
+        e1 = (u[0] - at[0], u[1] - at[1], u[2] - at[2])
+        e2 = (v[0] - at[0], v[1] - at[1], v[2] - at[2])
+        dot = e1[0] * e2[0] + e1[1] * e2[1] + e1[2] * e2[2]
+        cx = e1[1] * e2[2] - e1[2] * e2[1]
+        cy = e1[2] * e2[0] - e1[0] * e2[2]
+        cz = e1[0] * e2[1] - e1[1] * e2[0]
+        cross = math.sqrt(cx * cx + cy * cy + cz * cz)
+        out.append(max(dot / cross, MIN_COTAN) if cross > 0.0 else MIN_COTAN)
+    return out[0], out[1], out[2]
+
+
+def arap_relax(
+    verts: list,
+    tris: list,
+    local: list,
+    uvs: list,
+    iterations: int = DEFAULT_ARAP_ITERATIONS,
+) -> list:
+    """Relax a conformal layout toward an as-rigid-as-possible one.
+
+    Alternates a local step - fit the best rotation to each triangle in closed
+    form - with a global step that re-solves the cotangent Laplacian against
+    those rotations. This trades a little angle accuracy for markedly less area
+    distortion, which is what a cut pattern wants.
+
+    Args:
+        verts: All welded 3D coordinates in centimetres.
+        tris: Triangles of this island as (i, j, k) index tuples into *verts*.
+        local: Vertex indices belonging to this island.
+        uvs: Starting layout, one (u, v) per entry of *local*.
+        iterations: Local/global sweeps to run.
+
+    Returns:
+        The relaxed layout, one (u, v) per entry of *local*.
+    """
+    count = len(local)
+    if count < 3 or iterations <= 0:
+        return uvs
+
+    slot = {index: position for position, index in enumerate(local)}
+    rows = _cotangent_rows(verts, tris, slot, count)
+
+    # The Laplacian is singular by one translation per axis, so pin a vertex to
+    # the origin. Dropping its column as well keeps the system symmetric, and is
+    # only consistent because the pinned value is zero; the caller re-anchors the
+    # island's position afterwards, so which point sits at the origin is moot.
+    pin = 0
+    for row in rows:
+        row.pop(pin, None)
+    rows[pin] = {pin: 1.0}
+
+    frames = []
+    for a, b, c in tris:
+        x2, x3, y3, area = _triangle_frame(verts[a], verts[b], verts[c])
+        cot = _triangle_cotangents(verts[a], verts[b], verts[c])
+        frames.append(
+            (
+                (slot[a], slot[b], slot[c]),
+                ((0.0, 0.0), (x2, 0.0), (x3, y3)),
+                cot,
+                area,
+            )
+        )
+
+    current = list(uvs)
+    for _ in range(iterations):
+        rhs_u = [0.0] * count
+        rhs_v = [0.0] * count
+
+        for corners, flat, cot, area in frames:
+            if area <= MIN_TRIANGLE_AREA:
+                continue
+            # Local step: the rotation closest to this triangle's current map.
+            s00 = s01 = s10 = s11 = 0.0
+            for k in range(3):
+                i = (k + 1) % 3
+                j = (k + 2) % 3
+                weight = cot[k]
+                dx = flat[i][0] - flat[j][0]
+                dy = flat[i][1] - flat[j][1]
+                du = current[corners[i]][0] - current[corners[j]][0]
+                dv = current[corners[i]][1] - current[corners[j]][1]
+                s00 += weight * du * dx
+                s01 += weight * du * dy
+                s10 += weight * dv * dx
+                s11 += weight * dv * dy
+            angle = math.atan2(s10 - s01, s00 + s11)
+            cos_a, sin_a = math.cos(angle), math.sin(angle)
+
+            # Global step right-hand side: rotate each edge and accumulate.
+            for k in range(3):
+                i = (k + 1) % 3
+                j = (k + 2) % 3
+                weight = cot[k]
+                dx = flat[i][0] - flat[j][0]
+                dy = flat[i][1] - flat[j][1]
+                rx = weight * (cos_a * dx - sin_a * dy)
+                ry = weight * (sin_a * dx + cos_a * dy)
+                rhs_u[corners[i]] += rx
+                rhs_u[corners[j]] -= rx
+                rhs_v[corners[i]] += ry
+                rhs_v[corners[j]] -= ry
+
+        rhs_u[pin] = 0.0
+        rhs_v[pin] = 0.0
+
+        # Warm-starting from the previous sweep, shifted so the pin sits at the
+        # origin, keeps each solve to a handful of iterations.
+        shift = current[pin]
+        next_u = solve_cg(rows, rhs_u, [uv[0] - shift[0] for uv in current])
+        next_v = solve_cg(rows, rhs_v, [uv[1] - shift[1] for uv in current])
+        current = [(next_u[i], next_v[i]) for i in range(count)]
+
+    return current
+
+
+def triangle_sigmas(verts: list, tris: list, uvs: list) -> list:
+    """Singular values of each triangle's 3D-to-2D Jacobian.
+
+    Every distortion measure falls out of these: sigma1 * sigma2 is the area
+    ratio, sigma1 / sigma2 is the shear. Computed in closed form from the metric
+    tensor, which is why no matrix library is needed.
+
+    Args:
+        verts: Welded 3D coordinates in centimetres.
+        tris: Triangles as (i, j, k) index tuples.
+        uvs: Flattened coordinates parallel to *verts*.
+
+    Returns:
+        One (sigma1, sigma2) tuple per triangle, sigma1 >= sigma2. Degenerate
+        triangles yield (0.0, 0.0).
+    """
+    out = []
+    for a, b, c in tris:
+        x2, x3, y3, area = _triangle_frame(verts[a], verts[b], verts[c])
+        if area <= MIN_TRIANGLE_AREA:
+            out.append((0.0, 0.0))
+            continue
+        # Jacobian J solves J @ [3D edges in the local frame] = [2D edges].
+        u1 = (uvs[b][0] - uvs[a][0], uvs[b][1] - uvs[a][1])
+        u2 = (uvs[c][0] - uvs[a][0], uvs[c][1] - uvs[a][1])
+        determinant = x2 * y3
+        i00, i01 = 1.0 / x2, -x3 / determinant
+        i11 = 1.0 / y3
+        j00 = u1[0] * i00
+        j01 = u1[0] * i01 + u2[0] * i11
+        j10 = u1[1] * i00
+        j11 = u1[1] * i01 + u2[1] * i11
+
+        m00 = j00 * j00 + j10 * j10
+        m01 = j00 * j01 + j10 * j11
+        m11 = j01 * j01 + j11 * j11
+        root = math.sqrt(max((m00 - m11) ** 2 + 4.0 * m01 * m01, 0.0))
+        sigma1 = math.sqrt(max((m00 + m11 + root) * 0.5, 0.0))
+        sigma2 = math.sqrt(max((m00 + m11 - root) * 0.5, 0.0))
+        out.append((sigma1, sigma2))
+    return out
+
+
+def signed_area_2d(p1: tuple, p2: tuple, p3: tuple) -> float:
+    """Signed area of a 2D triangle; negative means inverted winding."""
+    return 0.5 * ((p2[0] - p1[0]) * (p3[1] - p1[1]) - (p3[0] - p1[0]) * (p2[1] - p1[1]))
+
+
+def vertex_strain(
+    verts: list, tris: list, uvs: list, sigmas: list
+) -> tuple[list, FlattenStats]:
+    """Spread per-triangle area strain onto vertices and summarise it.
+
+    Strain is ``sqrt(sigma1 * sigma2) - 1``: the length-equivalent form of the
+    area ratio, so 0.03 reads as three percent stretch. Vertices average their
+    incident triangles weighted by area, which is what makes the colour map read
+    smoothly instead of showing every sliver.
+
+    Args:
+        verts: Welded 3D coordinates in centimetres.
+        tris: Triangles as (i, j, k) index tuples.
+        uvs: Flattened coordinates parallel to *verts*.
+        sigmas: Per-triangle singular values from :func:`triangle_sigmas`.
+
+    Returns:
+        ``(strain, stats)`` with one strain value per vertex.
+    """
+    totals = [0.0] * len(verts)
+    weights = [0.0] * len(verts)
+    stats = FlattenStats(vertices=len(verts), triangles=len(tris))
+    abs_total = 0.0
+    area_total = 0.0
+
+    for index, (a, b, c) in enumerate(tris):
+        _x2, _x3, _y3, area = _triangle_frame(verts[a], verts[b], verts[c])
+        flat_area = signed_area_2d(uvs[a], uvs[b], uvs[c])
+        stats.area_3d += area
+        stats.area_2d += abs(flat_area)
+        if area <= MIN_TRIANGLE_AREA:
+            stats.degenerate += 1
+            continue
+        if flat_area < 0.0:
+            stats.flipped += 1
+        sigma1, sigma2 = sigmas[index]
+        value = math.sqrt(max(sigma1 * sigma2, 0.0)) - 1.0
+        for corner in (a, b, c):
+            totals[corner] += value * area
+            weights[corner] += area
+        abs_total += abs(value) * area
+        area_total += area
+
+    strain = [
+        totals[i] / weights[i] if weights[i] > 0.0 else 0.0 for i in range(len(verts))
+    ]
+    if area_total > 0.0:
+        stats.mean_abs_strain = abs_total / area_total
+    if strain:
+        stats.min_vertex = min(range(len(strain)), key=lambda i: strain[i])
+        stats.max_vertex = max(range(len(strain)), key=lambda i: strain[i])
+        stats.min_strain = strain[stats.min_vertex]
+        stats.max_strain = strain[stats.max_vertex]
+    return strain, stats
+
+
+def boundary_loops(tris: list) -> list:
+    """Chain the patch's boundary edges into closed loops.
+
+    A boundary edge is a directed triangle edge whose opposite is not used by
+    any other triangle, so the loops come out consistently oriented.
+
+    Args:
+        tris: Triangles as (i, j, k) index tuples.
+
+    Returns:
+        A list of loops, each a list of vertex indices in order.
+    """
+    directed = set()
+    for a, b, c in tris:
+        directed.add((a, b))
+        directed.add((b, c))
+        directed.add((c, a))
+
+    remaining: dict = {}
+    for a, b in sorted(directed):
+        if (b, a) not in directed:
+            remaining.setdefault(a, []).append(b)
+
+    loops = []
+    for start in sorted(remaining):
+        while remaining.get(start):
+            loop = [start]
+            current = start
+            while True:
+                outgoing = remaining.get(current)
+                if not outgoing:
+                    break
+                following = outgoing.pop(0)
+                if not outgoing:
+                    del remaining[current]
+                if following == start:
+                    break
+                loop.append(following)
+                current = following
+            if len(loop) >= 3:
+                loops.append(loop)
+    return loops
+
+
+def _chain_edges(edges: list) -> list:
+    """Chain undirected edges into polylines, open chains first."""
+    adjacency: dict = {}
+    for a, b in edges:
+        adjacency.setdefault(a, []).append(b)
+        adjacency.setdefault(b, []).append(a)
+
+    unused = {tuple(sorted(edge)) for edge in edges}
+    chains = []
+    ends = sorted(v for v, n in adjacency.items() if len(n) != 2)
+
+    def walk(start: int) -> list:
+        chain = [start]
+        current = start
+        while True:
+            step = None
+            for neighbour in sorted(adjacency.get(current, ())):
+                key = tuple(sorted((current, neighbour)))
+                if key in unused:
+                    step = neighbour
+                    unused.discard(key)
+                    break
+            if step is None:
+                return chain
+            chain.append(step)
+            current = step
+
+    for start in ends:
+        while any(
+            tuple(sorted((start, n))) in unused for n in adjacency.get(start, ())
+        ):
+            chain = walk(start)
+            if len(chain) >= 2:
+                chains.append(chain)
+
+    while unused:
+        start = next(iter(sorted(unused)))[0]
+        chain = walk(start)
+        if len(chain) >= 2:
+            chains.append(chain)
+    return chains
+
+
+def seam_chains(tris: list, tri_source: list) -> list:
+    """Find the interior edges where two different selected faces meet.
+
+    These are the panel seam lines: real features of the flat pattern, drawn as
+    construction geometry so the outline stays unambiguous.
+
+    Args:
+        tris: Triangles as (i, j, k) index tuples.
+        tri_source: Source face index per triangle, from :func:`weld_meshes`.
+
+    Returns:
+        A list of polylines, each a list of vertex indices.
+    """
+    edge_sources: dict = {}
+    for index, (a, b, c) in enumerate(tris):
+        source = tri_source[index]
+        for i, j in ((a, b), (b, c), (c, a)):
+            key = (i, j) if i < j else (j, i)
+            edge_sources.setdefault(key, []).append(source)
+
+    seams = [
+        edge
+        for edge, sources in sorted(edge_sources.items())
+        if len(sources) == 2 and sources[0] != sources[1]
+    ]
+    return _chain_edges(seams)
+
+
+def strain_to_rgba(value: float, limit: float, alpha: int = 255) -> tuple:
+    """Map a signed strain to a diverging blue-white-red colour.
+
+    Args:
+        value: Signed area strain; negative compresses, positive stretches.
+        limit: Symmetric clip, so -limit is fully blue and +limit fully red.
+        alpha: Alpha channel to attach.
+
+    Returns:
+        An (r, g, b, a) tuple of 0-255 integers.
+    """
+    if limit <= 0.0:
+        position = 0.5
+    else:
+        position = (value + limit) / (2.0 * limit)
+    position = min(1.0, max(0.0, position))
+
+    # Deliberately ragged: each stop is paired with the one after it.
+    for (t0, c0), (t1, c1) in zip(_COOLWARM, _COOLWARM[1:], strict=False):
+        if position <= t1:
+            span = t1 - t0
+            f = 0.0 if span <= 0.0 else (position - t0) / span
+            return (
+                round(c0[0] + f * (c1[0] - c0[0])),
+                round(c0[1] + f * (c1[1] - c0[1])),
+                round(c0[2] + f * (c1[2] - c0[2])),
+                alpha,
+            )
+    last = _COOLWARM[-1][1]
+    return (last[0], last[1], last[2], alpha)
+
+
+def strain_limit(strain: list, percentile: float = 0.02) -> float:
+    """Choose a symmetric colour range, ignoring a tail of outliers.
+
+    One bad sliver would otherwise wash the whole map out to neutral, so the
+    extremes are trimmed before taking the larger magnitude.
+
+    Args:
+        strain: Per-vertex strain values.
+        percentile: Fraction trimmed from each end, 0 to 0.5.
+
+    Returns:
+        A positive limit, or 0.0 when there is nothing to show.
+    """
+    if not strain:
+        return 0.0
+    ordered = sorted(strain)
+    cut = min(int(len(ordered) * percentile), (len(ordered) - 1) // 2)
+    low = ordered[cut]
+    high = ordered[len(ordered) - 1 - cut]
+    return max(abs(low), abs(high))
+
+
+def _normalise(verts: list, tris: list, local: list, uvs: list) -> list:
+    """Fix mirroring and scale so the layout matches the surface it came from."""
+    slot = {index: position for position, index in enumerate(local)}
+    signed = 0.0
+    area_3d = 0.0
+    area_2d = 0.0
+    for a, b, c in tris:
+        pa, pb, pc = uvs[slot[a]], uvs[slot[b]], uvs[slot[c]]
+        value = signed_area_2d(pa, pb, pc)
+        signed += value
+        area_2d += abs(value)
+        area_3d += _triangle_frame(verts[a], verts[b], verts[c])[3]
+
+    # LSCM is free to hand back a mirrored layout; a mirrored cut pattern is a
+    # real defect, so flip it back before anything downstream sees it.
+    if signed < 0.0:
+        uvs = [(u, -v) for u, v in uvs]
+    if area_2d > 0.0 and area_3d > 0.0:
+        scale = math.sqrt(area_3d / area_2d)
+        uvs = [(u * scale, v * scale) for u, v in uvs]
+    return uvs
+
+
+def flatten_meshes(
+    meshes: list,
+    weld_tol: float = DEFAULT_WELD_TOL,
+    relax: bool = True,
+    iterations: int = DEFAULT_ARAP_ITERATIONS,
+    island_gap: float = DEFAULT_ISLAND_GAP,
+) -> FlattenResult:
+    """Flatten tessellated faces into one pattern with a strain map.
+
+    Welds the faces into a single patch, lays each connected island flat with
+    LSCM, optionally relaxes it with ARAP, then measures the distortion that is
+    left and extracts the outline and seam lines.
+
+    Args:
+        meshes: One (coords, triangles) pair per selected face, in centimetres.
+        weld_tol: Vertex weld tolerance in centimetres.
+        relax: Run the ARAP relaxation after LSCM.
+        iterations: ARAP sweeps when *relax* is set.
+        island_gap: Space left between disconnected islands, in centimetres.
+
+    Returns:
+        A :class:`FlattenResult`. Its ``tris`` is empty when the selection held
+        no usable triangles.
+    """
+    verts, tris, tri_source = weld_meshes(meshes, weld_tol)
+    result = FlattenResult(verts=verts, tris=tris)
+    if not tris:
+        return result
+
+    islands = split_islands(len(verts), tris)
+    uvs = [(0.0, 0.0)] * len(verts)
+    offset_x = 0.0
+
+    for triangle_indices in islands:
+        island_tris = [tris[i] for i in triangle_indices]
+        seen: dict = {}
+        for a, b, c in island_tris:
+            for corner in (a, b, c):
+                if corner not in seen:
+                    seen[corner] = len(seen)
+        local = list(seen)
+
+        layout = lscm(verts, island_tris, local)
+        layout = _normalise(verts, island_tris, local, layout)
+        if relax:
+            layout = arap_relax(verts, island_tris, local, layout, iterations)
+            layout = _normalise(verts, island_tris, local, layout)
+
+        min_x = min(uv[0] for uv in layout)
+        min_y = min(uv[1] for uv in layout)
+        max_x = max(uv[0] for uv in layout)
+        for position, index in enumerate(local):
+            uvs[index] = (
+                layout[position][0] - min_x + offset_x,
+                layout[position][1] - min_y,
+            )
+        offset_x += (max_x - min_x) + island_gap
+
+    sigmas = triangle_sigmas(verts, tris, uvs)
+    strain, stats = vertex_strain(verts, tris, uvs, sigmas)
+    stats.islands = len(islands)
+
+    loops = boundary_loops(tris)
+    loops.sort(
+        key=lambda loop: abs(_loop_area(uvs, loop)),
+        reverse=True,
+    )
+
+    result.uvs = uvs
+    result.strain = strain
+    result.stats = stats
+    result.boundary = loops
+    result.seams = seam_chains(tris, tri_source)
+    return result
+
+
+def _point_line_distance(point: tuple, start: tuple, end: tuple) -> float:
+    """Perpendicular distance from *point* to the segment *start*-*end*."""
+    dx = end[0] - start[0]
+    dy = end[1] - start[1]
+    length_sq = dx * dx + dy * dy
+    if length_sq <= 0.0:
+        return math.hypot(point[0] - start[0], point[1] - start[1])
+    t = ((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / length_sq
+    t = min(1.0, max(0.0, t))
+    return math.hypot(point[0] - (start[0] + t * dx), point[1] - (start[1] + t * dy))
+
+
+def simplify_loop(points: list, tol: float, closed: bool = False) -> list:
+    """Drop points that add nothing to a chain's shape.
+
+    A tessellated boundary carries a point per mesh node. Fitting a spline
+    through all of them is slow and wobbles between nodes, so the run is thinned
+    with Douglas-Peucker first: every dropped point lies within *tol* of the
+    line that replaces it, which bounds the error the sketch can pick up.
+
+    Iterative rather than recursive, because a dense boundary would otherwise
+    risk the interpreter's recursion limit.
+
+    Args:
+        points: (u, v) tuples in centimetres.
+        tol: Largest distance a dropped point may sit from the kept chain.
+        closed: True when the chain is a closed loop.
+
+    Returns:
+        The kept points, in order, always including the first and last.
+    """
+    if len(points) < 3 or tol <= 0.0:
+        return list(points)
+
+    keep = [False] * len(points)
+    keep[0] = True
+    keep[-1] = True
+    stack = [(0, len(points) - 1)]
+
+    while stack:
+        first, last = stack.pop()
+        if last <= first + 1:
+            continue
+        worst = 0.0
+        worst_at = first
+        for index in range(first + 1, last):
+            distance = _point_line_distance(points[index], points[first], points[last])
+            if distance > worst:
+                worst = distance
+                worst_at = index
+        if worst > tol:
+            keep[worst_at] = True
+            stack.append((first, worst_at))
+            stack.append((worst_at, last))
+
+    kept = [point for point, wanted in zip(points, keep, strict=True) if wanted]
+    # A loop thinned to a degenerate sliver would produce no usable curve.
+    if closed and len(kept) < 3:
+        return list(points)
+    return kept
+
+
+def _loop_area(uvs: list, loop: list) -> float:
+    """Signed area of a closed loop of flattened vertices (shoelace)."""
+    total = 0.0
+    for position, index in enumerate(loop):
+        following = loop[(position + 1) % len(loop)]
+        total += uvs[index][0] * uvs[following][1]
+        total -= uvs[following][0] * uvs[index][1]
+    return 0.5 * total

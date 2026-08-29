@@ -86,6 +86,7 @@ GROUPS = [
             _cmd("measurepath", "Measure Path.md"),
             _cmd("mirrorderive", "MirrorDerive.md"),
             _cmd("hideobjects", "HideObjects.md"),
+            _cmd("flattensurface", "Flatten Surface.md", beta=True),
         ],
     },
     {

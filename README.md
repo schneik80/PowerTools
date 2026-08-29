@@ -103,6 +103,7 @@ Most commands appear in **Design › Tools › Power Tools**. Some appear in oth
 | [Hide Objects](./docs/HideObjects.md) | Design › Tools | Quickly hide objects from a list of options. |
 | [Timeline Compute Times](./docs/Timeline%20Compute%20Times.md) | Design › Solid | Measure per-feature timeline compute times and display a relative report. |
 | [Measure Path](./docs/Measure%20Path.md) | Design › Inspect | Total the length of a chain of edges and sketch curves. |
+| [Flatten Surface](./docs/Flatten%20Surface.md) | Design › Tools | Flatten curved faces to a sketch pattern, with a stretch/gather strain map. |
 
 ### Animation
 

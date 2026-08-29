@@ -61,6 +61,7 @@ ICON_SETS = (
     IconSet("syncitempartnumber", THEME_VARIANTS, "docinfo"),
     IconSet("assigndrawingnumber", THEME_VARIANTS, "docinfo"),
     IconSet("measurepath", THEME_VARIANTS, None),
+    IconSet("flattensurface", THEME_VARIANTS, None),
 )
 
 

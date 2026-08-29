@@ -1,0 +1,124 @@
+# Flatten Surface
+
+Lays **curved faces flat**, shows **where the material has to stretch or gather**
+to get there, and creates a **sketch of the flat pattern**.
+
+Fusion can already unfold sheet metal, because a bend is single-curvature: it
+rolls out with no distortion at all. A doubly-curved face — a dome, a saddle, a
+boat hull, a shoe upper — has no such flat form. It can only be *approximated*
+by one, and what matters is knowing by how much, and where. That is what this
+command reports.
+
+**Location:** the **Power Tools** panel, on the design **Tools** tab.
+
+> **Beta.** Enable it under **Part Modeling** in PowerTools Preferences.
+
+---
+
+## Using it
+
+1. Pick the **Faces** to flatten.
+2. Pick a plane or planar face to **Place on**.
+3. Drag the **manipulator** to position the pattern on that plane.
+4. Read the strain figures, adjust **Mesh quality** and **Relax pattern** to taste.
+5. **OK** creates the sketch.
+
+Faces that touch are flattened **together as one piece**, so a shape spanning
+several faces keeps its shared edges the right length. Faces that do not touch
+are laid out side by side as separate pieces.
+
+## Reading the strain map
+
+The preview is shaded by **strain**: how much the local size has to change
+between the surface and the flat pattern.
+
+| Colour | Meaning |
+|---|---|
+| Blue | The material has to **gather** — the flat pattern is smaller here |
+| Near-white | No distortion; this part flattens truthfully |
+| Red | The material has to **stretch** — the flat pattern is larger here |
+
+A **developable** face — a cylinder, a cone, an extruded profile — comes out
+white all over, because it genuinely flattens with no distortion. Colour means
+double curvature, and the strength of the colour is how much of it there is.
+The dialog reports the worst stretch, the worst gather, and the average.
+
+Grey lines across the preview are the **seams**: the joins between the faces you
+selected.
+
+Whether those numbers are acceptable is a material question, not a geometric
+one. Woven fabric and leather absorb a few percent without complaint; sheet
+steel and carbon-fibre prepreg do not.
+
+## What the sketch contains
+
+| Geometry | What it is |
+|---|---|
+| Splines | The outline of the pattern, and of any holes in it |
+| Construction lines | The seams between selected faces |
+| Two sketch points | The worst stretch and the worst gather |
+
+The sketch is created on the plane you picked, positioned where you left the
+manipulator. Nothing else in the design is touched.
+
+## Mesh quality
+
+The faces are meshed before being flattened, and that mesh is what gets
+measured. **Finer** locates the distortion more precisely and follows the
+outline more closely; **coarser** previews faster.
+
+The solver runs inside Fusion's Python, so cost rises steeply with triangle
+count. Past a working budget the mesh is coarsened automatically and the dialog
+says so — a coarser answer beats a frozen dialog. If you need more detail than
+that allows, flatten fewer faces at a time.
+
+## Relax pattern
+
+**On** (the default) balances the error between shape and size, which is what a
+cut pattern usually wants.
+
+**Off** makes the flattening **angle-true**: every corner keeps its angle, and
+all of the error is pushed into size instead. It previews faster, and it is the
+better choice when angles matter more than areas.
+
+Relaxing typically halves the average strain on a doubly-curved face. It cannot
+remove it — no method can, because the distortion is a property of the surface
+rather than of the algorithm.
+
+## Write report
+
+Saves two files **beside the document** in Fusion Team:
+
+- a **Markdown summary** of the strain and area figures and the settings used;
+- an **SVG strain map** of the pattern, with a colour scale.
+
+If the document has not been saved to Fusion Team there is nowhere to put them,
+so they are written to a local folder instead and the command tells you where.
+
+## Notes and limits
+
+- **The pattern is an approximation** wherever the strain map is not white. That
+  is the nature of the problem, not a defect — see the colour table above.
+- **Folded patterns are reported, not hidden.** If the layout turns back on
+  itself the dialog warns and the count appears in the report. Usually it means
+  too many faces at once, or a face with a slit in it; flatten fewer at a time.
+- **Faces must touch to be flattened together.** Coincidence is judged within 1
+  micron (0.0001 cm), the same tolerance Measure Path uses.
+- The sketch outline is fitted through the meshed boundary, so it follows the
+  mesh rather than the exact edge. Finer mesh, closer fit.
+- **Placing onto a plane inside a component instance** is the least-tested
+  path; if a pattern lands somewhere unexpected, place it on a top-level plane
+  instead.
+- Nothing is added to the timeline except the sketch.
+
+## Preferences
+
+Listed under **Part Modeling** in **PowerTools Preferences**. As a beta command
+it appears only when beta commands are enabled.
+
+---
+
+*Background and method sources:
+[docs/dev/Flatten Surface research.md](dev/Flatten%20Surface%20research.md).*
+
+*Copyright © 2026 IMA LLC. All rights reserved.*
