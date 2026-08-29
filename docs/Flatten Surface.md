@@ -54,9 +54,14 @@ steel and carbon-fibre prepreg do not.
 
 | Geometry | What it is |
 |---|---|
-| Splines | The outline of the pattern, and of any holes in it |
-| Construction lines | The seams between selected faces |
+| Lines and splines | The outline of the pattern, and of any holes in it |
+| Construction geometry | The seams between selected faces |
 | Two sketch points | The worst stretch and the worst gather |
+
+The outline is **cut at its corners** and each run between two corners is drawn
+separately: straight runs become lines, curved runs become splines. That is what
+keeps a corner sharp. Fitting one spline around a whole outline would average
+every corner away and the pattern would lose its shape.
 
 The sketch is created on the plane you picked, positioned where you left the
 manipulator. Nothing else in the design is touched.

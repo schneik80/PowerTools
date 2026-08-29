@@ -340,6 +340,126 @@ def test_strain_limit_is_symmetric():
     assert abs(flatten.strain_limit([-0.3, 0.0, 0.1], percentile=0.0) - 0.3) < 1e-12
 
 
+def square_loop(per_side=5, size=4.0):
+    """A square outline sampled densely along each side."""
+    points = []
+    corners = [(0.0, 0.0), (size, 0.0), (size, size), (0.0, size)]
+    for index, start in enumerate(corners):
+        end = corners[(index + 1) % 4]
+        for step in range(per_side):
+            f = step / per_side
+            points.append(
+                (start[0] + f * (end[0] - start[0]), start[1] + f * (end[1] - start[1]))
+            )
+    return points
+
+
+def test_split_finds_every_corner_of_a_square():
+    # The bug this guards: fitting one spline through a whole outline rounds
+    # every corner off and the pattern loses its shape.
+    runs = flatten.split_at_corners(square_loop(), closed=True)
+
+    assert len(runs) == 4
+
+
+def test_split_runs_meet_end_to_end():
+    runs = flatten.split_at_corners(square_loop(), closed=True)
+
+    for current, following in zip(runs, runs[1:] + runs[:1], strict=True):
+        assert current[-1] == following[0]
+
+
+def test_split_runs_are_straight_so_they_become_lines():
+    runs = flatten.split_at_corners(square_loop(), closed=True)
+
+    for run in runs:
+        assert len(flatten.simplify_loop(run, 0.01)) == 2
+
+
+def test_split_leaves_a_smooth_loop_whole():
+    circle = [
+        (math.cos(2 * math.pi * i / 60), math.sin(2 * math.pi * i / 60))
+        for i in range(60)
+    ]
+
+    runs = flatten.split_at_corners(circle, closed=True)
+
+    assert len(runs) == 1
+    assert runs[0] == circle
+
+
+def test_split_handles_a_loop_with_a_single_corner():
+    # A circle with one vertex spiked outward. That vertex turns 118 degrees
+    # and its two neighbours 37, so a 60 degree threshold isolates the spike.
+    # With only one corner to cut at, the run has to travel the whole way round
+    # and come back to it rather than stopping where it started.
+    points = [
+        (math.cos(2 * math.pi * i / 24), math.sin(2 * math.pi * i / 24))
+        for i in range(24)
+    ]
+    points[0] = (1.4, 0.0)
+
+    runs = flatten.split_at_corners(points, angle_degrees=60.0, closed=True)
+
+    assert len(runs) == 1
+    assert runs[0][0] == runs[0][-1] == (1.4, 0.0)
+    # Every point appears, plus the repeat that closes the run.
+    assert len(runs[0]) == len(points) + 1
+
+
+def test_a_sharp_spike_is_always_cut_at_the_default_threshold():
+    points = [
+        (math.cos(2 * math.pi * i / 24), math.sin(2 * math.pi * i / 24))
+        for i in range(24)
+    ]
+    points[0] = (1.4, 0.0)
+
+    runs = flatten.split_at_corners(points, closed=True)
+
+    # The spike drags its neighbours over the default threshold too. Splitting
+    # more than strictly necessary costs an extra curve; splitting too little
+    # would round the spike off, which is the failure that matters.
+    assert len(runs) >= 1
+    assert any((1.4, 0.0) in (run[0], run[-1]) for run in runs)
+
+
+def test_split_breaks_an_open_chain_at_its_bend():
+    points = [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (2.0, 1.0), (2.0, 2.0)]
+
+    runs = flatten.split_at_corners(points, closed=False)
+
+    assert len(runs) == 2
+    assert runs[0][-1] == runs[1][0] == (2.0, 0.0)
+
+
+def test_split_keeps_the_ends_of_an_open_chain():
+    points = [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (2.0, 1.0)]
+
+    runs = flatten.split_at_corners(points, closed=False)
+
+    assert runs[0][0] == (0.0, 0.0)
+    assert runs[-1][-1] == (2.0, 1.0)
+
+
+def test_split_leaves_a_short_chain_alone():
+    assert flatten.split_at_corners([(0.0, 0.0), (1.0, 1.0)], closed=True) == [
+        [(0.0, 0.0), (1.0, 1.0)]
+    ]
+
+
+def test_a_flat_square_patch_yields_four_straight_sides():
+    # End to end: a square face should come out of the whole pipeline as four
+    # lines, not as one rounded blob.
+    result = flatten.flatten_meshes([flat_patch(6, 6)])
+    loop = [result.uvs[i] for i in result.boundary[0]]
+
+    runs = flatten.split_at_corners(loop, closed=True)
+
+    assert len(runs) == 4
+    for run in runs:
+        assert len(flatten.simplify_loop(run, 1e-4)) == 2
+
+
 def test_simplify_drops_collinear_points():
     points = [(float(i), 0.0) for i in range(10)]
 

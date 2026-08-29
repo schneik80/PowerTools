@@ -42,6 +42,11 @@ DEFAULT_ARAP_ITERATIONS = 10
 DEFAULT_CG_TOLERANCE = 1e-10
 DEFAULT_ISLAND_GAP = 0.5
 
+# Turn above which a boundary vertex counts as a corner rather than a point on
+# a curve. Successive segments of a tessellated smooth edge turn by a few
+# degrees; anything approaching this is a real corner of the pattern.
+DEFAULT_CORNER_DEGREES = 32.0
+
 # Triangles smaller than this (cm^2) carry no usable frame, so they are skipped
 # when assembling the solver systems and reported as degenerate instead.
 MIN_TRIANGLE_AREA = 1e-12
@@ -954,6 +959,96 @@ def flatten_meshes(
     result.boundary = loops
     result.seams = seam_chains(tris, tri_source)
     return result
+
+
+def _turn_degrees(before: tuple, at: tuple, after: tuple) -> float:
+    """How far the direction turns when passing through *at*, in degrees."""
+    v1x, v1y = at[0] - before[0], at[1] - before[1]
+    v2x, v2y = after[0] - at[0], after[1] - at[1]
+    n1 = math.hypot(v1x, v1y)
+    n2 = math.hypot(v2x, v2y)
+    if n1 <= 0.0 or n2 <= 0.0:
+        return 0.0
+    cosine = (v1x * v2x + v1y * v2y) / (n1 * n2)
+    return math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
+
+
+def _run_between(points: list, start: int, end: int) -> list:
+    """Walk a closed chain from *start* to *end*, wrapping if it has to.
+
+    When start and end are the same index this returns the whole way round,
+    beginning and ending on that point.
+    """
+    count = len(points)
+    out = [points[start]]
+    index = start
+    for _ in range(count):
+        index = (index + 1) % count
+        out.append(points[index])
+        if index == end:
+            break
+    return out
+
+
+def split_at_corners(
+    points: list,
+    angle_degrees: float = DEFAULT_CORNER_DEGREES,
+    closed: bool = False,
+) -> list:
+    """Break a chain wherever its direction turns sharply.
+
+    A flat pattern's outline is a mix of smooth runs and hard corners. Fitting
+    one spline through the whole thing averages the corners away and the pattern
+    loses its shape, so the chain is cut at every corner first and each run is
+    fitted on its own.
+
+    Runs share their end points with their neighbours, so the curves built from
+    them meet exactly.
+
+    Args:
+        points: (u, v) tuples in centimetres.
+        angle_degrees: Turn above which a vertex counts as a corner. Points on a
+            tessellated smooth edge turn by a few degrees between segments; a
+            real corner turns by far more.
+        closed: True when the chain is a closed loop.
+
+    Returns:
+        A list of runs. A chain with no corners comes back as a single run equal
+        to the input, which the caller may then treat as one curve.
+    """
+    if len(points) < 3:
+        return [list(points)]
+
+    corners = []
+    if closed:
+        count = len(points)
+        for index in range(count):
+            before = points[(index - 1) % count]
+            after = points[(index + 1) % count]
+            if _turn_degrees(before, points[index], after) >= angle_degrees:
+                corners.append(index)
+    else:
+        for index in range(1, len(points) - 1):
+            turn = _turn_degrees(points[index - 1], points[index], points[index + 1])
+            if turn >= angle_degrees:
+                corners.append(index)
+
+    if not corners:
+        return [list(points)]
+
+    if closed:
+        return [
+            _run_between(
+                points, corners[position], corners[(position + 1) % len(corners)]
+            )
+            for position in range(len(corners))
+        ]
+
+    bounds = [0, *corners, len(points) - 1]
+    return [
+        points[bounds[position] : bounds[position + 1] + 1]
+        for position in range(len(bounds) - 1)
+    ]
 
 
 def _point_line_distance(point: tuple, start: tuple, end: tuple) -> float:

@@ -669,21 +669,95 @@ def _create_sketch(result):
     sketch.isComputeDeferred = True
     try:
         for loop in result.boundary:
-            points = flatten.simplify_loop(
-                [result.uvs[i] for i in loop], tolerance, closed=True
+            _add_chain(
+                sketch,
+                [result.uvs[i] for i in loop],
+                du,
+                dv,
+                tolerance,
+                closed=True,
+                construction=False,
             )
-            _add_spline(sketch, points, du, dv, closed=True)
 
         for chain in result.seams:
-            points = flatten.simplify_loop(
-                [result.uvs[i] for i in chain], tolerance, closed=False
+            _add_chain(
+                sketch,
+                [result.uvs[i] for i in chain],
+                du,
+                dv,
+                tolerance,
+                closed=False,
+                construction=True,
             )
-            _add_seam(sketch, points, du, dv)
 
         _mark_extremes(sketch, result, du, dv)
     finally:
         sketch.isComputeDeferred = False
     return sketch
+
+
+def _add_chain(
+    sketch,
+    points: list,
+    du: float,
+    dv: float,
+    tolerance: float,
+    closed: bool,
+    construction: bool,
+) -> None:
+    """Draw one boundary loop or seam, corner by corner.
+
+    Cutting the chain at its corners before fitting anything is what keeps the
+    pattern's shape: a single spline through a whole outline rounds every corner
+    off. Each run is then thinned, and a run that thins to two points was
+    straight, so it becomes a line rather than a spline.
+    """
+    runs = flatten.split_at_corners(points, closed=closed)
+
+    if closed and len(runs) == 1:
+        # Genuinely smooth all the way round, so there is no corner to cut at.
+        _add_closed_spline(
+            sketch, flatten.simplify_loop(points, tolerance, True), du, dv
+        )
+        return
+
+    for run in runs:
+        _add_run(sketch, flatten.simplify_loop(run, tolerance), du, dv, construction)
+
+
+def _add_run(sketch, points: list, du: float, dv: float, construction: bool) -> None:
+    """Draw one corner-to-corner run as a line if straight, else a spline."""
+    if len(points) < 2:
+        return
+    mapped = [sketch.modelToSketchSpace(_to_model(u, v, du, dv)) for u, v in points]
+
+    if len(mapped) == 2:
+        curve = sketch.sketchCurves.sketchLines.addByTwoPoints(mapped[0], mapped[1])
+    else:
+        collection = adsk.core.ObjectCollection.create()
+        for point in mapped:
+            collection.add(point)
+        curve = sketch.sketchCurves.sketchFittedSplines.add(collection)
+    if curve and construction:
+        curve.isConstruction = True
+
+
+def _add_closed_spline(sketch, points: list, du: float, dv: float) -> None:
+    """Draw a corner-free loop as one periodic spline."""
+    if len(points) < 3:
+        return
+    collection = adsk.core.ObjectCollection.create()
+    for u, v in points:
+        collection.add(sketch.modelToSketchSpace(_to_model(u, v, du, dv)))
+    spline = sketch.sketchCurves.sketchFittedSplines.add(collection)
+    if spline is None:
+        return
+    try:
+        # Repeating the first fit point would only add a duplicate point; the
+        # curve is not periodic until it is told to be.
+        spline.isClosed = True
+    except Exception:
+        ptutil.log(f"{CMD_NAME}: could not close the outline spline")
 
 
 def _pattern_tolerance(result) -> float:
@@ -694,32 +768,6 @@ def _pattern_tolerance(result) -> float:
     ys = [uv[1] for uv in result.uvs]
     size = max(max(xs) - min(xs), max(ys) - min(ys), 1e-6)
     return size * _SIMPLIFY_FRACTION
-
-
-def _add_spline(sketch, points, du: float, dv: float, closed: bool) -> None:
-    """Fit a spline through *points*, in sketch space."""
-    if len(points) < 3:
-        return
-    collection = adsk.core.ObjectCollection.create()
-    for u, v in points:
-        collection.add(sketch.modelToSketchSpace(_to_model(u, v, du, dv)))
-    if closed:
-        # Repeating the first point closes the curve; the sketch has no notion
-        # of a closed fitted spline built from a bare point list.
-        collection.add(collection.item(0))
-    if collection.count < 3:
-        return
-    sketch.sketchCurves.sketchFittedSplines.add(collection)
-
-
-def _add_seam(sketch, points, du: float, dv: float) -> None:
-    """Draw a seam as construction lines, which stay exact where a fit would not."""
-    if len(points) < 2:
-        return
-    mapped = [sketch.modelToSketchSpace(_to_model(u, v, du, dv)) for u, v in points]
-    for start, end in zip(mapped, mapped[1:], strict=False):
-        line = sketch.sketchCurves.sketchLines.addByTwoPoints(start, end)
-        line.isConstruction = True
 
 
 def _mark_extremes(sketch, result, du: float, dv: float) -> None:
