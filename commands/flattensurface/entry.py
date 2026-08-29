@@ -781,6 +781,11 @@ def _update_stats(result, coarsened: bool) -> None:
     ]
     if stats.islands > 1:
         lines.append(f"{stats.islands} separate pieces.")
+    if stats.seams_cut:
+        lines.append(
+            f"Slit open along {stats.seams_cut} seam"
+            f"{'s' if stats.seams_cut > 1 else ''} to lay flat."
+        )
     if coarsened:
         lines.append("Mesh coarsened to keep the preview responsive.")
     if stats.flipped:

@@ -90,6 +90,128 @@ def sphere_cap(rows=6, cols=6, radius=5.0, extent=0.6):
     return grid_mesh(rows, cols, point)
 
 
+def tube(rows=10, cols=24, radius=2.0, height=6.0, closed=True):
+    """A cylinder wall. Closed it is a tube; open it is a rolled-up strip."""
+    span = cols if closed else cols - 1
+    sweep = 2.0 * math.pi if closed else math.pi
+    coords = []
+    for i in range(rows):
+        for j in range(cols):
+            angle = sweep * j / span
+            coords.append(
+                (
+                    radius * math.cos(angle),
+                    radius * math.sin(angle),
+                    height * i / (rows - 1),
+                )
+            )
+    triangles = []
+    for i in range(rows - 1):
+        for j in range(cols if closed else cols - 1):
+            a = i * cols + j
+            b = i * cols + (j + 1) % cols
+            triangles.append((a, b, b + cols))
+            triangles.append((a, b + cols, a + cols))
+    return coords, triangles
+
+
+def washer(rows=6, cols=24, inner=1.0, outer=3.0):
+    """A flat annulus: a tube topologically, but already lying in a plane."""
+    coords = []
+    for i in range(rows):
+        radius = inner + (outer - inner) * i / (rows - 1)
+        for j in range(cols):
+            angle = 2.0 * math.pi * j / cols
+            coords.append((radius * math.cos(angle), radius * math.sin(angle), 0.0))
+    triangles = []
+    for i in range(rows - 1):
+        for j in range(cols):
+            a = i * cols + j
+            b = i * cols + (j + 1) % cols
+            triangles.append((a, b, b + cols))
+            triangles.append((a, b + cols, a + cols))
+    return coords, triangles
+
+
+def test_euler_characteristic_tells_a_disc_from_a_tube():
+    _coords, flat = flat_patch(4, 4)
+    _tube_coords, tube_tris = tube()
+
+    assert flatten.euler_characteristic(16, flat) == 1
+    assert flatten.euler_characteristic(240, tube_tris) == 0
+
+
+def test_a_tube_unrolls_to_its_true_circumference():
+    # The headline case. A tube has no flat form until it is slit, but once
+    # slit it is developable and unrolls exactly. The mesh is a 24-sided prism,
+    # so the answer is that polygon's perimeter, not the circle's.
+    coords, triangles = tube(radius=2.0, height=6.0)
+    expected = 2.0 * 24 * 2.0 * math.sin(math.pi / 24)
+
+    result = flatten.flatten_meshes([(coords, triangles)])
+
+    assert result.stats.seams_cut == 1
+    assert result.stats.mean_abs_strain < 1e-6
+    assert result.stats.flipped == 0
+    xs = [uv[0] for uv in result.uvs]
+    ys = [uv[1] for uv in result.uvs]
+    width = max(max(xs) - min(xs), max(ys) - min(ys))
+    height = min(max(xs) - min(xs), max(ys) - min(ys))
+    assert abs(width - expected) < 1e-3
+    assert abs(height - 6.0) < 1e-6
+
+
+def test_cutting_a_tube_makes_it_a_disc():
+    coords, triangles = tube()
+
+    cut_verts, cut_tris = flatten.cut_to_disk(coords, triangles)
+    local = flatten._island_vertices(cut_tris)
+
+    assert flatten.euler_characteristic(len(local), cut_tris) == 1
+    assert len(flatten.boundary_loops(cut_tris)) == 1
+    # One duplicate per row along the seam, and no triangles lost.
+    assert len(cut_verts) == len(coords) + 10
+    assert len(cut_tris) == len(triangles)
+
+
+def test_cutting_preserves_every_triangle_area():
+    coords, triangles = tube()
+
+    cut_verts, cut_tris = flatten.cut_to_disk(coords, triangles)
+
+    def total(verts, tris):
+        return sum(flatten._triangle_frame(*[verts[i] for i in t])[3] for t in tris)
+
+    assert abs(total(cut_verts, cut_tris) - total(coords, triangles)) < 1e-9
+
+
+def test_a_flat_washer_is_left_uncut():
+    # Also an annulus, but already flat, so slitting it would only add a
+    # gratuitous gap to the outline. The cut is judged on its result, not on
+    # topology alone, which is what keeps this case whole.
+    result = flatten.flatten_meshes([washer()])
+
+    assert result.stats.seams_cut == 0
+    assert result.stats.mean_abs_strain < 1e-6
+    assert len(result.boundary) == 2
+
+
+def test_a_disc_is_never_cut():
+    result = flatten.flatten_meshes([sphere_cap()])
+
+    assert result.stats.seams_cut == 0
+
+
+def test_cut_to_disk_leaves_a_disc_alone():
+    _coords, triangles = flat_patch(4, 4)
+    coords = flat_patch(4, 4)[0]
+
+    cut_verts, cut_tris = flatten.cut_to_disk(coords, triangles)
+
+    assert len(cut_verts) == len(coords)
+    assert cut_tris == triangles
+
+
 def test_weld_merges_coincident_nodes_across_meshes():
     left = ([(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)], [(0, 1, 2)])
     right = ([(1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (1.0, 1.0, 0.0)], [(0, 2, 1)])
@@ -533,6 +655,70 @@ def test_simplify_thins_a_real_boundary_substantially():
     kept = flatten.simplify_loop(loop, size * 0.002, closed=True)
 
     assert 4 <= len(kept) < len(loop)
+
+
+def test_tightest_box_squares_up_a_tilted_rectangle():
+    # A conformal map fixes orientation arbitrarily, so a plain rectangular
+    # panel routinely lands at an angle. This is what puts it straight.
+    angle = math.radians(30.0)
+    cos_a, sin_a = math.cos(angle), math.sin(angle)
+    corners = [(0.0, 0.0), (4.0, 0.0), (4.0, 2.0), (0.0, 2.0)]
+    tilted = [(x * cos_a - y * sin_a, x * sin_a + y * cos_a) for x, y in corners]
+
+    squared = flatten.rotate_points(tilted, flatten.tightest_box_angle(tilted))
+    xs = [p[0] for p in squared]
+    ys = [p[1] for p in squared]
+
+    assert abs(max(xs) - min(xs) - 4.0) < 1e-9
+    assert abs(max(ys) - min(ys) - 2.0) < 1e-9
+
+
+def test_tightest_box_always_lands_landscape():
+    # Four rotations give the same box; picking one keeps patterns comparable
+    # instead of landing portrait one time and landscape the next.
+    portrait = [(0.0, 0.0), (2.0, 0.0), (2.0, 9.0), (0.0, 9.0)]
+
+    squared = flatten.rotate_points(portrait, flatten.tightest_box_angle(portrait))
+    xs = [p[0] for p in squared]
+    ys = [p[1] for p in squared]
+
+    assert (max(xs) - min(xs)) > (max(ys) - min(ys))
+
+
+def test_tightest_box_leaves_a_squared_rectangle_alone():
+    corners = [(0.0, 0.0), (4.0, 0.0), (4.0, 2.0), (0.0, 2.0)]
+
+    squared = flatten.rotate_points(corners, flatten.tightest_box_angle(corners))
+    xs = [p[0] for p in squared]
+    ys = [p[1] for p in squared]
+
+    assert abs(max(xs) - min(xs) - 4.0) < 1e-9
+    assert abs(max(ys) - min(ys) - 2.0) < 1e-9
+
+
+def test_rotation_preserves_distances():
+    points = [(0.0, 0.0), (3.0, 4.0)]
+
+    turned = flatten.rotate_points(points, 0.7)
+
+    assert abs(math.dist(turned[0], turned[1]) - 5.0) < 1e-12
+
+
+def test_tightest_box_survives_degenerate_input():
+    assert flatten.tightest_box_angle([]) == 0.0
+    assert flatten.tightest_box_angle([(1.0, 1.0)]) == 0.0
+    assert flatten.tightest_box_angle([(0.0, 0.0), (1.0, 1.0)]) == 0.0
+
+
+def test_a_flattened_rectangle_comes_out_axis_aligned():
+    # End to end: a rolled strip should land square, not at some arbitrary
+    # angle inherited from wherever the solver happened to pin it.
+    coords, triangles = tube(closed=False, radius=2.0, height=6.0)
+
+    result = flatten.flatten_meshes([(coords, triangles)])
+    ys = [uv[1] for uv in result.uvs]
+
+    assert abs((max(ys) - min(ys)) - 6.0) < 1e-6
 
 
 def test_empty_selection_returns_an_empty_result():

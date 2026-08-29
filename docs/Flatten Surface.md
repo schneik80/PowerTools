@@ -29,6 +29,25 @@ Faces that touch are flattened **together as one piece**, so a shape spanning
 several faces keeps its shared edges the right length. Faces that do not touch
 are laid out side by side as separate pieces.
 
+Each piece is squared up before it is placed, so a rectangular panel lands
+straight and landscape rather than at whatever angle the solver happened to
+finish at.
+
+## Tubes and other closed shapes
+
+A closed tube — a full cylinder or cone wall — has **no flat form at all** until
+it is cut, the same reason you slit a paper towel roll to flatten it. Select one
+and it is slit automatically along the shortest seam between its two ends, and
+the dialog says so. Once slit it unrolls **exactly**, with no distortion,
+because a tube is developable.
+
+The cut is only made when it actually helps. A flat washer is a closed ring in
+exactly the same sense, but it is already flat, so it is left whole and its hole
+stays a hole.
+
+A fully closed shell such as a sphere has no open end to cut between and is not
+handled: expect a poor pattern and no usable outline. Split it into faces first.
+
 ## Reading the strain map
 
 The preview is shaded by **strain**: how much the local size has to change

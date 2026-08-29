@@ -47,6 +47,11 @@ DEFAULT_ISLAND_GAP = 0.5
 # degrees; anything approaching this is a real corner of the pattern.
 DEFAULT_CORNER_DEGREES = 32.0
 
+# Mean strain above which a non-disc patch is worth trying to slit open. Below
+# it the patch is already lying flat well enough that a cut would only add a
+# gratuitous slit - a flat washer is the case that matters here.
+CUT_WORTH_TRYING = 0.005
+
 # Triangles smaller than this (cm^2) carry no usable frame, so they are skipped
 # when assembling the solver systems and reported as degenerate instead.
 MIN_TRIANGLE_AREA = 1e-12
@@ -86,11 +91,14 @@ class FlattenStats:
         flipped: Triangles whose 2D winding is inverted; non-zero means the
             layout folded over itself and the pattern is not trustworthy.
         degenerate: Triangles too small to measure, skipped by the solver.
+        seams_cut: Patches slit open to make them flattenable, as a closed tube
+            has to be.
     """
 
     vertices: int = 0
     triangles: int = 0
     islands: int = 0
+    seams_cut: int = 0
     area_3d: float = 0.0
     area_2d: float = 0.0
     min_strain: float = 0.0
@@ -780,6 +788,241 @@ def _chain_edges(edges: list) -> list:
     return chains
 
 
+def euler_characteristic(vertex_count: int, tris: list) -> int:
+    """V - E + F for a patch: 1 for a disc, 0 for a tube or a washer.
+
+    Anything other than 1 cannot be laid flat as it stands, though that does not
+    always mean it needs cutting - a flat washer is a 0 and is already flat.
+    """
+    return vertex_count - len(mesh_edges(tris)) + len(tris)
+
+
+def _half_edge_maps(tris: list) -> tuple[dict, dict]:
+    """Index triangles by the directed edges leaving and arriving at each corner."""
+    out_tri: dict = {}
+    in_tri: dict = {}
+    for index, (a, b, c) in enumerate(tris):
+        for vertex, out, into in ((a, b, c), (b, c, a), (c, a, b)):
+            out_tri[(vertex, out)] = index
+            in_tri[(vertex, into)] = index
+    return out_tri, in_tri
+
+
+def _corner(tris: list, index: int, vertex: int) -> tuple[int, int]:
+    """The out and in neighbours of *vertex* within triangle *index*."""
+    a, b, c = tris[index]
+    if vertex == a:
+        return b, c
+    if vertex == b:
+        return c, a
+    return a, b
+
+
+def _shortest_vertex_path(tris: list, sources: set, targets: set) -> list:
+    """Fewest-edges path across the mesh from any source to any target."""
+    adjacency: dict = {}
+    for a, b, c in tris:
+        for i, j in ((a, b), (b, c), (c, a)):
+            adjacency.setdefault(i, set()).add(j)
+            adjacency.setdefault(j, set()).add(i)
+
+    previous: dict = {}
+    seen = set(sources)
+    frontier = sorted(sources)
+    while frontier:
+        following = []
+        for vertex in frontier:
+            if vertex in targets:
+                path = [vertex]
+                while path[-1] in previous:
+                    path.append(previous[path[-1]])
+                path.reverse()
+                return path
+            for neighbour in sorted(adjacency.get(vertex, ())):
+                if neighbour not in seen:
+                    seen.add(neighbour)
+                    previous[neighbour] = vertex
+                    following.append(neighbour)
+        frontier = following
+    return []
+
+
+def cut_to_disk(verts: list, tris: list) -> tuple[list, list]:
+    """Slit a tube open along a seam so it can be laid flat.
+
+    A closed tube has no flat form at all - the paper-towel-roll problem. One
+    cut from one open end to the other turns it into a disc, which then flattens
+    exactly, because a tube is developable once slit.
+
+    The seam is the shortest run of mesh edges between the two boundaries. Every
+    vertex along it is duplicated, and the triangles on one side of the seam are
+    moved onto the duplicates, which opens the surface without moving or losing
+    any geometry.
+
+    Args:
+        verts: Coordinates the triangles index into.
+        tris: Triangles of one connected patch.
+
+    Returns:
+        ``(verts, tris)`` with the seam opened. Both are returned unchanged when
+        the patch has fewer than two boundaries to cut between, which is the
+        case for a disc (nothing to do) and for a closed shell such as a sphere
+        (a single cut would not open it).
+    """
+    loops = boundary_loops(tris)
+    if len(loops) < 2:
+        return list(verts), list(tris)
+
+    path = _shortest_vertex_path(tris, set(loops[0]), set(loops[1]))
+    if len(path) < 2:
+        return list(verts), list(tris)
+
+    out_tri, in_tri = _half_edge_maps(tris)
+    new_verts = list(verts)
+    new_tris = list(tris)
+
+    for position, vertex in enumerate(path):
+        before = path[position - 1] if position > 0 else None
+        after = path[position + 1] if position + 1 < len(path) else None
+
+        # Take the side of the seam lying to the left of the path's direction of
+        # travel. Anchoring on the directed edge keeps that choice the same at
+        # every vertex, so the seam opens along one clean line.
+        if after is not None:
+            start = out_tri.get((vertex, after))
+            stop = out_tri.get((vertex, before)) if before is not None else None
+            side = _fan_forward(new_tris, out_tri, vertex, start, stop)
+        else:
+            start = in_tri.get((vertex, before))
+            side = _fan_backward(new_tris, in_tri, vertex, start)
+
+        if not side or len(side) == len(_incident(new_tris, vertex)):
+            # The whole fan on one side means no real split here; duplicating
+            # would only orphan the original vertex.
+            continue
+
+        duplicate = len(new_verts)
+        new_verts.append(verts[vertex])
+        for index in side:
+            new_tris[index] = tuple(
+                duplicate if corner == vertex else corner for corner in new_tris[index]
+            )
+
+    return new_verts, new_tris
+
+
+def _incident(tris: list, vertex: int) -> list:
+    return [index for index, tri in enumerate(tris) if vertex in tri]
+
+
+def _fan_forward(tris: list, out_tri: dict, vertex: int, start, stop) -> list:
+    """Rotate around *vertex* from *start*, stopping before *stop*."""
+    if start is None:
+        return []
+    found = []
+    current = start
+    for _ in range(len(tris)):
+        if current is None or current == stop:
+            break
+        found.append(current)
+        _out, into = _corner(tris, current, vertex)
+        current = out_tri.get((vertex, into))
+        if current == start:
+            break
+    return found
+
+
+def _fan_backward(tris: list, in_tri: dict, vertex: int, start) -> list:
+    """Rotate the other way around *vertex* from *start* until the fan ends."""
+    if start is None:
+        return []
+    found = []
+    current = start
+    for _ in range(len(tris)):
+        if current is None:
+            break
+        found.append(current)
+        out, _into = _corner(tris, current, vertex)
+        current = in_tri.get((vertex, out))
+        if current == start:
+            break
+    return found
+
+
+def _convex_hull(points: list) -> list:
+    """Andrew's monotone chain hull, counter-clockwise."""
+    ordered = sorted(set(points))
+    if len(ordered) < 3:
+        return ordered
+
+    def build(sequence):
+        chain = []
+        for point in sequence:
+            while len(chain) >= 2:
+                (x1, y1), (x2, y2) = chain[-2], chain[-1]
+                if (x2 - x1) * (point[1] - y1) - (y2 - y1) * (point[0] - x1) > 0.0:
+                    break
+                chain.pop()
+            chain.append(point)
+        return chain
+
+    lower = build(ordered)
+    upper = build(reversed(ordered))
+    return lower[:-1] + upper[:-1]
+
+
+def tightest_box_angle(points: list) -> float:
+    """Angle at which *points* occupy the smallest axis-aligned box.
+
+    A conformal map fixes orientation arbitrarily, so a rectangular panel
+    routinely lands at an angle. Squaring it up costs nothing and makes the
+    pattern far easier to measure, nest and cut.
+
+    Uses the rotating-calipers result that a minimal bounding box always has a
+    side flush with an edge of the convex hull, so only the hull edges need
+    testing rather than a sweep of arbitrary angles.
+
+    Args:
+        points: (u, v) tuples.
+
+    Returns:
+        The angle in radians to rotate *points* by, clockwise, to square them up.
+    """
+    hull = _convex_hull(points)
+    if len(hull) < 3:
+        return 0.0
+
+    best_area = None
+    best_angle = 0.0
+    best_extent = (0.0, 0.0)
+    for index, (x1, y1) in enumerate(hull):
+        x2, y2 = hull[(index + 1) % len(hull)]
+        angle = math.atan2(y2 - y1, x2 - x1)
+        cos_a, sin_a = math.cos(-angle), math.sin(-angle)
+        xs = [x * cos_a - y * sin_a for x, y in hull]
+        ys = [x * sin_a + y * cos_a for x, y in hull]
+        extent = (max(xs) - min(xs), max(ys) - min(ys))
+        area = extent[0] * extent[1]
+        if best_area is None or area < best_area:
+            best_area = area
+            best_angle = angle
+            best_extent = extent
+
+    # Four rotations give the same box, so settle on the landscape one. Which
+    # of them comes out of the hull walk is an accident of vertex order, and a
+    # pattern that lands portrait one time and landscape the next is a nuisance
+    # to nest and to compare.
+    if best_extent[1] > best_extent[0]:
+        best_angle += math.pi / 2.0
+    return best_angle
+
+
+def rotate_points(points: list, angle: float) -> list:
+    """Rotate (u, v) tuples clockwise by *angle* radians."""
+    cos_a, sin_a = math.cos(-angle), math.sin(-angle)
+    return [(x * cos_a - y * sin_a, x * sin_a + y * cos_a) for x, y in points]
+
+
 def mesh_edges(tris: list) -> list:
     """List every edge of the triangulation once.
 
@@ -933,38 +1176,47 @@ def flatten_meshes(
     if not tris:
         return result
 
-    islands = split_islands(len(verts), tris)
-    uvs = [(0.0, 0.0)] * len(verts)
+    verts = list(verts)
+    tris = list(tris)
+    seams_cut = 0
     offset_x = 0.0
+    placed: list = []
 
-    for triangle_indices in islands:
+    for triangle_indices in split_islands(len(verts), tris):
         island_tris = [tris[i] for i in triangle_indices]
-        seen: dict = {}
-        for a, b, c in island_tris:
-            for corner in (a, b, c):
-                if corner not in seen:
-                    seen[corner] = len(seen)
-        local = list(seen)
+        layout, island_tris, cut = _flatten_island(
+            verts, island_tris, relax, iterations
+        )
+        seams_cut += 1 if cut else 0
+        for position, index in enumerate(triangle_indices):
+            tris[index] = island_tris[position]
 
-        layout = lscm(verts, island_tris, local)
-        layout = _normalise(verts, island_tris, local, layout)
-        if relax:
-            layout = arap_relax(verts, island_tris, local, layout, iterations)
-            layout = _normalise(verts, island_tris, local, layout)
+        # Square the island up before placing it. A conformal map fixes
+        # orientation arbitrarily, so without this a plain rectangular panel
+        # routinely lands at an angle.
+        local = _island_vertices(island_tris)
+        layout = rotate_points(layout, tightest_box_angle(layout))
 
         min_x = min(uv[0] for uv in layout)
         min_y = min(uv[1] for uv in layout)
         max_x = max(uv[0] for uv in layout)
-        for position, index in enumerate(local):
-            uvs[index] = (
-                layout[position][0] - min_x + offset_x,
-                layout[position][1] - min_y,
+        placed.append(
+            (
+                local,
+                [(uv[0] - min_x + offset_x, uv[1] - min_y) for uv in layout],
             )
+        )
         offset_x += (max_x - min_x) + island_gap
+
+    uvs = [(0.0, 0.0)] * len(verts)
+    for local, layout in placed:
+        for position, index in enumerate(local):
+            uvs[index] = layout[position]
 
     sigmas = triangle_sigmas(verts, tris, uvs)
     strain, stats = vertex_strain(verts, tris, uvs, sigmas)
-    stats.islands = len(islands)
+    stats.islands = len(placed)
+    stats.seams_cut = seams_cut
 
     loops = boundary_loops(tris)
     loops.sort(
@@ -972,12 +1224,98 @@ def flatten_meshes(
         reverse=True,
     )
 
+    result.verts = verts
+    result.tris = tris
     result.uvs = uvs
     result.strain = strain
     result.stats = stats
     result.boundary = loops
     result.seams = seam_chains(tris, tri_source)
     return result
+
+
+def _island_vertices(tris: list) -> list:
+    """The vertices one island's triangles use, in first-seen order."""
+    seen: dict = {}
+    for a, b, c in tris:
+        for corner in (a, b, c):
+            if corner not in seen:
+                seen[corner] = len(seen)
+    return list(seen)
+
+
+def _solve_island(verts: list, tris: list, relax: bool, iterations: int) -> list:
+    """Lay one island flat and return its layout, ordered by _island_vertices."""
+    local = _island_vertices(tris)
+    layout = lscm(verts, tris, local)
+    layout = _normalise(verts, tris, local, layout)
+    if relax:
+        layout = arap_relax(verts, tris, local, layout, iterations)
+        layout = _normalise(verts, tris, local, layout)
+    return layout
+
+
+def _mean_strain(verts: list, tris: list, local: list, layout: list) -> float:
+    """Area-weighted mean absolute strain of one island's layout."""
+    spread = [(0.0, 0.0)] * (max(local) + 1) if local else []
+    for position, index in enumerate(local):
+        spread[index] = layout[position]
+    sigmas = triangle_sigmas(verts, tris, spread)
+    total = 0.0
+    weight = 0.0
+    for index, (a, b, c) in enumerate(tris):
+        area = _triangle_frame(verts[a], verts[b], verts[c])[3]
+        if area <= MIN_TRIANGLE_AREA:
+            continue
+        sigma1, sigma2 = sigmas[index]
+        total += abs(math.sqrt(max(sigma1 * sigma2, 0.0)) - 1.0) * area
+        weight += area
+    return total / weight if weight > 0.0 else 0.0
+
+
+def _flatten_island(
+    verts: list, tris: list, relax: bool, iterations: int
+) -> tuple[list, list, bool]:
+    """Lay one island flat, slitting it open first if that turns out to help.
+
+    A patch that is not a disc may or may not need cutting, and the topology
+    alone does not say which: a closed tube has no flat form at all, while a
+    flat washer is the same shape topologically and is already flat. So the cut
+    is judged by its result - it is kept only when it actually lowers the
+    distortion, which leaves washer-like patches unslit.
+
+    Args:
+        verts: Coordinates, extended in place when a cut adds vertices.
+        tris: This island's triangles.
+        relax: Whether to run the ARAP relaxation.
+        iterations: ARAP sweeps.
+
+    Returns:
+        ``(layout, tris, cut)`` where layout is ordered by the vertices of the
+        returned triangles, and cut says whether a seam was opened.
+    """
+    layout = _solve_island(verts, tris, relax, iterations)
+    local = _island_vertices(tris)
+    if euler_characteristic(len(local), tris) == 1:
+        return layout, tris, False
+
+    before = _mean_strain(verts, tris, local, layout)
+    if before <= CUT_WORTH_TRYING:
+        return layout, tris, False
+
+    cut_verts, cut_tris = cut_to_disk(verts, tris)
+    if len(cut_verts) == len(verts):
+        return layout, tris, False
+
+    cut_layout = _solve_island(cut_verts, cut_tris, relax, iterations)
+    cut_local = _island_vertices(cut_tris)
+    after = _mean_strain(cut_verts, cut_tris, cut_local, cut_layout)
+    if after >= before:
+        return layout, tris, False
+
+    # Adopt the cut: the duplicated vertices have to reach the caller's array.
+    verts.extend(cut_verts[len(verts) :])
+    return cut_layout, cut_tris, True
 
 
 def _turn_degrees(before: tuple, at: tuple, after: tuple) -> float:
