@@ -131,6 +131,127 @@ def test_selection_key_falls_back_when_a_face_has_no_token():
     assert entry._selection_key([face], "Medium", True) is not None
 
 
+class RecordingInputs:
+    """Records the order and ids of the inputs a dialog adds."""
+
+    def __init__(self):
+        self.order = []
+        self.made = {}
+
+    def _make(self, kind, input_id):
+        self.order.append(input_id)
+        made = _FakeInput(kind)
+        self.made[input_id] = made
+        return made
+
+    def addSelectionInput(self, input_id, *_args):
+        return self._make("selection", input_id)
+
+    def addTriadCommandInput(self, input_id, *_args):
+        return self._make("triad", input_id)
+
+    def addDropDownCommandInput(self, input_id, *_args):
+        return self._make("dropdown", input_id)
+
+    def addBoolValueInput(self, input_id, *_args):
+        return self._make("bool", input_id)
+
+    def addTextBoxCommandInput(self, input_id, *_args):
+        return self._make("text", input_id)
+
+    def itemById(self, input_id):
+        return self.made.get(input_id)
+
+
+class _FakeInput:
+    def __init__(self, kind):
+        self.kind = kind
+        self.isVisible = True
+        self.listItems = _FakeListItems()
+
+    def addSelectionFilter(self, _name):
+        pass
+
+    def setSelectionLimits(self, *_args):
+        pass
+
+
+class _FakeListItems:
+    def __init__(self):
+        self.items = []
+
+    def add(self, name, selected):
+        self.items.append((name, selected))
+
+
+def _build_dialog(monkeypatch):
+    """Run command_created against a recording inputs collection."""
+
+    class FakeCommand:
+        def __init__(self, inputs):
+            self.commandInputs = inputs
+            self.execute = object()
+            self.executePreview = object()
+            self.inputChanged = object()
+            self.destroy = object()
+
+    class FakeArgs:
+        def __init__(self, command):
+            self.command = command
+
+    inputs = RecordingInputs()
+    monkeypatch.setattr(entry.ptutil, "add_handler", lambda *a, **k: None)
+    entry.command_created(FakeArgs(FakeCommand(inputs)))
+    return inputs
+
+
+def test_the_placement_plane_is_asked_for_first(monkeypatch):
+    # Nothing can be previewed until there is a plane to draw the pattern on,
+    # so it leads the dialog rather than following the face selection.
+    inputs = _build_dialog(monkeypatch)
+
+    assert inputs.order[0] == entry.INPUT_PLANE
+    assert inputs.order.index(entry.INPUT_PLANE) < inputs.order.index(entry.INPUT_FACES)
+
+
+def test_the_manipulator_starts_hidden(monkeypatch):
+    # It has nowhere meaningful to sit until a plane is picked.
+    inputs = _build_dialog(monkeypatch)
+
+    assert inputs.made[entry.INPUT_TRIAD].isVisible is False
+
+
+def test_the_dialog_offers_every_control(monkeypatch):
+    inputs = _build_dialog(monkeypatch)
+
+    for input_id in (
+        entry.INPUT_PLANE,
+        entry.INPUT_TRIAD,
+        entry.INPUT_FACES,
+        entry.INPUT_QUALITY,
+        entry.INPUT_RELAX,
+        entry.INPUT_WIREFRAME,
+        entry.INPUT_REPORT,
+        entry.INPUT_STATS,
+    ):
+        assert input_id in inputs.made
+
+
+def test_input_ids_are_unique():
+    ids = [
+        entry.INPUT_PLANE,
+        entry.INPUT_TRIAD,
+        entry.INPUT_FACES,
+        entry.INPUT_QUALITY,
+        entry.INPUT_RELAX,
+        entry.INPUT_WIREFRAME,
+        entry.INPUT_REPORT,
+        entry.INPUT_STATS,
+    ]
+
+    assert len(set(ids)) == len(ids)
+
+
 def test_triangle_budget_leaves_the_preview_usable():
     # The solver is pure Python: this budget is roughly a one-second solve, and
     # raising it trades a responsive dialog for detail nobody asked for.

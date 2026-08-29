@@ -17,9 +17,11 @@ command reports.
 
 ## Using it
 
-1. Pick the **Faces** to flatten.
-2. Pick a plane or planar face to **Place on**.
-3. Drag the **manipulator** to position the pattern on that plane.
+1. Pick a plane or planar face to **Place on**. Nothing can be previewed until
+   there is somewhere to draw the pattern, so this comes first; the
+   **manipulator** appears on that plane once it is picked.
+2. Pick the **Faces** to flatten.
+3. Drag the manipulator to position the pattern on the plane.
 4. Read the strain figures, adjust **Mesh quality** and **Relax pattern** to taste.
 5. **OK** creates the sketch.
 
@@ -43,8 +45,18 @@ white all over, because it genuinely flattens with no distortion. Colour means
 double curvature, and the strength of the colour is how much of it there is.
 The dialog reports the worst stretch, the worst gather, and the average.
 
+Two labelled spheres mark the extremes: **Max** in red at the worst stretch,
+**Min** in blue at the worst gather, each carrying its percentage. On a large
+pattern with a gentle gradient those spots are genuinely hard to find by eye,
+and they are what decides whether the pattern is usable. Both labels turn to
+face you from any viewpoint and hold their size as you zoom.
+
 Grey lines across the preview are the **seams**: the joins between the faces you
 selected.
+
+**Show mesh** draws the triangles the strain was actually measured on. Turn it
+on to judge whether the mesh is fine enough to trust — a strain map is only as
+detailed as the mesh under it.
 
 Whether those numbers are acceptable is a material question, not a geometric
 one. Woven fabric and leather absorb a few percent without complaint; sheet

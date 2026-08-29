@@ -780,6 +780,25 @@ def _chain_edges(edges: list) -> list:
     return chains
 
 
+def mesh_edges(tris: list) -> list:
+    """List every edge of the triangulation once.
+
+    Shared edges appear in two triangles, so drawing the wireframe straight from
+    the triangle list would draw most of it twice.
+
+    Args:
+        tris: Triangles as (i, j, k) index tuples.
+
+    Returns:
+        Sorted (low, high) vertex index pairs.
+    """
+    edges = set()
+    for a, b, c in tris:
+        for i, j in ((a, b), (b, c), (c, a)):
+            edges.add((i, j) if i < j else (j, i))
+    return sorted(edges)
+
+
 def seam_chains(tris: list, tri_source: list) -> list:
     """Find the interior edges where two different selected faces meet.
 

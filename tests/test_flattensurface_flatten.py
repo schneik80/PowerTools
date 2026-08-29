@@ -191,6 +191,35 @@ def test_two_faces_weld_into_a_single_island():
     assert result.seams, "the shared edge should be reported as a seam"
 
 
+def test_mesh_edges_lists_each_edge_once():
+    # Two triangles sharing an edge have five distinct edges, not six. Drawing
+    # from the triangle list directly would draw the shared one twice.
+    tris = [(0, 1, 2), (0, 2, 3)]
+
+    edges = flatten.mesh_edges(tris)
+
+    assert edges == [(0, 1), (0, 2), (0, 3), (1, 2), (2, 3)]
+
+
+def test_mesh_edges_are_ordered_low_to_high():
+    edges = flatten.mesh_edges([(2, 0, 1)])
+
+    assert all(a < b for a, b in edges)
+
+
+def test_mesh_edges_of_a_grid_match_eulers_formula():
+    _coords, triangles = flat_patch(4, 4)
+
+    edges = flatten.mesh_edges(triangles)
+
+    # V - E + F = 1 for a disc, counting only the triangles as faces.
+    assert 16 - len(edges) + len(triangles) == 1
+
+
+def test_mesh_edges_of_an_empty_mesh():
+    assert flatten.mesh_edges([]) == []
+
+
 def test_seam_chain_follows_the_shared_edge():
     left = grid_mesh(4, 4, lambda i, j: (j * 1.0, i * 1.0, 0.0))
     right = grid_mesh(4, 4, lambda i, j: (3.0 + j * 1.0, i * 1.0, 0.0))

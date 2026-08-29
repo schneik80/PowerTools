@@ -48,6 +48,7 @@ INPUT_PLANE = "fs_plane"
 INPUT_TRIAD = "fs_triad"
 INPUT_QUALITY = "fs_quality"
 INPUT_RELAX = "fs_relax"
+INPUT_WIREFRAME = "fs_wireframe"
 INPUT_REPORT = "fs_report"
 INPUT_STATS = "fs_stats"
 
@@ -79,6 +80,19 @@ _COARSEN_ATTEMPTS = 3
 _SIMPLIFY_FRACTION = 0.0015
 
 _COLOR_SEAM = (90, 90, 90, 255)
+_COLOR_WIRE = (45, 45, 45, 255)
+
+# The Min and Max markers take the two ends of the strain ramp, so a marker's
+# colour says which end of the scale it sits at without reading the label.
+_COLOR_MIN = (59, 76, 192, 255)
+_COLOR_MAX = (180, 4, 38, 255)
+
+# Marker and label geometry in screen pixels, converted to centimetres against
+# the current view so they hold their size however far the user zooms.
+_MARKER_PX_RADIUS = 6.0
+_LABEL_PX_SIZE = 11.7
+_LABEL_PX_OFFSET = 11.0
+_LABEL_FONT = "Arial"
 
 # Selections, captured while the dialog is open because a SelectionCommandInput
 # cannot be read reliably from execute (see lib/ptAddInUtils/selection_utils.py).
@@ -145,16 +159,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs) -> None:
         # being handed the inputs collection.
         _cmd_inputs = inputs
 
-        faces = inputs.addSelectionInput(
-            INPUT_FACES, "Faces", "Select the faces to flatten."
-        )
-        faces.addSelectionFilter("Faces")
-        faces.setSelectionLimits(1, 0)
-        faces.tooltip = (
-            "Faces that touch are flattened together as one piece. Faces that "
-            "do not touch are laid out side by side."
-        )
-
+        # The plane comes first because nothing can be previewed without it:
+        # there is nowhere to draw the pattern until it is picked. Its single-
+        # selection limit also hands focus straight on to the face input.
         plane = inputs.addSelectionInput(
             INPUT_PLANE,
             "Place on",
@@ -168,6 +175,16 @@ def command_created(args: adsk.core.CommandCreatedEventArgs) -> None:
         # placement plane and shown once that plane is picked.
         triad = inputs.addTriadCommandInput(INPUT_TRIAD, adsk.core.Matrix3D.create())
         triad.isVisible = False
+
+        faces = inputs.addSelectionInput(
+            INPUT_FACES, "Faces", "Select the faces to flatten."
+        )
+        faces.addSelectionFilter("Faces")
+        faces.setSelectionLimits(1, 0)
+        faces.tooltip = (
+            "Faces that touch are flattened together as one piece. Faces that "
+            "do not touch are laid out side by side."
+        )
 
         quality = inputs.addDropDownCommandInput(
             INPUT_QUALITY,
@@ -185,6 +202,14 @@ def command_created(args: adsk.core.CommandCreatedEventArgs) -> None:
         relax.tooltip = (
             "Spread the error between shape and size instead of leaving it all "
             "in size. Turn off for a faster, angle-true preview."
+        )
+
+        wireframe = inputs.addBoolValueInput(
+            INPUT_WIREFRAME, "Show mesh", True, "", False
+        )
+        wireframe.tooltip = (
+            "Draw the triangles the strain was measured on. Useful for judging "
+            "whether the mesh is fine enough to trust."
         )
 
         write_report = inputs.addBoolValueInput(
@@ -466,6 +491,13 @@ def _current_relax() -> bool:
     return True if toggle is None else toggle.value
 
 
+def _wants_wireframe() -> bool:
+    if _cmd_inputs is None:
+        return False
+    toggle = adsk.core.BoolValueCommandInput.cast(_cmd_inputs.itemById(INPUT_WIREFRAME))
+    return bool(toggle and toggle.value)
+
+
 # ---------------------------------------------------------------------------
 # Events
 # ---------------------------------------------------------------------------
@@ -564,7 +596,38 @@ def _draw(result) -> None:
     mesh = group.addMesh(coords, indices, [], [])
     mesh.color = adsk.fusion.CustomGraphicsVertexColorEffect.create()
 
+    if _wants_wireframe():
+        _draw_wireframe(group, coordinates, result)
     _draw_seams(group, result, du, dv)
+    _draw_extremes(group, result, du, dv)
+
+
+def _draw_wireframe(group, coordinates: list, result) -> None:
+    """Outline every triangle the strain was measured on.
+
+    Drawn as one lines entity rather than a curve each: a few thousand separate
+    additions is slow enough to be felt on every redraw.
+
+    A fresh coordinates object is built because the mesh's own carries per-vertex
+    colours, which would paint the wireframe in the strain colours and leave it
+    invisible against the surface it is drawn over.
+    """
+    edges = flatten.mesh_edges(result.tris)
+    if not edges:
+        return
+    index_list = []
+    for a, b in edges:
+        index_list.extend((a, b))
+    plain = adsk.fusion.CustomGraphicsCoordinates.create(coordinates)
+    lines = group.addLines(plain, index_list, False)
+    if lines is None:
+        return
+    lines.color = adsk.fusion.CustomGraphicsSolidColorEffect.create(
+        adsk.core.Color.create(*_COLOR_WIRE)
+    )
+    lines.weight = 1.0
+    # Above the shaded mesh, below the seam and marker overlays.
+    lines.depthPriority = 1
 
 
 def _draw_seams(group, result, du: float, dv: float) -> None:
@@ -579,7 +642,114 @@ def _draw_seams(group, result, du: float, dv: float) -> None:
         for start, end in zip(points, points[1:], strict=False):
             segment = group.addCurve(adsk.core.Line3D.create(start, end))
             segment.color = effect
-            segment.weight = 1.0
+            segment.weight = 2.0
+            # Above the wireframe, so turning the mesh on does not bury the
+            # seams in a field of identical-looking lines.
+            segment.depthPriority = 2
+
+
+def _draw_extremes(group, result, du: float, dv: float) -> None:
+    """Mark and label the worst gather and the worst stretch.
+
+    The colour map shows the whole field but not where its extremes are; on a
+    large pattern with a gentle gradient the worst spot is genuinely hard to
+    find by eye, and it is the spot that decides whether the pattern is usable.
+    """
+    stats = result.stats
+    marks = (
+        (stats.min_vertex, _COLOR_MIN, f"Min {stats.min_strain * 100.0:+.2f}%"),
+        (stats.max_vertex, _COLOR_MAX, f"Max {stats.max_strain * 100.0:+.2f}%"),
+    )
+    for vertex, rgba, label in marks:
+        if vertex is None or vertex < 0 or vertex >= len(result.uvs):
+            continue
+        u, v = result.uvs[vertex]
+        point = _to_model(u, v, du, dv)
+        _draw_marker(group, point, rgba, label)
+
+
+def _draw_marker(group, point, rgba, label: str) -> None:
+    """Draw one labelled sphere at *point*, held at a constant screen size."""
+    scale = _px_per_cm(point)
+    if scale:
+        radius_cm = _MARKER_PX_RADIUS / scale
+        text_cm = _LABEL_PX_SIZE / scale
+        offset_cm = _LABEL_PX_OFFSET / scale
+    else:
+        radius_cm = 0.08
+        text_cm = 0.2
+        offset_cm = 0.14
+
+    colour = adsk.fusion.CustomGraphicsSolidColorEffect.create(
+        adsk.core.Color.create(*rgba)
+    )
+    body = adsk.fusion.TemporaryBRepManager.get().createSphere(point, radius_cm)
+    if body is not None:
+        dot = group.addBRepBody(body)
+        dot.color = colour
+        dot.depthPriority = 3
+        dot.isSelectable = False
+
+    _billboard_text(group, point, label, colour, text_cm, offset_cm)
+
+
+def _px_per_cm(point) -> float | None:
+    """Screen pixels per centimetre near *point*.
+
+    Sampling the projected basis keeps a marker the same size on screen without
+    relying on CustomGraphicsViewScale, which is unproven in this add-in.
+    """
+    try:
+        viewport = app.activeViewport
+        origin = viewport.modelToViewSpace(point)
+        if origin is None:
+            return None
+        best = None
+        for offset in ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)):
+            probe = viewport.modelToViewSpace(
+                adsk.core.Point3D.create(
+                    point.x + offset[0], point.y + offset[1], point.z + offset[2]
+                )
+            )
+            if probe is None:
+                continue
+            scale = math.hypot(probe.x - origin.x, probe.y - origin.y)
+            if scale > 1e-9 and (best is None or scale > best):
+                best = scale
+        return best
+    except Exception:
+        return None
+
+
+def _billboard_text(group, point, label, colour, text_cm, offset_cm) -> None:
+    """Place *label* near *point*, turned to face the camera.
+
+    addText places the string parallel to X-Y with its origin at the upper-left
+    corner, so on its own it would be edge-on from most viewpoints. Billboarding
+    turns it to face the camera; the transform only carries position.
+    """
+    label_point = adsk.core.Point3D.create(
+        point.x + offset_cm, point.y + offset_cm, point.z
+    )
+    transform = adsk.core.Matrix3D.create()
+    transform.translation = label_point.asVector()
+    text = group.addText(label, _LABEL_FONT, text_cm, transform)
+    if text is None:
+        return
+    text.color = colour
+    text.depthPriority = 4
+    text.isSelectable = False
+    try:
+        # Anchor on the label's own point, not the marker: anchoring at the
+        # marker rotates the offset with the camera and the label orbits it.
+        billboard = adsk.fusion.CustomGraphicsBillBoard.create(label_point)
+        billboard.billBoardStyle = (
+            adsk.fusion.CustomGraphicsBillBoardStyles.ScreenBillBoardStyle
+        )
+        text.billBoarding = billboard
+    except Exception:
+        # Readable but view-dependent beats no label at all.
+        ptutil.log(f"{CMD_NAME}: billboarding unavailable for the {label} label")
 
 
 def _update_stats(result, coarsened: bool) -> None:
