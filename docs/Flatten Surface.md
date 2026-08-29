@@ -102,15 +102,14 @@ Relaxing typically halves the average strain on a doubly-curved face. It cannot
 remove it — no method can, because the distortion is a property of the surface
 rather than of the algorithm.
 
-## Write report
+## Export SVG
 
-Saves two files **beside the document** in Fusion Team:
+Saves the strain map — the shaded pattern, its outline, a colour scale and the
+headline figures — to a file you choose. SVG opens in any browser and prints
+without going fuzzy at any size.
 
-- a **Markdown summary** of the strain and area figures and the settings used;
-- an **SVG strain map** of the pattern, with a colour scale.
-
-If the document has not been saved to Fusion Team there is nowhere to put them,
-so they are written to a local folder instead and the command tells you where.
+The button works whenever faces are selected, so you can export without
+committing a sketch. It does not close the dialog.
 
 ## Notes and limits
 

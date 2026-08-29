@@ -167,6 +167,7 @@ class _FakeInput:
     def __init__(self, kind):
         self.kind = kind
         self.isVisible = True
+        self.handlesHidden = False
         self.listItems = _FakeListItems()
 
     def addSelectionFilter(self, _name):
@@ -174,6 +175,9 @@ class _FakeInput:
 
     def setSelectionLimits(self, *_args):
         pass
+
+    def hideAll(self):
+        self.handlesHidden = True
 
 
 class _FakeListItems:
@@ -215,10 +219,15 @@ def test_the_placement_plane_is_asked_for_first(monkeypatch):
 
 
 def test_the_manipulator_starts_hidden(monkeypatch):
-    # It has nowhere meaningful to sit until a plane is picked.
+    # It has nowhere meaningful to sit until a plane is picked. Hiding the
+    # handles is the part that matters: isVisible governs the input's row in
+    # the dialog, so on its own it leaves a full triad sitting at the origin
+    # that visibly reshapes itself when the plane is finally picked.
     inputs = _build_dialog(monkeypatch)
+    triad = inputs.made[entry.INPUT_TRIAD]
 
-    assert inputs.made[entry.INPUT_TRIAD].isVisible is False
+    assert triad.handlesHidden is True
+    assert triad.isVisible is False
 
 
 def test_the_dialog_offers_every_control(monkeypatch):
@@ -231,7 +240,7 @@ def test_the_dialog_offers_every_control(monkeypatch):
         entry.INPUT_QUALITY,
         entry.INPUT_RELAX,
         entry.INPUT_WIREFRAME,
-        entry.INPUT_REPORT,
+        entry.INPUT_EXPORT,
         entry.INPUT_STATS,
     ):
         assert input_id in inputs.made
@@ -245,7 +254,7 @@ def test_input_ids_are_unique():
         entry.INPUT_QUALITY,
         entry.INPUT_RELAX,
         entry.INPUT_WIREFRAME,
-        entry.INPUT_REPORT,
+        entry.INPUT_EXPORT,
         entry.INPUT_STATS,
     ]
 

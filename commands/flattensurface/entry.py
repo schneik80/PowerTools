@@ -16,14 +16,12 @@
 
 import math
 import os
-import tempfile
 import time
 import traceback
 
 import adsk.core
 import adsk.fusion
 
-from ... import config
 from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
 from . import flatten, report
@@ -49,7 +47,7 @@ INPUT_TRIAD = "fs_triad"
 INPUT_QUALITY = "fs_quality"
 INPUT_RELAX = "fs_relax"
 INPUT_WIREFRAME = "fs_wireframe"
-INPUT_REPORT = "fs_report"
+INPUT_EXPORT = "fs_export"
 INPUT_STATS = "fs_stats"
 
 _GFX_TAG = f"{CMD_ID}_gfx"
@@ -171,9 +169,13 @@ def command_created(args: adsk.core.CommandCreatedEventArgs) -> None:
         plane.addSelectionFilter("PlanarFaces")
         plane.setSelectionLimits(1, 1)
 
-        # Created hidden with an identity transform; it is moved onto the
-        # placement plane and shown once that plane is picked.
+        # Created with every handle hidden, and moved onto the placement plane
+        # and revealed only once that plane is picked. hideAll is what actually
+        # keeps it out of the viewport: isVisible governs the input's row in the
+        # dialog, so on its own it leaves a full triad sitting at the origin
+        # until the first plane selection reshapes it.
         triad = inputs.addTriadCommandInput(INPUT_TRIAD, adsk.core.Matrix3D.create())
+        triad.hideAll()
         triad.isVisible = False
 
         faces = inputs.addSelectionInput(
@@ -212,12 +214,12 @@ def command_created(args: adsk.core.CommandCreatedEventArgs) -> None:
             "whether the mesh is fine enough to trust."
         )
 
-        write_report = inputs.addBoolValueInput(
-            INPUT_REPORT, "Write report", True, "", False
-        )
-        write_report.tooltip = (
-            "Save a strain map and summary beside the document when the "
-            "command finishes."
+        # isCheckBox=False with an empty resource folder renders as a plain
+        # text button, which is what a one-shot action wants.
+        export = inputs.addBoolValueInput(INPUT_EXPORT, "Export SVG", False, "", False)
+        export.tooltip = (
+            "Save the strain map as an SVG file. Opens straight in a browser "
+            "and prints without going fuzzy."
         )
 
         stats = inputs.addTextBoxCommandInput(
@@ -516,6 +518,12 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs) -> None:
             entity = ptutil.picked_one(_picks, INPUT_PLANE)
             _frame = _plane_frame(entity) if entity else None
             _place_triad(args.inputs)
+
+        if changed == INPUT_EXPORT:
+            button = adsk.core.BoolValueCommandInput.cast(args.input)
+            if button:
+                button.value = False  # momentary
+            _export_svg()
     except Exception:
         ptutil.handle_error(f"{CMD_NAME}.command_input_changed")
 
@@ -794,20 +802,9 @@ def command_execute(args: adsk.core.CommandEventArgs) -> None:
             ui.messageBox("Select a plane to place the pattern on.", CMD_NAME)
             return
 
-        sketch = _create_sketch(result)
-        if sketch is None:
-            return
-        if _wants_report():
-            _write_report(result)
+        _create_sketch(result)
     except Exception:
         ui.messageBox(f"{CMD_NAME} failed.\n{traceback.format_exc()}", CMD_NAME)
-
-
-def _wants_report() -> bool:
-    if _cmd_inputs is None:
-        return False
-    toggle = adsk.core.BoolValueCommandInput.cast(_cmd_inputs.itemById(INPUT_REPORT))
-    return bool(toggle and toggle.value)
 
 
 def _create_sketch(result):
@@ -951,22 +948,36 @@ def _mark_extremes(sketch, result, du: float, dv: float) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Report
+# Export
 # ---------------------------------------------------------------------------
-def _write_report(result) -> None:
-    """Write the strain map and summary, uploading them beside the document."""
+def _export_svg() -> None:
+    """Write the strain map to an SVG file the user picks.
+
+    Writing straight to a chosen path, rather than uploading anywhere, is
+    deliberate: the cloud upload this replaced had to be polled to completion,
+    and polling from inside a command handler locks Fusion up.
+    """
     try:
-        design = adsk.fusion.Design.cast(app.activeProduct)
+        result, _coarsened = _solve()
+        if result is None or not result.tris:
+            ui.messageBox("Select faces to flatten before exporting.", CMD_NAME)
+            return
+
         document = app.activeDocument
         name = (document.name if document else "Untitled") or "Untitled"
         safe = "".join(c for c in name if c.isalnum() or c in " -_").strip()
-        safe = safe or "pattern"
+
+        dlg = ui.createFileDialog()
+        dlg.title = "Export strain map"
+        dlg.filter = "SVG files (*.svg);;All Files (*.*)"
+        dlg.isMultiSelectEnabled = False
+        dlg.initialFilename = f"{safe or 'pattern'} flat pattern.svg"
+        if dlg.showSave() != adsk.core.DialogResults.DialogOK:
+            return
 
         limit = flatten.strain_limit(result.strain)
         colors = [flatten.strain_to_rgba(value, limit) for value in result.strain]
-        svg_name = f"{safe} flat pattern.svg"
-        markdown_name = f"{safe} flat pattern.md"
-
+        stats = result.stats
         svg = report.svg_strain_map(
             result.uvs,
             result.tris,
@@ -974,84 +985,18 @@ def _write_report(result) -> None:
             result.boundary,
             limit,
             flatten.strain_to_rgba,
-            title=f"{name} - flat pattern",
+            title=(
+                f"{name} - flat pattern - "
+                f"stretch {stats.max_strain * 100.0:+.2f}%, "
+                f"gather {stats.min_strain * 100.0:+.2f}%"
+            ),
         )
-        units = "cm"
-        if design:
-            units = design.unitsManager.defaultLengthUnits
-        markdown = report.markdown_report(
-            result.stats,
-            document_name=name,
-            face_count=len(ptutil.picked(_picks, INPUT_FACES)),
-            quality=_current_quality(),
-            relaxed=_current_relax(),
-            svg_name=svg_name,
-            units=units,
-            timestamp=time.strftime("%Y-%m-%d %H:%M"),
-        )
-
-        folder = os.path.join(tempfile.gettempdir(), config.ADDIN_NAME, "flatten")
-        os.makedirs(folder, exist_ok=True)
-        svg_path = os.path.join(folder, svg_name)
-        markdown_path = os.path.join(folder, markdown_name)
-        with open(svg_path, "w", encoding="utf-8") as handle:
+        with open(dlg.filename, "w", encoding="utf-8") as handle:
             handle.write(svg)
-        with open(markdown_path, "w", encoding="utf-8") as handle:
-            handle.write(markdown)
-
-        uploaded = _upload_beside_document(document, [markdown_path, svg_path])
-        if uploaded:
-            ui.messageBox(
-                f"Report saved beside {name} in Fusion Team.",
-                CMD_NAME,
-            )
-        else:
-            ui.messageBox(
-                "The document is not saved to Fusion Team, so the report was "
-                f"written locally instead:\n\n{folder}",
-                CMD_NAME,
-            )
+        ptutil.log(f"{CMD_NAME}: exported {dlg.filename}")
     except Exception:
-        ptutil.log(f"{CMD_NAME}: report failed\n{traceback.format_exc()}")
-        ui.messageBox(
-            "The pattern sketch was created, but the report could not be "
-            "written. See the log for details.",
-            CMD_NAME,
-        )
-
-
-def _upload_beside_document(document, paths) -> bool:
-    """Upload files into the document's own Fusion Team folder.
-
-    Args:
-        document: The active document.
-        paths: Local file paths to upload.
-
-    Returns:
-        True when every file landed, False when the document has no cloud
-        folder to upload into or an upload did not complete.
-    """
-    try:
-        data_file = document.dataFile if document else None
-        folder = data_file.parentFolder if data_file else None
-    except Exception:
-        folder = None
-    if folder is None:
-        return False
-
-    for path in paths:
-        try:
-            future = folder.uploadFile(path)
-        except Exception:
-            ptutil.log(f"{CMD_NAME}: uploadFile raised for {os.path.basename(path)}")
-            return False
-        ok, message = ptutil.wait_for_upload(
-            future, os.path.basename(path), log_fn=ptutil.log
-        )
-        if not ok:
-            ptutil.log(f"{CMD_NAME}: {message}")
-            return False
-    return True
+        ptutil.log(f"{CMD_NAME}: export failed\n{traceback.format_exc()}")
+        ui.messageBox("The strain map could not be exported.", CMD_NAME)
 
 
 # ---------------------------------------------------------------------------

@@ -1,9 +1,9 @@
-"""Tests for the Flatten Surface report writer.
+"""Tests for the Flatten Surface strain-map renderer.
 
-Both documents are plain text built with f-strings, so the risks are structural
-rather than numerical: malformed XML that no browser will open, a legend that
-mislabels which end is compression, or a run with folded triangles that reports
-a clean pattern anyway. These check exactly those.
+The SVG is plain text built with f-strings, so the risks are structural rather
+than numerical: malformed XML that no browser will open, a legend that
+mislabels which end is compression, or a Y axis left unflipped, which would
+hand back a mirrored and unusable pattern. These check exactly those.
 """
 
 import importlib.util
@@ -113,67 +113,3 @@ def test_svg_handles_an_empty_pattern():
 
     root = ElementTree.fromstring(svg)
     assert root.tag.endswith("svg")
-
-
-def test_markdown_reports_the_headline_numbers():
-    stats = flatten.FlattenStats(
-        vertices=120,
-        triangles=200,
-        islands=1,
-        area_3d=10.0,
-        area_2d=10.5,
-        min_strain=-0.021,
-        max_strain=0.034,
-        mean_abs_strain=0.012,
-    )
-
-    text = report.markdown_report(
-        stats,
-        document_name="Bracket",
-        face_count=3,
-        quality="Medium",
-        relaxed=True,
-        svg_name="Bracket-strain.svg",
-    )
-
-    assert "# Flattened pattern - Bracket" in text
-    assert "+3.40%" in text
-    assert "-2.10%" in text
-    assert "1.20%" in text
-    assert "![Strain map](Bracket-strain.svg)" in text
-    assert "LSCM then ARAP relaxation" in text
-    assert "| Faces selected | 3 |" in text
-
-
-def test_markdown_notes_the_method_when_relaxation_is_off():
-    stats = flatten.FlattenStats(triangles=10)
-
-    text = report.markdown_report(stats, "Doc", 1, "Coarse", False, "map.svg")
-
-    assert "LSCM only" in text
-
-
-def test_markdown_warns_about_folded_triangles():
-    stats = flatten.FlattenStats(triangles=10, flipped=4, degenerate=2)
-
-    text = report.markdown_report(stats, "Doc", 1, "Fine", True, "map.svg")
-
-    assert "## Warnings" in text
-    assert "4 triangles folded over" in text
-    assert "2 triangles were too small" in text
-
-
-def test_markdown_stays_quiet_when_nothing_is_wrong():
-    stats = flatten.FlattenStats(triangles=10)
-
-    text = report.markdown_report(stats, "Doc", 1, "Fine", True, "map.svg")
-
-    assert "## Warnings" not in text
-
-
-def test_markdown_converts_areas_to_the_requested_units():
-    stats = flatten.FlattenStats(area_3d=6.4516, area_2d=6.4516)
-
-    text = report.markdown_report(stats, "Doc", 1, "Fine", True, "map.svg", units="in")
-
-    assert "1.000 in^2" in text

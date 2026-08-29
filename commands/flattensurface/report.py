@@ -7,9 +7,9 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 #
-# Report generation for the Flatten Surface command: a Markdown summary and an
-# SVG of the flattened pattern shaded by strain. Like flatten.py this imports no
-# `adsk` module, so both documents can be produced and checked outside Fusion.
+# Renders the Flatten Surface pattern as an SVG shaded by strain. Like
+# flatten.py this imports no `adsk` module, so the output can be produced and
+# checked outside Fusion.
 #
 # SVG is the whole toolchain here on purpose. It is text, so it needs no imaging
 # library that Fusion's Python does not have; it prints and scales without
@@ -28,15 +28,6 @@ _LEGEND_STOPS = 9
 def _escape(text: str) -> str:
     """Escape text for inclusion in XML content."""
     return saxutils.escape(str(text))
-
-
-def _format_area(value_cm2: float, units: str) -> str:
-    """Format a square-centimetre area for display in *units*."""
-    if units == "mm":
-        return f"{value_cm2 * 100.0:.1f} mm^2"
-    if units == "in":
-        return f"{value_cm2 / 6.4516:.3f} in^2"
-    return f"{value_cm2:.3f} cm^2"
 
 
 def svg_strain_map(
@@ -161,94 +152,3 @@ def _legend(view_h: float, limit: float, ramp) -> str:
         'text-anchor="middle">compression - no distortion - stretch</text>'
     )
     return "\n".join(parts)
-
-
-def markdown_report(
-    stats,
-    document_name: str,
-    face_count: int,
-    quality: str,
-    relaxed: bool,
-    svg_name: str,
-    units: str = "cm",
-    timestamp: str = "",
-) -> str:
-    """Summarise a flattening run as Markdown.
-
-    Args:
-        stats: The run's :class:`flatten.FlattenStats`.
-        document_name: Fusion document the faces came from.
-        face_count: Number of faces selected.
-        quality: Tessellation quality label used.
-        relaxed: Whether the ARAP relaxation ran.
-        svg_name: File name of the companion strain map.
-        units: Display units, one of "cm", "mm" or "in".
-        timestamp: Optional creation time, already formatted.
-
-    Returns:
-        The report as Markdown text.
-    """
-    growth = 0.0
-    if stats.area_3d > 0.0:
-        growth = (stats.area_2d / stats.area_3d - 1.0) * 100.0
-
-    lines = [
-        f"# Flattened pattern - {document_name}",
-        "",
-    ]
-    if timestamp:
-        lines.append(f"Generated {timestamp}")
-        lines.append("")
-    lines += [
-        f"![Strain map]({svg_name})",
-        "",
-        "## Distortion",
-        "",
-        "The strain below is the change in local size between the surface and",
-        "the flat pattern. Negative values are compression, positive values are",
-        "stretch. A developable surface flattens at zero; anything else has to",
-        "move material somewhere.",
-        "",
-        "| Measure | Value |",
-        "| --- | --- |",
-        f"| Maximum stretch | {stats.max_strain * 100.0:+.2f}% |",
-        f"| Maximum compression | {stats.min_strain * 100.0:+.2f}% |",
-        f"| Mean absolute strain | {stats.mean_abs_strain * 100.0:.2f}% |",
-        "",
-        "## Pattern",
-        "",
-        "| Measure | Value |",
-        "| --- | --- |",
-        f"| Surface area | {_format_area(stats.area_3d, units)} |",
-        f"| Flattened area | {_format_area(stats.area_2d, units)} |",
-        f"| Area change | {growth:+.2f}% |",
-        f"| Faces selected | {face_count} |",
-        f"| Separate pieces | {stats.islands} |",
-        "",
-        "## How it was made",
-        "",
-        "| Setting | Value |",
-        "| --- | --- |",
-        f"| Method | {'LSCM then ARAP relaxation' if relaxed else 'LSCM only'} |",
-        f"| Mesh quality | {quality} |",
-        f"| Triangles | {stats.triangles} |",
-        f"| Vertices | {stats.vertices} |",
-    ]
-
-    warnings = []
-    if stats.flipped:
-        warnings.append(
-            f"{stats.flipped} triangles folded over in the layout. The pattern "
-            "is not trustworthy: try a finer mesh, or flatten fewer faces at "
-            "once."
-        )
-    if stats.degenerate:
-        warnings.append(
-            f"{stats.degenerate} triangles were too small to measure and were skipped."
-        )
-    if warnings:
-        lines += ["", "## Warnings", ""]
-        lines += [f"- {warning}" for warning in warnings]
-
-    lines.append("")
-    return "\n".join(lines)
