@@ -52,6 +52,12 @@ DEFAULT_CORNER_DEGREES = 32.0
 # gratuitous slit - a flat washer is the case that matters here.
 CUT_WORTH_TRYING = 0.005
 
+# Turning above which a boundary is taken to ring a hole rather than being an
+# open end, so the patch must keep its hole instead of being slit. A hole rim
+# turns through 2*pi and a tube end through nothing; a cone wall lands near
+# 0.9*pi, so the line sits well clear of both.
+MIN_RING_TURNING = 1.5 * math.pi
+
 # Angle defect above which an interior vertex counts as a genuine corner. A
 # tessellated smooth surface lands within rounding of zero; a place where three
 # faces meet is tens of degrees out.
@@ -1054,6 +1060,61 @@ def _shortest_vertex_path(tris: list, sources: set, targets: set) -> list:
     return []
 
 
+def boundary_turning(verts: list, tris: list, loop: list) -> float:
+    """How far a boundary loop turns as it is walked, measured in the surface.
+
+    This is what tells a hole from an open end. A rim that rings a hole turns
+    through a full 2*pi, the same as walking round a disc. The end of a tube is
+    a geodesic and turns through nothing at all, because the surface carries
+    straight on past it.
+
+    Args:
+        verts: Coordinates the triangles index into.
+        tris: Triangles of the patch.
+        loop: Boundary vertex indices, as :func:`boundary_loops` returns them.
+
+    Returns:
+        Total turning in radians. The sign follows the loop's stored direction
+        and carries no meaning on its own.
+    """
+    interior: dict = {}
+    for a, b, c in tris:
+        for vertex, first, second in ((a, b, c), (b, c, a), (c, a, b)):
+            origin = verts[vertex]
+            u = [verts[first][k] - origin[k] for k in range(3)]
+            v = [verts[second][k] - origin[k] for k in range(3)]
+            nu = math.sqrt(sum(value * value for value in u))
+            nv = math.sqrt(sum(value * value for value in v))
+            if nu <= 0.0 or nv <= 0.0:
+                continue
+            cosine = sum(u[k] * v[k] for k in range(3)) / (nu * nv)
+            interior[vertex] = interior.get(vertex, 0.0) + math.acos(
+                max(-1.0, min(1.0, cosine))
+            )
+    return sum(math.pi - interior.get(vertex, 0.0) for vertex in loop)
+
+
+def rings_a_hole(verts: list, tris: list) -> bool:
+    """Whether a patch surrounds a hole rather than being open at both ends.
+
+    A washer and a tube are the same shape topologically, and telling them apart
+    matters enormously: a tube has no flat form until it is slit, while slitting
+    a washer would tear a part that is perfectly happy as a ring. Turning is what
+    separates them - see :func:`boundary_turning`.
+
+    Erring towards a hole is deliberate. A ring flattened without a cut carries
+    some strain, which is reported and can be judged; a hole slit open by mistake
+    unrolls into a spiral, which is unusable and not obviously wrong at a glance.
+    """
+    loops = boundary_loops(tris)
+    if len(loops) < 2:
+        return False
+    return (
+        max(abs(boundary_turning(verts, tris, loop)) for loop in loops)
+        >= MIN_RING_TURNING
+    )
+
+
 def cut_to_disk(verts: list, tris: list) -> tuple[list, list]:
     """Slit a tube open along a seam so it can be laid flat.
 
@@ -1535,6 +1596,11 @@ def _flatten_island(
     layout = _solve_island(verts, tris, relax, iterations)
     local = _island_vertices(tris)
     if euler_characteristic(len(local), tris) == 1:
+        return layout, tris, False
+
+    if rings_a_hole(verts, tris):
+        # A hole is not an open end. Slitting one to gain a little accuracy
+        # unrolls the patch into a spiral and destroys the pattern.
         return layout, tris, False
 
     before = _mean_strain(verts, tris, local, layout)

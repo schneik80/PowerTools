@@ -94,16 +94,25 @@ the cut zigzags. Anchoring on the directed half-edge does that: the triangle
 containing `v_i -> v_i+1` is on the same side at every vertex, which the fan walk
 in `_fan_forward` / `_fan_backward` relies on.
 
-**Topology does not decide whether to cut.** A flat washer is an annulus in
-exactly the same sense as a tube and is already flat. So the cut is judged on its
-result and kept only when it lowers strain:
+**Topology does not decide whether to cut.** A washer is an annulus in exactly
+the same sense as a tube, and slitting one is as wrong as failing to slit the
+other. `rings_a_hole()` separates them by **boundary turning**: a rim that goes
+round a hole turns through a full `2*pi`, while a tube end is a geodesic and
+turns through nothing, because the surface carries straight on past it.
 
-| Shape | Euler characteristic | Cut kept? | Strain after |
-|---|---|---|---|
-| Tube (closed cylinder) | 0 | yes | ~0% |
-| Cone wall | 0 | yes | ~0% |
-| Flat washer | 0 | **no** | ~0% either way |
-| Any disc | 1 | not attempted | — |
+| Shape | Boundary turning | Cut? |
+|---|---|---|
+| Tube (closed cylinder) | 0.00 pi | yes |
+| Cone wall | 0.89 pi | yes |
+| Flat washer | 2.00 pi | **no** |
+| Formed washer, domed or waved | 2.06 pi | **no** |
+| Any disc | one boundary only | not attempted |
+
+Anything that rings a hole keeps it, whatever the strain, and the cut is only
+then judged on whether it lowers distortion. Erring towards keeping the hole is
+deliberate: a ring flattened without a cut carries strain that is reported and
+can be judged, while a hole slit by mistake unrolls into a spiral that is
+unusable and not obviously wrong at a glance.
 
 A closed shell such as a sphere has no boundary to run a seam between and is not
 handled.

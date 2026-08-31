@@ -74,9 +74,11 @@ and it is slit automatically along the shortest seam between its two ends, and
 the dialog says so. Once slit it unrolls **exactly**, with no distortion,
 because a tube is developable.
 
-The cut is only made when it actually helps. A flat washer is a closed ring in
-exactly the same sense, but it is already flat, so it is left whole and its hole
-stays a hole.
+**A hole is never cut open.** A washer, or a formed boss with a bore through it,
+is a closed ring in exactly the same topological sense as a tube — but its rim
+goes round something, and a tube's does not. Rings keep their holes and carry
+whatever strain that costs, which is reported like any other. Only a genuinely
+open-ended shape is slit.
 
 A fully closed shell such as a sphere has no open end to cut between and is not
 handled: expect a poor pattern and no usable outline. Split it into faces first.

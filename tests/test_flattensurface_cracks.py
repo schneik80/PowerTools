@@ -241,3 +241,133 @@ def test_angle_defect_ignores_the_rim():
 
     assert len(defects) == 4  # the interior of a 4x4 grid
     assert all(abs(value) < 1e-12 for value in defects.values())
+
+
+# ---------------------------------------------------------------------------
+# A hole is not an open end
+# ---------------------------------------------------------------------------
+def ring(rows=8, cols=32, inner=1.0, outer=3.0, wave=0.0, waves=3, dome=0.0):
+    """An annulus, optionally formed so it no longer lies flat."""
+    coords, triangles = [], []
+    for i in range(rows):
+        fraction = i / (rows - 1)
+        radius = inner + (outer - inner) * fraction
+        for j in range(cols):
+            angle = 2.0 * math.pi * j / cols
+            z = wave * math.sin(waves * angle) * fraction + dome * fraction * fraction
+            coords.append((radius * math.cos(angle), radius * math.sin(angle), z))
+    for i in range(rows - 1):
+        for j in range(cols):
+            a = i * cols + j
+            b = i * cols + (j + 1) % cols
+            triangles.append((a, b, b + cols))
+            triangles.append((a, b + cols, a + cols))
+    return coords, triangles
+
+
+def open_tube(rows=10, cols=24, radius=2.0, height=6.0):
+    coords, triangles = [], []
+    for i in range(rows):
+        for j in range(cols):
+            angle = 2.0 * math.pi * j / cols
+            coords.append(
+                (
+                    radius * math.cos(angle),
+                    radius * math.sin(angle),
+                    height * i / (rows - 1),
+                )
+            )
+    for i in range(rows - 1):
+        for j in range(cols):
+            a = i * cols + j
+            b = i * cols + (j + 1) % cols
+            triangles.append((a, b, b + cols))
+            triangles.append((a, b + cols, a + cols))
+    return coords, triangles
+
+
+def test_a_hole_rim_turns_through_a_full_circle():
+    verts, tris, _source = flatten.weld_meshes([ring()])
+    loops = flatten.boundary_loops(tris)
+
+    turnings = [abs(flatten.boundary_turning(verts, tris, loop)) for loop in loops]
+
+    assert len(turnings) == 2
+    for turning in turnings:
+        assert abs(turning - 2.0 * math.pi) < 0.2
+
+
+def test_a_tube_end_barely_turns_at_all():
+    # It is a geodesic: the surface carries straight on past it.
+    verts, tris, _source = flatten.weld_meshes([open_tube()])
+    loops = flatten.boundary_loops(tris)
+
+    for loop in loops:
+        assert abs(flatten.boundary_turning(verts, tris, loop)) < 0.2
+
+
+def test_a_formed_ring_keeps_its_hole():
+    # The failure this guards. A formed boss with a bore is an annulus exactly
+    # as a tube is, and cutting it gained a little accuracy while unrolling the
+    # pattern into a spiral - unusable, and not obviously wrong at a glance.
+    result = flatten.flatten_meshes([ring(wave=0.6)])
+
+    assert result.stats.seams_cut == 0
+    assert len(result.boundary) == 2
+
+
+def test_a_deeply_formed_ring_still_keeps_its_hole():
+    # Deep enough that cutting would measurably reduce the strain, which is
+    # exactly when the old rule gave the hole away.
+    result = flatten.flatten_meshes([ring(wave=0.9, dome=0.5)])
+
+    assert result.stats.seams_cut == 0
+    assert len(result.boundary) == 2
+    assert result.stats.mean_abs_strain > 0.005
+
+
+def test_a_domed_ring_keeps_its_hole():
+    result = flatten.flatten_meshes([ring(dome=0.8)])
+
+    assert result.stats.seams_cut == 0
+    assert len(result.boundary) == 2
+
+
+def test_a_tube_is_still_cut():
+    # The control: erring towards keeping holes must not stop a tube opening.
+    result = flatten.flatten_meshes([open_tube()])
+
+    assert result.stats.seams_cut == 1
+    assert len(result.boundary) == 1
+    assert result.stats.mean_abs_strain < 1e-6
+
+
+def test_a_cone_wall_is_still_cut():
+    coords, triangles = [], []
+    rows, cols = 10, 24
+    for i in range(rows):
+        fraction = i / (rows - 1)
+        radius = 1.0 + 2.0 * fraction
+        for j in range(cols):
+            angle = 2.0 * math.pi * j / cols
+            coords.append(
+                (radius * math.cos(angle), radius * math.sin(angle), 4.0 * fraction)
+            )
+    for i in range(rows - 1):
+        for j in range(cols):
+            a = i * cols + j
+            b = i * cols + (j + 1) % cols
+            triangles.append((a, b, b + cols))
+            triangles.append((a, b + cols, a + cols))
+
+    result = flatten.flatten_meshes([(coords, triangles)])
+
+    assert result.stats.seams_cut == 1
+    assert result.stats.mean_abs_strain < 1e-6
+
+
+def test_rings_a_hole_needs_two_boundaries():
+    # A disc has one boundary and is never a candidate for either treatment.
+    verts, tris, _source = flatten.weld_meshes([flat_grid(5, 5)])
+
+    assert flatten.rings_a_hole(verts, tris) is False
