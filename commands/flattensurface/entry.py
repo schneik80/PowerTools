@@ -786,6 +786,22 @@ def _update_stats(result, coarsened: bool) -> None:
             f"Slit open along {stats.seams_cut} seam"
             f"{'s' if stats.seams_cut > 1 else ''} to lay flat."
         )
+    if stats.cracks_stitched:
+        lines.append(
+            f"Closed {stats.cracks_stitched} gap"
+            f"{'s' if stats.cracks_stitched > 1 else ''} where faces met unevenly."
+        )
+    if stats.bent_points:
+        # Without this the strain reads as a defect. A plane or a cylinder
+        # flattens exactly, and so do any number of them joined edge to edge -
+        # but where three faces meet at a point there is real curvature, and no
+        # flat pattern can hold it.
+        lines.append(
+            f"{stats.bent_points} corner"
+            f"{'s' if stats.bent_points > 1 else ''} hold up to "
+            f"{math.degrees(stats.worst_defect):.0f}&deg; of curvature, so some "
+            "distortion here cannot be avoided."
+        )
     if coarsened:
         lines.append("Mesh coarsened to keep the preview responsive.")
     if stats.flipped:

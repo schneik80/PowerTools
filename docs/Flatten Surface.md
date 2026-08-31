@@ -33,6 +33,28 @@ Each piece is squared up before it is placed, so a rectangular panel lands
 straight and landscape rather than at whatever angle the solver happened to
 finish at.
 
+## Why a shape made only of planes and cylinders can still show strain
+
+A plane flattens exactly. So does a cylinder. So does any number of them joined
+edge to edge — an extruded profile with filleted corners comes out with no
+strain at all.
+
+The exception is a **point where three or more faces meet**, like the corner of
+a box. The faces there enclose less than a full turn — three square corners give
+270 degrees, so 90 are missing — and that shortfall is curvature. No flat
+pattern can hold it, and no software can remove it. The dialog now says so
+explicitly, naming how many such corners there are and how much curvature they
+hold, so a strain map like that reads as geometry rather than as a fault.
+
+Strain from a corner is spread across the whole piece rather than piled up at
+the corner, so flat faces near one will show some too. Turning **Relax pattern**
+off concentrates it instead, which is sometimes easier to interpret.
+
+Separately, neighbouring faces are meshed independently, and where they sample a
+shared edge differently the pieces would be joined at only a few points. Those
+gaps are found and closed before flattening, and the dialog reports how many —
+you should never see the irregular pattern they used to cause.
+
 ## Tubes and other closed shapes
 
 A closed tube — a full cylinder or cone wall — has **no flat form at all** until

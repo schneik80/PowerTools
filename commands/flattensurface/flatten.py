@@ -52,6 +52,22 @@ DEFAULT_CORNER_DEGREES = 32.0
 # gratuitous slit - a flat washer is the case that matters here.
 CUT_WORTH_TRYING = 0.005
 
+# Angle defect above which an interior vertex counts as a genuine corner. A
+# tessellated smooth surface lands within rounding of zero; a place where three
+# faces meet is tens of degrees out.
+MIN_DEFECT_DEGREES = 0.5
+
+# Passes allowed when stitching cracks. Splitting one triangle can expose the
+# next T-junction along, so it takes a few rounds to settle; the cap is only
+# there so a pathological mesh cannot loop forever.
+MAX_STITCH_PASSES = 6
+
+# Crack stitching works to a looser tolerance than welding. Two faces meeting
+# along a straight edge agree exactly, but along an arc each approximates the
+# curve its own way, so their points sit near the other's chords rather than
+# on them.
+_STITCH_TOL_FACTOR = 50.0
+
 # Triangles smaller than this (cm^2) carry no usable frame, so they are skipped
 # when assembling the solver systems and reported as degenerate instead.
 MIN_TRIANGLE_AREA = 1e-12
@@ -93,12 +109,20 @@ class FlattenStats:
         degenerate: Triangles too small to measure, skipped by the solver.
         seams_cut: Patches slit open to make them flattenable, as a closed tube
             has to be.
+        cracks_stitched: Gaps closed where neighbouring faces were tessellated
+            differently along a shared edge.
+        bent_points: Interior vertices holding real curvature, where three or
+            more faces meet. Any of these means some distortion is unavoidable.
+        worst_defect: Largest angle defect at any interior vertex, in radians.
     """
 
     vertices: int = 0
     triangles: int = 0
     islands: int = 0
     seams_cut: int = 0
+    cracks_stitched: int = 0
+    bent_points: int = 0
+    worst_defect: float = 0.0
     area_3d: float = 0.0
     area_2d: float = 0.0
     min_strain: float = 0.0
@@ -788,6 +812,161 @@ def _chain_edges(edges: list) -> list:
     return chains
 
 
+def angle_defects(verts: list, tris: list) -> dict:
+    """Curvature held at each interior vertex, as 2*pi minus the angles there.
+
+    This is what says whether a patch can lay flat at all. A vertex whose
+    incident angles sum to a full turn is intrinsically flat, and a patch that
+    is flat at every interior vertex flattens exactly - which is why a plane, a
+    cylinder, and any number of them joined edge to edge come out with no strain
+    at all. Where three or more faces meet at a point the angles fall short of a
+    full turn, and that shortfall is curvature no algorithm can flatten away. A
+    box corner holds exactly 90 degrees of it.
+
+    Boundary vertices are excluded: they are meant to fall short of a full turn.
+
+    Args:
+        verts: Coordinates the triangles index into.
+        tris: Triangles as (i, j, k) index tuples.
+
+    Returns:
+        Interior vertex index -> defect in radians. Positive is a cone point,
+        negative a saddle, and near-zero means locally flattenable.
+    """
+    total: dict = {}
+    for a, b, c in tris:
+        for vertex, first, second in ((a, b, c), (b, c, a), (c, a, b)):
+            origin = verts[vertex]
+            u = [verts[first][k] - origin[k] for k in range(3)]
+            v = [verts[second][k] - origin[k] for k in range(3)]
+            nu = math.sqrt(sum(value * value for value in u))
+            nv = math.sqrt(sum(value * value for value in v))
+            if nu <= 0.0 or nv <= 0.0:
+                continue
+            cosine = sum(u[k] * v[k] for k in range(3)) / (nu * nv)
+            total[vertex] = total.get(vertex, 0.0) + math.acos(
+                max(-1.0, min(1.0, cosine))
+            )
+
+    on_edge = {index for edge in _boundary_edges(tris) for index in edge}
+    return {
+        vertex: 2.0 * math.pi - angle
+        for vertex, angle in total.items()
+        if vertex not in on_edge
+    }
+
+
+def _boundary_edges(tris: list) -> list:
+    """Edges used by exactly one triangle, so the rim of the patch."""
+    counts: dict = {}
+    for a, b, c in tris:
+        for i, j in ((a, b), (b, c), (c, a)):
+            key = (i, j) if i < j else (j, i)
+            counts[key] = counts.get(key, 0) + 1
+    return [edge for edge, count in counts.items() if count == 1]
+
+
+def _points_on_edge(verts: list, start: int, end: int, candidates: list, tol: float):
+    """Candidate vertices lying along the segment, ordered from start to end."""
+    origin, finish = verts[start], verts[end]
+    span = [finish[k] - origin[k] for k in range(3)]
+    length_sq = sum(value * value for value in span)
+    if length_sq <= 0.0:
+        return []
+
+    found = []
+    for vertex in candidates:
+        if vertex in (start, end):
+            continue
+        point = verts[vertex]
+        offset = [point[k] - origin[k] for k in range(3)]
+        position = sum(offset[k] * span[k] for k in range(3)) / length_sq
+        if not 0.0 < position < 1.0:
+            continue
+        gap = sum((offset[k] - position * span[k]) ** 2 for k in range(3))
+        if gap <= tol * tol:
+            found.append((position, vertex))
+    found.sort()
+    return [vertex for _position, vertex in found]
+
+
+def stitch_cracks(
+    verts: list, tris: list, tri_source: list, tol: float
+) -> tuple[list, list, int]:
+    """Close gaps left where neighbouring faces were meshed differently.
+
+    Fusion tessellates each face on its own, so two faces sharing an edge can
+    sample it differently. Welding then joins them only at whatever nodes happen
+    to land in the same place, leaving the rest of the edge as a pair of free
+    rims with one side's vertices stranded partway along the other's triangles.
+    Nothing downstream notices - the patch still reports as one connected island
+    with no flipped triangles and matching areas - but it is hinged rather than
+    joined, and it flattens into a mess.
+
+    Each stranded vertex is welded in by re-cutting the triangle that spans it.
+    Adding points along the edges of a triangle leaves a convex polygon, so a
+    fan from an untouched corner always retriangulates it correctly.
+
+    Args:
+        verts: Coordinates the triangles index into.
+        tris: Triangles as (i, j, k) index tuples.
+        tri_source: Source face per triangle, kept in step with *tris*.
+        tol: How far off the line a vertex may sit and still count as on it. A
+            shared straight edge gives exact hits, but two faces approximate a
+            shared arc differently, so their points sit near each other rather
+            than on top of each other.
+
+    Returns:
+        ``(tris, tri_source, stitched)`` with *stitched* counting the gaps
+        closed.
+    """
+    tris = list(tris)
+    tri_source = list(tri_source)
+    stitched = 0
+
+    for _pass in range(MAX_STITCH_PASSES):
+        boundary = _boundary_edges(tris)
+        if not boundary:
+            break
+        loose = sorted({index for edge in boundary for index in edge})
+        owner: dict = {}
+        for index, (a, b, c) in enumerate(tris):
+            for i, j in ((a, b), (b, c), (c, a)):
+                owner[(i, j) if i < j else (j, i)] = index
+
+        rebuilt: dict = {}
+        for start, end in boundary:
+            extra = _points_on_edge(verts, start, end, loose, tol)
+            if not extra:
+                continue
+            index = owner.get((start, end))
+            if index is None or index in rebuilt:
+                continue
+            rebuilt[index] = (start, end, extra)
+
+        if not rebuilt:
+            break
+
+        for index, (start, end, extra) in rebuilt.items():
+            triangle = tris[index]
+            apex = next(corner for corner in triangle if corner not in (start, end))
+            # Keep the winding: walk the edge the way this triangle already does.
+            order = list(triangle)
+            forward = order[(order.index(start) + 1) % 3] == end
+            chain = [start, *extra, end] if forward else [end, *reversed(extra), start]
+            fan = [
+                (apex, chain[step], chain[step + 1]) for step in range(len(chain) - 1)
+            ]
+            tris[index] = fan[0]
+            source = tri_source[index]
+            for piece in fan[1:]:
+                tris.append(piece)
+                tri_source.append(source)
+            stitched += len(extra)
+
+    return tris, tri_source, stitched
+
+
 def euler_characteristic(vertex_count: int, tris: list) -> int:
     """V - E + F for a patch: 1 for a disc, 0 for a tube or a washer.
 
@@ -1177,7 +1356,12 @@ def flatten_meshes(
         return result
 
     verts = list(verts)
-    tris = list(tris)
+    # Close any gaps before solving. A patch left hinged by uneven tessellation
+    # still looks connected to everything downstream, so this has to happen
+    # before the layout is computed rather than be caught afterwards.
+    tris, tri_source, cracks_stitched = stitch_cracks(
+        verts, tris, tri_source, weld_tol * _STITCH_TOL_FACTOR
+    )
     seams_cut = 0
     offset_x = 0.0
     placed: list = []
@@ -1217,6 +1401,14 @@ def flatten_meshes(
     strain, stats = vertex_strain(verts, tris, uvs, sigmas)
     stats.islands = len(placed)
     stats.seams_cut = seams_cut
+    stats.cracks_stitched = cracks_stitched
+
+    # Curvature that no layout can remove, so the dialog can say plainly whether
+    # the strain it is showing was ever avoidable.
+    defects = angle_defects(verts, tris)
+    floor = math.radians(MIN_DEFECT_DEGREES)
+    stats.bent_points = sum(1 for value in defects.values() if abs(value) > floor)
+    stats.worst_defect = max((abs(v) for v in defects.values()), default=0.0)
 
     loops = boundary_loops(tris)
     loops.sort(
