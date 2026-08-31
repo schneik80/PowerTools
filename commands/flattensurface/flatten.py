@@ -64,6 +64,24 @@ MIN_DEFECT_DEGREES = 0.5
 # anything to any material, so that is where the scale stops shrinking.
 MIN_STRAIN_LIMIT = 0.001
 
+# A straight run fits a circle too, one of enormous radius. Any fit whose
+# radius exceeds this many times the run's own span is treated as the line it
+# really is, which keeps a flat edge from being drawn as a vast shallow arc.
+MAX_ARC_RADIUS_SPANS = 1000.0
+
+# What it takes for a fitted line or arc to count as part of the shape rather
+# than a chord across a smooth curve: either it covers this many chain points,
+# or it reaches this many times the typical spacing around it. Without the
+# second test a straight edge the tessellator left as one long segment would
+# be mistaken for a sliver.
+MIN_PRIMITIVE_POINTS = 4
+MIN_PRIMITIVE_SPANS = 3.0
+
+# Arcs in an unbroken row above this many are approximating something that is
+# not circular at all, and become one spline instead. Two in a row is left
+# alone, being an ordinary S of two fillets.
+MAX_CHAINED_ARCS = 3
+
 # Passes allowed when stitching cracks. Splitting one triangle can expose the
 # next T-junction along, so it takes a few rounds to settle; the cap is only
 # there so a pathological mesh cannot loop forever.
@@ -1685,6 +1703,231 @@ def simplify_loop(points: list, tol: float, closed: bool = False) -> list:
     if closed and len(kept) < 3:
         return list(points)
     return kept
+
+
+def fit_circle(points: list) -> tuple | None:
+    """Least-squares circle through 2D points, or None if they do not curve.
+
+    Uses the algebraic (Kasa) fit, which is a single 3x3 solve rather than an
+    iteration. Points are shifted to their centroid first, without which a
+    small arc a long way from the origin loses most of its precision.
+
+    Args:
+        points: (u, v) tuples, at least three of them.
+
+    Returns:
+        ``(cx, cy, radius)``, or None when the points are collinear or so
+        nearly so that the fitted radius means nothing.
+    """
+    if len(points) < 3:
+        return None
+    count = float(len(points))
+    ox = sum(p[0] for p in points) / count
+    oy = sum(p[1] for p in points) / count
+
+    sxx = sxy = syy = sxz = syz = sz = 0.0
+    for px, py in points:
+        x = px - ox
+        y = py - oy
+        z = x * x + y * y
+        sxx += x * x
+        sxy += x * y
+        syy += y * y
+        sxz += x * z
+        syz += y * z
+        sz += z
+
+    # Centred, so the sums of x and y vanish and the 3x3 drops to a 2x2.
+    determinant = sxx * syy - sxy * sxy
+    if abs(determinant) <= 1e-18:
+        return None
+    cx = (syy * sxz - sxy * syz) / (2.0 * determinant)
+    cy = (sxx * syz - sxy * sxz) / (2.0 * determinant)
+    radius_sq = cx * cx + cy * cy + sz / count
+    if radius_sq <= 0.0:
+        return None
+    radius = math.sqrt(radius_sq)
+
+    # A straight run also "fits" a circle, one of absurd radius. Rejecting that
+    # here is what stops a line being drawn as an arc.
+    span = max(
+        math.dist(points[0], points[-1]),
+        max(math.dist(points[0], p) for p in points),
+    )
+    if span > 0.0 and radius > span * MAX_ARC_RADIUS_SPANS:
+        return None
+    return (cx + ox, cy + oy, radius)
+
+
+def circle_deviation(points: list, cx: float, cy: float, radius: float) -> float:
+    """Furthest any point sits from the given circle."""
+    return max(abs(math.hypot(p[0] - cx, p[1] - cy) - radius) for p in points)
+
+
+def line_deviation(points: list) -> float:
+    """Furthest any point sits from the chord between the first and last."""
+    if len(points) < 3:
+        return 0.0
+    return max(
+        _point_line_distance(point, points[0], points[-1]) for point in points[1:-1]
+    )
+
+
+def _fits_circle(points: list, tol: float) -> bool:
+    fit = fit_circle(points)
+    return fit is not None and circle_deviation(points, *fit) <= tol
+
+
+def _median_step(points: list) -> float:
+    """Typical spacing between neighbouring points in a chain."""
+    steps = sorted(math.dist(a, b) for a, b in zip(points, points[1:], strict=False))
+    return steps[len(steps) // 2] if steps else 0.0
+
+
+def _is_real_geometry(slice_points: list, step: float) -> bool:
+    """Whether a fitted primitive describes the shape or just spans a gap.
+
+    A straight edge of the part covers many chain points, or if the tessellator
+    left it as a single long segment, a distance far greater than the spacing
+    around it. A smooth curve being sliced into two-point chords does neither,
+    and belongs in a spline.
+    """
+    if len(slice_points) >= MIN_PRIMITIVE_POINTS:
+        return True
+    length = math.dist(slice_points[0], slice_points[-1])
+    return step > 0.0 and length >= step * MIN_PRIMITIVE_SPANS
+
+
+def _join(pieces: list) -> list:
+    """Concatenate consecutive slices that share an end point."""
+    points = list(pieces[0])
+    for piece in pieces[1:]:
+        points.extend(piece[1:])
+    return points
+
+
+def _merge_arc_runs(segments: list) -> list:
+    """Replace a string of arcs with the spline it is really approximating.
+
+    A curve that is smooth but not circular - an ellipse, or the outline of a
+    doubly curved panel - is fitted as a chain of short arcs, each within
+    tolerance and none of them the actual shape. A run of them is worse geometry
+    than one spline, and worse to machine from, so it is put back together. Two
+    arcs in a row are left alone: that is an ordinary S of two fillets.
+    """
+    merged: list = []
+    index = 0
+    while index < len(segments):
+        if segments[index][0] != "arc":
+            merged.append(segments[index])
+            index += 1
+            continue
+        end = index
+        while end < len(segments) and segments[end][0] == "arc":
+            end += 1
+        if end - index >= MAX_CHAINED_ARCS:
+            merged.append(
+                ("spline", _join([piece for _k, piece in segments[index:end]]))
+            )
+        else:
+            merged.extend(segments[index:end])
+        index = end
+    return merged
+
+
+def _merge_slivers(segments: list, step: float) -> list:
+    """Gather stretches that no primitive described into splines."""
+    merged: list = []
+    buffer: list = []
+
+    def flush():
+        if not buffer:
+            return
+        merged.append(
+            ("line", buffer[0]) if len(buffer) < 2 else ("spline", _join(buffer))
+        )
+        buffer.clear()
+
+    for kind, slice_points in segments:
+        if kind == "spline" or _is_real_geometry(slice_points, step):
+            flush()
+            merged.append((kind, slice_points))
+        else:
+            buffer.append(slice_points)
+    flush()
+
+    # Two splines that ended up side by side describe one curve.
+    joined: list = []
+    for kind, slice_points in merged:
+        if kind == "spline" and joined and joined[-1][0] == "spline":
+            joined[-1] = ("spline", _join([joined[-1][1], slice_points]))
+        else:
+            joined.append((kind, slice_points))
+    return joined
+
+
+def segment_curve(points: list, tol: float, closed: bool = False) -> list:
+    """Break a polyline into the longest straight and circular runs that fit.
+
+    A flat pattern is mostly made of real geometry - a bolt hole is a circle, a
+    filleted corner is an arc - and emitting all of it as fitted splines throws
+    that away. Every stretch is measured against a line and against a circle and
+    the primitive reaching furthest wins, so the sketch carries arcs and circles
+    wherever the boundary genuinely has them.
+
+    Where neither describes the shape, the greedy walk would slice a smooth
+    curve into a string of two-point chords. Those are gathered back up into a
+    spline instead, which is what keeps an organic outline organic.
+
+    Greedy rather than optimal: it takes the longest primitive it can from each
+    starting point rather than searching for the fewest segments overall.
+
+    Args:
+        points: (u, v) tuples in centimetres, unthinned.
+        tol: Largest distance a point may sit from the primitive replacing it.
+        closed: True when the chain is a closed loop.
+
+    Returns:
+        A list of ``(kind, points)`` where kind is "circle", "arc", "line" or
+        "spline". A "circle" only ever appears alone, for a loop that is round
+        the whole way.
+    """
+    if len(points) < 2:
+        return []
+
+    if closed and len(points) >= 3 and _fits_circle(points, tol):
+        return [("circle", list(points))]
+
+    chain = list(points)
+    if closed and chain[0] != chain[-1]:
+        chain.append(chain[0])
+
+    step = _median_step(chain)
+    segments: list = []
+    start = 0
+    limit = len(chain) - 1
+    while start < limit:
+        # A two-point line always fits, so it is the floor for both searches.
+        line_end = start + 1
+        index = start + 2
+        while index <= limit and line_deviation(chain[start : index + 1]) <= tol:
+            line_end = index
+            index += 1
+
+        arc_end = start + 1
+        index = start + 3
+        while index <= limit and _fits_circle(chain[start : index + 1], tol):
+            arc_end = index
+            index += 1
+
+        if arc_end > line_end:
+            segments.append(("arc", chain[start : arc_end + 1]))
+            start = arc_end
+        else:
+            segments.append(("line", chain[start : line_end + 1]))
+            start = line_end
+
+    return _merge_slivers(_merge_arc_runs(segments), step)
 
 
 def _loop_area(uvs: list, loop: list) -> float:

@@ -1054,59 +1054,68 @@ def _add_chain(
     closed: bool,
     construction: bool,
 ) -> None:
-    """Draw one boundary loop or seam, corner by corner.
+    """Draw one boundary loop or seam as the geometry it actually is.
 
-    Cutting the chain at its corners before fitting anything is what keeps the
-    pattern's shape: a single spline through a whole outline rounds every corner
-    off. Each run is then thinned, and a run that thins to two points was
-    straight, so it becomes a line rather than a spline.
+    The chain is cut at its corners first, because a single curve fitted around
+    a corner averages it away and the pattern loses its shape. Each corner-to-
+    corner run is then matched against lines, arcs and circles, so a bolt hole
+    comes out as a circle and a fillet as an arc rather than everything arriving
+    as a spline.
     """
     runs = flatten.split_at_corners(points, closed=closed)
-
-    if closed and len(runs) == 1:
-        # Genuinely smooth all the way round, so there is no corner to cut at.
-        _add_closed_spline(
-            sketch, flatten.simplify_loop(points, tolerance, True), du, dv
-        )
-        return
-
+    # A closed chain with no corners in it is still the whole loop, and only a
+    # whole loop can come back as a circle.
+    whole_loop = closed and len(runs) == 1
     for run in runs:
-        _add_run(sketch, flatten.simplify_loop(run, tolerance), du, dv, construction)
+        for kind, piece in flatten.segment_curve(run, tolerance, closed=whole_loop):
+            _add_segment(sketch, kind, piece, du, dv, tolerance, construction)
 
 
-def _add_run(sketch, points: list, du: float, dv: float, construction: bool) -> None:
-    """Draw one corner-to-corner run as a line if straight, else a spline."""
-    if len(points) < 2:
-        return
-    mapped = [sketch.modelToSketchSpace(_to_model(u, v, du, dv)) for u, v in points]
+def _add_segment(
+    sketch,
+    kind: str,
+    points: list,
+    du: float,
+    dv: float,
+    tolerance: float,
+    construction: bool,
+) -> None:
+    """Draw one recognised piece of the outline."""
+    curves = sketch.sketchCurves
+    curve = None
 
-    if len(mapped) == 2:
-        curve = sketch.sketchCurves.sketchLines.addByTwoPoints(mapped[0], mapped[1])
+    if kind == "circle":
+        fit = flatten.fit_circle(points)
+        if fit is not None:
+            centre = sketch.modelToSketchSpace(_to_model(fit[0], fit[1], du, dv))
+            curve = curves.sketchCircles.addByCenterRadius(centre, fit[2])
+    elif kind == "arc" and len(points) >= 3:
+        mapped = _to_sketch(sketch, points, du, dv)
+        curve = curves.sketchArcs.addByThreePoints(
+            mapped[0], mapped[len(mapped) // 2], mapped[-1]
+        )
+    elif kind == "line" and len(points) >= 2:
+        mapped = _to_sketch(sketch, [points[0], points[-1]], du, dv)
+        curve = curves.sketchLines.addByTwoPoints(mapped[0], mapped[1])
     else:
-        collection = adsk.core.ObjectCollection.create()
-        for point in mapped:
-            collection.add(point)
-        curve = sketch.sketchCurves.sketchFittedSplines.add(collection)
+        thinned = flatten.simplify_loop(points, tolerance)
+        if len(thinned) < 3:
+            if len(thinned) == 2:
+                mapped = _to_sketch(sketch, thinned, du, dv)
+                curve = curves.sketchLines.addByTwoPoints(mapped[0], mapped[1])
+        else:
+            collection = adsk.core.ObjectCollection.create()
+            for point in _to_sketch(sketch, thinned, du, dv):
+                collection.add(point)
+            curve = curves.sketchFittedSplines.add(collection)
+
     if curve and construction:
         curve.isConstruction = True
 
 
-def _add_closed_spline(sketch, points: list, du: float, dv: float) -> None:
-    """Draw a corner-free loop as one periodic spline."""
-    if len(points) < 3:
-        return
-    collection = adsk.core.ObjectCollection.create()
-    for u, v in points:
-        collection.add(sketch.modelToSketchSpace(_to_model(u, v, du, dv)))
-    spline = sketch.sketchCurves.sketchFittedSplines.add(collection)
-    if spline is None:
-        return
-    try:
-        # Repeating the first fit point would only add a duplicate point; the
-        # curve is not periodic until it is told to be.
-        spline.isClosed = True
-    except Exception:
-        ptutil.log(f"{CMD_NAME}: could not close the outline spline")
+def _to_sketch(sketch, points: list, du: float, dv: float) -> list:
+    """Map pattern coordinates into the sketch's own space."""
+    return [sketch.modelToSketchSpace(_to_model(u, v, du, dv)) for u, v in points]
 
 
 def _pattern_tolerance(result) -> float:

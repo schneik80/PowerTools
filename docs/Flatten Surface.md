@@ -128,14 +128,24 @@ steel and carbon-fibre prepreg do not.
 
 | Geometry | What it is |
 |---|---|
-| Lines and splines | The outline of the pattern, and of any holes in it |
+| Lines, arcs, circles and splines | The outline of the pattern, and of any holes in it |
 | Construction geometry | The seams between selected faces |
 | Two sketch points | The worst stretch and the worst gather |
 
-The outline is **cut at its corners** and each run between two corners is drawn
-separately: straight runs become lines, curved runs become splines. That is what
-keeps a corner sharp. Fitting one spline around a whole outline would average
-every corner away and the pattern would lose its shape.
+The outline is **cut at its corners** first, so a corner stays sharp — fitting
+one curve around a whole outline would average every corner away.
+
+Each run is then drawn as **the geometry it actually is**. Straight runs become
+lines, circular runs become arcs, and a round hole becomes a real circle rather
+than a spline that merely looks like one. That matters downstream: you can
+dimension a circle, machine to it, and constrain to it.
+
+A run only becomes an arc or a circle if **every** point of it sits within the
+mesh tolerance of that shape, so nothing is straightened or rounded that was not
+already. Curves that are smooth but genuinely not circular — the outline of a
+doubly-curved panel, or an ellipse — stay as one spline, rather than being
+chopped into a chain of little arcs that would each be within tolerance and none
+of which would be the shape.
 
 The sketch is created on the plane you picked, positioned where you left the
 manipulator. Nothing else in the design is touched.

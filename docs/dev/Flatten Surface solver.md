@@ -201,6 +201,47 @@ paints rounding error at full saturation. `MIN_STRAIN_LIMIT` stops it at a tenth
 of a percent, and `is_measurable()` is the matching predicate the UI uses to
 suppress the Min/Max markers and say "Flattens exactly" instead of quoting zeroes.
 
+## Recognising geometry in the outline
+
+A traced boundary is a polyline, but the shape it came from is not. `bolt hole`
+means circle, `fillet` means arc, `machined edge` means line, and a sketch full
+of splines loses all of that.
+
+`segment_curve()` walks the chain greedily: from each start it extends a line as
+far as it fits within tolerance, extends a circle the same way, and takes
+whichever reaches further. `fit_circle()` is the algebraic (Kasa) fit — one 3x3
+solve, reduced to 2x2 by centring on the centroid, with no iteration.
+
+Two guards do most of the work, and both exist because the naive version
+produces geometry nobody wants:
+
+| Guard | Without it |
+|---|---|
+| Reject a circle fit whose radius exceeds `MAX_ARC_RADIUS_SPANS` times the run's span | A straight edge fits a circle of enormous radius and gets drawn as a vast shallow arc |
+| Gather sliver segments and runs of more than `MAX_CHAINED_ARCS` arcs back into a spline | Any smooth non-circular curve is sliced into a chain of short pieces, each within tolerance, none of them the shape |
+
+A primitive counts as real geometry if it covers `MIN_PRIMITIVE_POINTS` chain
+points, **or** reaches `MIN_PRIMITIVE_SPANS` times the typical spacing around it.
+The second test is what saves a flat edge the tessellator happened to leave as
+one long segment.
+
+Worked results, all pinned by `tests/test_flattensurface_segments.py`:
+
+| Input | Output |
+|---|---|
+| Circle, 40 points | one `circle` |
+| Rectangle | four `line` |
+| Stadium (extruded profile with filleted ends) | `arc`, `line`, `arc`, `line` |
+| S of two tangent fillets | two `arc` — a real S is not an approximation |
+| Sine wave | one `spline` |
+| Ellipse | one `spline` |
+
+Cost is the reason this runs on the unthinned chain: a 400-point circle segments
+in well under a millisecond, and a 450-point mixed boundary in about 9 ms.
+Thinning first would be faster still but destroys the evidence the size tests
+depend on — a thinned straight edge is two points and looks exactly like a
+sliver.
+
 ## Performance envelope
 
 Pure Python, so triangle count is everything. Roughly:
