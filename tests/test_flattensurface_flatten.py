@@ -727,3 +727,51 @@ def test_empty_selection_returns_an_empty_result():
     assert result.tris == []
     assert result.uvs == []
     assert result.stats.triangles == 0
+
+
+def test_an_exact_flatten_is_not_painted_as_a_strained_one():
+    # The colour scale fits itself to the data, so without a floor a surface
+    # that flattens exactly - every value solver residue around 1e-7 - filled
+    # the whole blue-to-red ramp and looked like a badly distorted saddle.
+    result = flatten.flatten_meshes([flat_patch(10, 10)])
+    limit = flatten.strain_limit(result.strain)
+    colours = [flatten.strain_to_rgba(value, limit) for value in result.strain]
+
+    assert result.stats.mean_abs_strain < 1e-6
+    assert len(set(colours)) == 1
+    assert not flatten.is_measurable(result.stats)
+
+
+def test_the_colour_scale_never_shrinks_past_the_floor():
+    assert flatten.strain_limit([1e-7, -1e-7]) == flatten.MIN_STRAIN_LIMIT
+    assert flatten.strain_limit([0.0, 0.0, 0.0]) == flatten.MIN_STRAIN_LIMIT
+
+
+def test_real_strain_still_sets_its_own_scale():
+    # The floor must not flatten a genuine map: anything above it scales as
+    # before, so a doubly curved surface still uses the full ramp.
+    values = [-0.05, -0.02, 0.0, 0.03, 0.06]
+
+    assert flatten.strain_limit(values, percentile=0.0) == 0.06
+
+
+def test_a_curved_surface_is_still_measurable():
+    result = flatten.flatten_meshes([sphere_cap(10, 10)])
+    limit = flatten.strain_limit(result.strain)
+    colours = {flatten.strain_to_rgba(value, limit) for value in result.strain}
+
+    assert flatten.is_measurable(result.stats)
+    assert len(colours) > 10
+
+
+def test_is_measurable_reads_the_largest_of_the_three():
+    class Stats:
+        min_strain = 0.0
+        max_strain = 0.0
+        mean_abs_strain = 0.0
+
+    stats = Stats()
+    assert not flatten.is_measurable(stats)
+
+    stats.min_strain = -flatten.MIN_STRAIN_LIMIT
+    assert flatten.is_measurable(stats)

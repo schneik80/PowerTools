@@ -57,6 +57,13 @@ CUT_WORTH_TRYING = 0.005
 # faces meet is tens of degrees out.
 MIN_DEFECT_DEGREES = 0.5
 
+# Narrowest colour range worth drawing, as strain. The scale otherwise
+# stretches to fit whatever is in the data, so a surface that flattens
+# exactly - every value a rounding artefact around 1e-7 - would be painted
+# in full-saturation red and blue. Nothing below a tenth of a percent means
+# anything to any material, so that is where the scale stops shrinking.
+MIN_STRAIN_LIMIT = 0.001
+
 # Passes allowed when stitching cracks. Splitting one triangle can expose the
 # next T-junction along, so it takes a few rounds to settle; the cap is only
 # there so a pathological mesh cannot loop forever.
@@ -1287,6 +1294,11 @@ def strain_limit(strain: list, percentile: float = 0.02) -> float:
     One bad sliver would otherwise wash the whole map out to neutral, so the
     extremes are trimmed before taking the larger magnitude.
 
+    The range never shrinks below :data:`MIN_STRAIN_LIMIT`. Without that floor a
+    surface that flattens exactly would still fill the whole map: its strain is
+    solver residue of about 1e-7, and a scale fitted to that renders noise as
+    though it were a saddle.
+
     Args:
         strain: Per-vertex strain values.
         percentile: Fraction trimmed from each end, 0 to 0.5.
@@ -1300,7 +1312,20 @@ def strain_limit(strain: list, percentile: float = 0.02) -> float:
     cut = min(int(len(ordered) * percentile), (len(ordered) - 1) // 2)
     low = ordered[cut]
     high = ordered[len(ordered) - 1 - cut]
-    return max(abs(low), abs(high))
+    return max(abs(low), abs(high), MIN_STRAIN_LIMIT)
+
+
+def is_measurable(stats) -> bool:
+    """Whether a run found any distortion worth showing.
+
+    Used to keep an exact flatten from being dressed up as a strained one: no
+    colour worth reading, and no worst-spot markers, because the worst spot on a
+    surface with no distortion is wherever the arithmetic happened to land.
+    """
+    return (
+        max(abs(stats.min_strain), abs(stats.max_strain), stats.mean_abs_strain)
+        >= MIN_STRAIN_LIMIT
+    )
 
 
 def _normalise(verts: list, tris: list, local: list, uvs: list) -> list:

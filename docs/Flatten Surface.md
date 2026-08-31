@@ -82,9 +82,17 @@ between the surface and the flat pattern.
 | Red | The material has to **stretch** — the flat pattern is larger here |
 
 A **developable** face — a cylinder, a cone, an extruded profile — comes out
-white all over, because it genuinely flattens with no distortion. Colour means
+white all over, because it genuinely flattens with no distortion, and the dialog
+says **"Flattens exactly"** rather than quoting a row of zeroes. Colour means
 double curvature, and the strength of the colour is how much of it there is.
-The dialog reports the worst stretch, the worst gather, and the average.
+Otherwise the dialog reports the worst stretch, the worst gather, and the
+average.
+
+The scale adapts to the part, so the colours show where the distortion is
+concentrated rather than how it compares against some fixed range. It stops
+adapting below a tenth of a percent, which no material notices — otherwise a
+part that flattens perfectly would have its rounding error magnified into a
+full-strength map.
 
 Two labelled spheres mark the extremes: **Max** in red at the worst stretch,
 **Min** in blue at the worst gather, each carrying its percentage. On a large

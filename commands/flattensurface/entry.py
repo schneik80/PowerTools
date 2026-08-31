@@ -664,6 +664,10 @@ def _draw_extremes(group, result, du: float, dv: float) -> None:
     find by eye, and it is the spot that decides whether the pattern is usable.
     """
     stats = result.stats
+    if not flatten.is_measurable(stats):
+        # With no distortion to find, the worst spot is wherever the arithmetic
+        # happened to land. Marking it would invent a defect.
+        return
     marks = (
         (stats.min_vertex, _COLOR_MIN, f"Min {stats.min_strain * 100.0:+.2f}%"),
         (stats.max_vertex, _COLOR_MAX, f"Max {stats.max_strain * 100.0:+.2f}%"),
@@ -773,12 +777,20 @@ def _update_stats(result, coarsened: bool) -> None:
         return
 
     stats = result.stats
-    lines = [
-        f"Stretch up to {stats.max_strain * 100.0:+.2f}%, "
-        f"gather down to {stats.min_strain * 100.0:+.2f}%.",
-        f"Average {stats.mean_abs_strain * 100.0:.2f}% over "
-        f"{stats.triangles} triangles.",
-    ]
+    if flatten.is_measurable(stats):
+        lines = [
+            f"Stretch up to {stats.max_strain * 100.0:+.2f}%, "
+            f"gather down to {stats.min_strain * 100.0:+.2f}%.",
+            f"Average {stats.mean_abs_strain * 100.0:.2f}% over "
+            f"{stats.triangles} triangles.",
+        ]
+    else:
+        # Saying "up to +0.00%" over a vividly coloured map reads as a fault.
+        # This shape genuinely has a flat form, so say that instead.
+        lines = [
+            "<b>Flattens exactly.</b> No measurable distortion over "
+            f"{stats.triangles} triangles."
+        ]
     if stats.islands > 1:
         lines.append(f"{stats.islands} separate pieces.")
     if stats.seams_cut:
@@ -1010,6 +1022,8 @@ def _export_svg() -> None:
                 f"{name} - flat pattern - "
                 f"stretch {stats.max_strain * 100.0:+.2f}%, "
                 f"gather {stats.min_strain * 100.0:+.2f}%"
+                if flatten.is_measurable(stats)
+                else f"{name} - flat pattern - flattens exactly"
             ),
         )
         with open(dlg.filename, "w", encoding="utf-8") as handle:
