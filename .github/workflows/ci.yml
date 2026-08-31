@@ -31,3 +31,11 @@ jobs:
       # so no Fusion is required).
       - name: Tests (pytest)
         run: python -m pytest -q
+
+      # Hard gate: README.pdf is checked in and ships in the release zip, but
+      # nothing regenerates it when README.md changes. --check compares a hash
+      # stamped into the PDF against the Markdown, so it needs neither pandoc
+      # nor xelatex on the runner and works on a shallow checkout. Keeping main
+      # current here is what lets the release build skip the rebuild path.
+      - name: README.pdf is current
+        run: python tools/pandoc/build_readme_pdf.py --check

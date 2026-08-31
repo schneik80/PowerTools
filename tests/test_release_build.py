@@ -183,3 +183,32 @@ def test_build_zip_ships_stamped_manifest(tmp_path: Path) -> None:
         shipped = json.loads(archive.read("PowerTools/PowerTools.manifest"))
     assert shipped == {"version": "3.0.0", "editEnabled": False}
     assert (repo / "PowerTools.manifest").read_text(encoding="utf-8") == source
+
+
+def test_refresh_readme_pdf_invokes_the_builder_in_if_stale_mode() -> None:
+    """The release build asks the PDF script to rebuild only when needed."""
+    done = MagicMock(returncode=0, stdout="  current: README.pdf matches\n", stderr="")
+
+    with patch.object(build_release.subprocess, "run", return_value=done) as run:
+        build_release.refresh_readme_pdf(Path("/repo"))
+
+    command = run.call_args.args[0]
+    assert command[1:] == [str(build_release.PDF_BUILDER), "--if-stale"]
+    assert run.call_args.kwargs["cwd"] == Path("/repo")
+
+
+def test_refresh_readme_pdf_aborts_when_the_pdf_cannot_be_rebuilt() -> None:
+    """A stale PDF with no toolchain stops the release instead of shipping."""
+    failed = MagicMock(
+        returncode=1, stdout="", stderr="FAILED: pandoc not found on PATH"
+    )
+
+    with patch.object(build_release.subprocess, "run", return_value=failed):
+        with pytest.raises(RuntimeError, match="README.pdf is out of date"):
+            build_release.refresh_readme_pdf(Path("/repo"))
+
+
+def test_pdf_builder_path_points_at_the_pandoc_script() -> None:
+    """The release build resolves its sibling script, which must exist."""
+    assert build_release.PDF_BUILDER.is_file()
+    assert build_release.PDF_BUILDER.name == "build_readme_pdf.py"

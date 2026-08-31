@@ -12,10 +12,19 @@
 # Dev tooling only: this never runs inside Fusion. It shells out to pandoc and
 # MiKTeX rather than importing anything third party, so it needs no installs
 # beyond those two.
+#
+# README.pdf is a checked-in artifact that ships in the release zip, so it goes
+# stale the moment README.md changes. Every build stamps a hash of the Markdown
+# into the PDF's Subject metadata, which lets `--check` answer 'does this PDF
+# match this README?' by reading the two files alone - no pandoc, no xelatex,
+# and no git history. That is what makes the check cheap enough for CI to run on
+# every push (.github/workflows/ci.yml) and for the release build to enforce
+# before zipping (tools/release/build_release.py).
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import shutil
 import subprocess
@@ -37,6 +46,10 @@ FILTERS = ("hr-to-pagebreak.lua", "table-widths.lua")
 # rather than us redefining longtable ourselves. Column widths are fractions of
 # \linewidth, so they are unaffected - only the wrapping gets tighter.
 TABLE_SIZE = r"\usepackage{etoolbox}\AtBeginEnvironment{longtable}{\small}"
+
+# Marks the Subject metadata as ours, so a PDF built by some other route (or by
+# an older copy of this script) reads as unstamped rather than as a hash miss.
+STAMP_PREFIX = "readme-sha256:"
 
 # Kept here rather than in a template so the whole recipe is in one place.
 STYLE_OPTIONS = (
@@ -85,6 +98,33 @@ def find_tool(name: str) -> Path:
     )
 
 
+def source_digest(source: Path) -> str:
+    """Hash the Markdown source that a build is made from.
+
+    Args:
+        source: Markdown input.
+
+    Returns:
+        Hex SHA-256 of the file's bytes.
+    """
+    return hashlib.sha256(source.read_bytes()).hexdigest()
+
+
+def _stamp_options(source: Path) -> list[str]:
+    """Pandoc options that record *source*'s hash in the PDF's Subject field.
+
+    pandoc's LaTeX template feeds the ``subject`` variable to hyperref's
+    ``pdfsubject``, which is metadata only - it never renders on the page.
+
+    Args:
+        source: Markdown input.
+
+    Returns:
+        A ``-V subject=...`` option pair.
+    """
+    return ["-V", f"subject={STAMP_PREFIX}{source_digest(source)}"]
+
+
 def _filter_args() -> list[str]:
     args: list[str] = []
     for name in FILTERS:
@@ -118,6 +158,7 @@ def build(source: Path, target: Path) -> None:
             "--pdf-engine=xelatex",
             *_filter_args(),
             *STYLE_OPTIONS,
+            *_stamp_options(source),
         ],
         capture_output=True,
         text=True,
@@ -128,18 +169,18 @@ def build(source: Path, target: Path) -> None:
         raise RuntimeError(f"pandoc failed (exit {result.returncode}):\n{noise}")
 
 
-def pdf_page_count(pdf: Path) -> int:
-    """Count pages in *pdf*, inflating object streams first.
+def _inflated_objects(pdf: Path) -> bytes:
+    """Return every deflate-compressed stream in *pdf*, inflated and joined.
 
-    xelatex writes PDF 1.7, where the page tree lives inside compressed object
-    streams - so scanning the raw bytes for ``/Type /Page`` finds nothing and
-    silently reports zero.
+    xelatex writes PDF 1.7, where the page tree and the document info dictionary
+    both live inside compressed object streams - so scanning the raw bytes for
+    them finds nothing and silently reports success.
 
     Args:
         pdf: PDF file to inspect.
 
     Returns:
-        Number of pages found.
+        The concatenated inflated streams; empty if none could be inflated.
     """
     raw = pdf.read_bytes()
     chunks: list[bytes] = []
@@ -152,7 +193,96 @@ def pdf_page_count(pdf: Path) -> int:
             chunks.append(zlib.decompress(raw[start:end]))
         except zlib.error:
             continue  # not every stream is deflate-compressed
-    return len(re.findall(rb"/Type\s*/Page[^s]", b"\n".join(chunks)))
+    return b"\n".join(chunks)
+
+
+def pdf_page_count(pdf: Path) -> int:
+    """Count pages in *pdf*.
+
+    Args:
+        pdf: PDF file to inspect.
+
+    Returns:
+        Number of pages found.
+    """
+    return len(re.findall(rb"/Type\s*/Page[^s]", _inflated_objects(pdf)))
+
+
+def _decode_pdf_string(raw: bytes, hexed: bool) -> str:
+    """Decode a PDF string object's bytes to text.
+
+    Args:
+        raw: The bytes between the delimiters.
+        hexed: True for a ``<...>`` hex string, False for a ``(...)`` literal.
+
+    Returns:
+        The decoded text, empty if the bytes are malformed.
+    """
+    if hexed:
+        try:
+            raw = bytes.fromhex(raw.decode("ascii"))
+        except ValueError:
+            return ""
+    # xdvipdfmx writes non-trivial strings as UTF-16BE behind a byte-order mark;
+    # anything else is PDFDocEncoding, which agrees with latin-1 over the hex
+    # digits a stamp is made of.
+    if raw.startswith(b"\xfe\xff"):
+        return raw[2:].decode("utf-16-be", errors="replace")
+    return raw.decode("latin-1", errors="replace")
+
+
+def read_stamp(pdf: Path) -> str | None:
+    """Read back the source hash a build stamped into *pdf*.
+
+    Args:
+        pdf: PDF file to inspect.
+
+    Returns:
+        The hex digest recorded at build time, or None when *pdf* carries no
+        stamp (it predates stamping, or was not built by this script).
+    """
+    objects = _inflated_objects(pdf)
+    for pattern, hexed in (
+        (rb"/Subject\s*<([^>]*)>", True),
+        (rb"/Subject\s*\(([^)]*)\)", False),
+    ):
+        match = re.search(pattern, objects)
+        if not match:
+            continue
+        value = _decode_pdf_string(match.group(1), hexed)
+        if value.startswith(STAMP_PREFIX):
+            return value[len(STAMP_PREFIX) :]
+    return None
+
+
+def staleness(source: Path, target: Path) -> str | None:
+    """Say whether *target* still corresponds to *source*.
+
+    Compares the hash stamped into the PDF at build time against the Markdown
+    on disk, so this needs neither the pandoc toolchain nor git history - it is
+    exact even in a shallow clone or a dirty working tree.
+
+    Args:
+        source: Markdown input.
+        target: PDF that should have been built from it.
+
+    Returns:
+        A human-readable reason the PDF is out of date, or None if it is
+        current.
+
+    Raises:
+        FileNotFoundError: If *source* does not exist.
+    """
+    if not source.is_file():
+        raise FileNotFoundError(f"missing Markdown source: {source}")
+    if not target.is_file():
+        return f"{target.name} does not exist"
+    stamped = read_stamp(target)
+    if stamped is None:
+        return f"{target.name} carries no source stamp - rebuild it once to add one"
+    if stamped != source_digest(source):
+        return f"{target.name} was built from a different {source.name}"
+    return None
 
 
 def audit(source: Path) -> tuple[int, int]:
@@ -186,6 +316,7 @@ def audit(source: Path) -> tuple[int, int]:
                 str(tex),
                 *_filter_args(),
                 *STYLE_OPTIONS,
+                *_stamp_options(source),
             ],
             capture_output=True,
             check=True,
@@ -215,7 +346,42 @@ def main() -> int:
         action="store_true",
         help="Skip the xelatex re-run that counts overfull boxes and broken links",
     )
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--check",
+        action="store_true",
+        help=(
+            "Report whether the PDF matches the Markdown and exit non-zero if "
+            "not, without building. Needs no pandoc or xelatex."
+        ),
+    )
+    mode.add_argument(
+        "--if-stale",
+        action="store_true",
+        help="Build only when the PDF no longer matches the Markdown",
+    )
     args = parser.parse_args()
+
+    try:
+        reason = staleness(args.source, args.target)
+    except FileNotFoundError as exc:
+        print(f"FAILED: {exc}", file=sys.stderr)
+        return 1
+
+    if args.check:
+        if reason:
+            print(f"STALE: {reason}", file=sys.stderr)
+            print(
+                "Rebuild it with: python tools/pandoc/build_readme_pdf.py",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"  current: {args.target.name} matches {args.source.name}")
+        return 0
+
+    if args.if_stale and not reason:
+        print(f"  current: {args.target.name} matches {args.source.name}, not rebuilt")
+        return 0
 
     try:
         build(args.source, args.target)

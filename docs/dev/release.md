@@ -11,6 +11,7 @@ zip and attaches it to that release. No manual packaging steps are involved.
 - [How it works](#how-it-works)
 - [Cutting a release](#cutting-a-release)
 - [What ships and what is stripped](#what-ships-and-what-is-stripped)
+- [Keeping README.pdf current](#keeping-readmepdf-current)
 - [Manifest stamping](#manifest-stamping)
 - [Dry runs and local builds](#dry-runs-and-local-builds)
 - [Changing what ships](#changing-what-ships)
@@ -25,6 +26,7 @@ Two pieces implement the pipeline:
 |---|---|
 | `tools/release/build_release.py` | Builds `dist/PowerTools-<version>.zip` from the git-tracked tree. Standard library + the `git` CLI only; no installs needed. |
 | `.github/workflows/release.yml` | Runs the script when a GitHub Release is **published** and attaches the zip to that release. Also supports a manual dry run. |
+| `tools/pandoc/build_readme_pdf.py` | Builds `README.pdf` from `README.md`. The release build calls it before zipping; CI gates it on every push. |
 
 The script takes its file list from `git ls-files`, so anything git-ignored can
 never ship — the [`.debug` marker](index.md#the-debug-marker), `.env`, editor and
@@ -80,6 +82,43 @@ preferences instead.
 **Safety guard:** the build aborts with an error if `.debug`, `.env`, or
 `settings/preferences.json` ever become git-tracked (e.g. after a `.gitignore`
 regression), rather than shipping them.
+
+## Keeping README.pdf current
+
+`README.pdf` ships in the zip but is a **checked-in artifact** — nothing in
+Fusion or in the add-in generates it. Left alone it goes stale the moment
+`README.md` changes, and the release quietly ships a PDF that disagrees with the
+Markdown beside it. That happened once already: the Flatten Surface row was
+added to the command table in `b5946ea` and the PDF was not rebuilt until
+`f93ec75`.
+
+Two things now prevent it:
+
+| Guard | Where | Needs pandoc? |
+|---|---|---|
+| `build_readme_pdf.py --check` | CI, on every push; also as a pytest case | No |
+| `refresh_readme_pdf()` | `build_release.py`, before the file list is taken | Only if stale |
+
+Every build stamps a SHA-256 of `README.md` into the PDF's `Subject` metadata
+(invisible — it never renders on the page). `--check` reads that stamp back and
+compares it with the Markdown on disk, so it answers *"was this PDF built from
+this README?"* exactly, from the two files alone: no pandoc, no xelatex, no git
+history, and it works on CI's shallow checkout and on a dirty working tree.
+
+Because CI keeps `main` current, the release build's rebuild path stays cold and
+`release.yml` still needs no installs. If it ever does go stale on a machine
+without pandoc and xelatex, the build **aborts** rather than shipping the stale
+PDF.
+
+To rebuild by hand after editing the README:
+
+```
+python tools/pandoc/build_readme_pdf.py
+```
+
+Commit the regenerated PDF alongside the Markdown change. A clean run reports
+`overfull boxes : 0` and `undefined refs : 0`; a nonzero count is a layout
+defect or a broken internal link and exits 1.
 
 ## Manifest stamping
 

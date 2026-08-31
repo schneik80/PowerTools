@@ -11,7 +11,9 @@
 #
 # Dev tooling only: this never runs inside Fusion. It uses only the standard
 # library plus the `git` CLI, so it works locally and in the release workflow
-# (.github/workflows/release.yml) without any installs.
+# (.github/workflows/release.yml) without any installs. The one exception is a
+# stale README.pdf, which needs pandoc and xelatex to regenerate - CI keeps the
+# checked-in PDF current so that path stays cold. See refresh_readme_pdf.
 #
 # The file list comes from `git ls-files`, so everything git-ignored (.debug,
 # .env, .claude/, caches, venvs, settings/preferences.json, generated palette
@@ -37,6 +39,10 @@ REPO_ROOT = HERE.parents[1]
 
 # The add-in folder name Fusion requires (also the zip's top-level folder).
 ADDIN_NAME = "PowerTools"
+
+# README.pdf ships in the zip but is a checked-in artifact, so it goes stale
+# whenever README.md changes. This script refreshes it before zipping.
+PDF_BUILDER = HERE.parent / "pandoc" / "build_readme_pdf.py"
 
 # Tracked directories that are dev-only. Matched as path prefixes.
 EXCLUDED_DIRS = (
@@ -77,6 +83,42 @@ FORBIDDEN_FILES = (
     ".env",
     "settings/preferences.json",
 )
+
+
+def refresh_readme_pdf(repo_root: Path) -> None:
+    """Bring README.pdf up to date with README.md before it gets zipped.
+
+    Nothing else regenerates the shipped PDF, so without this a release can
+    carry a PDF that disagrees with the Markdown next to it - which is exactly
+    what happened between b41923d and b5946ea.
+
+    A PDF that already matches costs one subprocess and needs no toolchain;
+    only a stale one shells out to pandoc and xelatex. CI gates staleness on
+    every push (.github/workflows/ci.yml), so the release runner should never
+    reach the rebuild path - and if it does on a machine without the toolchain,
+    the build aborts rather than quietly shipping the stale PDF.
+
+    Args:
+        repo_root: Repository root containing README.md and README.pdf.
+
+    Raises:
+        RuntimeError: If the PDF is out of date and cannot be rebuilt, or if
+            the rebuild reports a layout defect.
+    """
+    result = subprocess.run(
+        [sys.executable, str(PDF_BUILDER), "--if-stale"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stdout + result.stderr).strip()
+        raise RuntimeError(
+            "Refusing to build a release: README.pdf is out of date and could "
+            f"not be rebuilt.\n{detail}"
+        )
+    print(result.stdout.strip())
 
 
 def tracked_files(repo_root: Path) -> list[str]:
@@ -242,6 +284,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     version = normalize_version(args.version or manifest_version(REPO_ROOT))
+    # Before the file list is taken, so a rebuilt PDF is the one that ships.
+    refresh_readme_pdf(REPO_ROOT)
     files = release_files(tracked_files(REPO_ROOT))
     out_path = args.output_dir / f"{ADDIN_NAME}-{version}.zip"
 
