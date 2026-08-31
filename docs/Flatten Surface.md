@@ -20,7 +20,8 @@ command reports.
 1. Pick a plane or planar face to **Place on**. Nothing can be previewed until
    there is somewhere to draw the pattern, so this comes first; the
    **manipulator** appears on that plane once it is picked.
-2. Pick the **Faces** to flatten.
+2. Pick the **Faces** to flatten. Tick **Tangent chain** first if you want one
+   click to take the whole smooth run with it.
 3. Drag the manipulator to position the pattern on the plane.
 4. Read the strain figures, adjust **Mesh quality** and **Relax pattern** to taste.
 5. **OK** creates the sketch.
@@ -28,6 +29,17 @@ command reports.
 Faces that touch are flattened **together as one piece**, so a shape spanning
 several faces keeps its shared edges the right length. Faces that do not touch
 are laid out side by side as separate pieces.
+
+### Tangent chain
+
+With it ticked, picking one face also picks every face joined to it by a smooth
+edge, following the run as far as it goes — a filleted panel comes in with a
+single click instead of one click per fillet. Picking stops at any sharp edge,
+so a chain never spills onto the far side of a crease.
+
+It only ever adds. Deselecting a face leaves it deselected, and unticking the
+box stops further chaining rather than undoing what is already picked, so you
+can chain a run and then trim a face or two off it.
 
 Each piece is squared up before it is placed, so a rectangular panel lands
 straight and landscape rather than at whatever angle the solver happened to

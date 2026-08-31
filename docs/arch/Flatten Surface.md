@@ -169,6 +169,21 @@ coordinates object: reusing the mesh's would inherit those per-vertex colours an
 paint the wireframe the exact colour of the surface beneath it. Depth priorities
 order the layers — mesh, wireframe (1), seams (2), markers (3), labels (4).
 
+### Tangent chaining
+
+`BRepFace.tangentiallyConnectedFaces` reports only a face's **immediate** smooth
+neighbours, so `tangent_closure()` walks outward breadth-first to reach a whole
+filleted run, keyed by entity token because Fusion returns a fresh wrapper on
+every access.
+
+Two things make the expansion safe to run from `inputChanged`. Adding to a
+selection input fires `inputChanged` again, so a re-entrancy flag stops the walk
+calling itself; and the expansion only runs when the selection has **grown**,
+which is what lets a user deselect a face without the chain instantly restoring
+it. Neighbours are re-proxied into the seed's `assemblyContext`, since a proxied
+face's neighbours may come back native and would then be measured in the wrong
+space.
+
 ### The triad
 
 `TriadCommandInput.isVisible` governs the input's **row in the dialog**, not the

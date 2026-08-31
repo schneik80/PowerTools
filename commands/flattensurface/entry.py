@@ -44,6 +44,7 @@ local_handlers = []
 INPUT_FACES = "fs_faces"
 INPUT_PLANE = "fs_plane"
 INPUT_TRIAD = "fs_triad"
+INPUT_CHAIN = "fs_chain"
 INPUT_QUALITY = "fs_quality"
 INPUT_RELAX = "fs_relax"
 INPUT_WIREFRAME = "fs_wireframe"
@@ -103,6 +104,12 @@ _solve_cache_key = None
 _solve_cache = None
 _frame = None
 _cmd_inputs = None
+
+# Guards the tangent-chain expansion. Adding to a selection input fires
+# inputChanged again, so without this the walk would re-enter itself; the
+# count lets a face be deselected without the chain immediately restoring it.
+_chaining = False
+_face_count = 0
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +185,12 @@ def command_created(args: adsk.core.CommandCreatedEventArgs) -> None:
         triad.hideAll()
         triad.isVisible = False
 
+        chain = inputs.addBoolValueInput(INPUT_CHAIN, "Tangent chain", True, "", False)
+        chain.tooltip = (
+            "Picking one face also picks every face joined to it by a smooth "
+            "edge, so a filleted run comes in with a single click."
+        )
+
         faces = inputs.addSelectionInput(
             INPUT_FACES, "Faces", "Select the faces to flatten."
         )
@@ -244,11 +257,14 @@ def command_created(args: adsk.core.CommandCreatedEventArgs) -> None:
 
 def _reset_state() -> None:
     global _solve_cache_key, _solve_cache, _frame, _cmd_inputs
+    global _chaining, _face_count
     _picks.clear()
     _solve_cache_key = None
     _solve_cache = None
     _frame = None
     _cmd_inputs = None
+    _chaining = False
+    _face_count = 0
 
 
 def command_destroy(args: adsk.core.CommandEventArgs) -> None:
@@ -493,6 +509,13 @@ def _current_relax() -> bool:
     return True if toggle is None else toggle.value
 
 
+def _wants_chain() -> bool:
+    if _cmd_inputs is None:
+        return False
+    toggle = adsk.core.BoolValueCommandInput.cast(_cmd_inputs.itemById(INPUT_CHAIN))
+    return bool(toggle and toggle.value)
+
+
 def _wants_wireframe() -> bool:
     if _cmd_inputs is None:
         return False
@@ -510,9 +533,12 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs) -> None:
         ptutil.capture_selections(args.inputs, _picks, INPUT_FACES, INPUT_PLANE)
 
         changed = args.input.id
-        if changed in (INPUT_FACES, INPUT_QUALITY, INPUT_RELAX):
+        if changed in (INPUT_FACES, INPUT_QUALITY, INPUT_RELAX, INPUT_CHAIN):
             _solve_cache_key = None
             _solve_cache = None
+
+        if changed in (INPUT_FACES, INPUT_CHAIN):
+            _grow_tangent_chain(args.inputs)
 
         if changed == INPUT_PLANE:
             entity = ptutil.picked_one(_picks, INPUT_PLANE)
@@ -526,6 +552,129 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs) -> None:
             _export_svg()
     except Exception:
         ptutil.handle_error(f"{CMD_NAME}.command_input_changed")
+
+
+# ---------------------------------------------------------------------------
+# Tangent chaining
+# ---------------------------------------------------------------------------
+def _face_key(face) -> str:
+    """A stable identity for a face.
+
+    Fusion hands back a fresh wrapper on every access, so identity has to come
+    from the entity token rather than the Python object.
+    """
+    try:
+        return face.entityToken
+    except Exception:
+        # Tokenless in some contexts; position is enough to deduplicate within
+        # a single walk.
+        box = face.boundingBox
+        return (
+            f"{box.minPoint.x:.6f},{box.minPoint.y:.6f},{box.minPoint.z:.6f},"
+            f"{box.maxPoint.x:.6f},{box.maxPoint.y:.6f},{box.maxPoint.z:.6f}"
+        )
+
+
+def tangent_closure(seeds: list) -> dict:
+    """Every face reachable from *seeds* across smooth edges.
+
+    ``tangentiallyConnectedFaces`` only reports a face's immediate smooth
+    neighbours, so reaching the whole of a filleted run means walking outward
+    from each of them in turn.
+
+    Args:
+        seeds: Faces the user picked.
+
+    Returns:
+        Face key -> face, including the seeds.
+    """
+    found: dict = {}
+    queue = list(seeds)
+    while queue:
+        face = queue.pop()
+        key = _face_key(face)
+        if key in found:
+            continue
+        found[key] = face
+        try:
+            neighbours = list(face.tangentiallyConnectedFaces)
+        except Exception:
+            continue
+        for neighbour in neighbours:
+            if _face_key(neighbour) not in found:
+                queue.append(neighbour)
+    return found
+
+
+def _in_context(face, occurrence):
+    """Re-proxy a face into the occurrence its seed came from.
+
+    A proxied face's smooth neighbours may come back native rather than
+    proxied, and a native face would be measured in the wrong space.
+    """
+    if occurrence is None:
+        return face
+    try:
+        return face.createForAssemblyContext(occurrence)
+    except Exception:
+        return face
+
+
+def _grow_tangent_chain(inputs) -> None:
+    """Add every face smoothly joined to the ones already picked."""
+    global _chaining, _face_count
+    if _chaining or not _wants_chain():
+        _face_count = _selected_face_count(inputs)
+        return
+
+    picker = adsk.core.SelectionCommandInput.cast(inputs.itemById(INPUT_FACES))
+    if picker is None:
+        return
+
+    count = picker.selectionCount
+    if count <= _face_count:
+        # Deselecting must be allowed to stick, so only a growing selection
+        # triggers the walk.
+        _face_count = count
+        return
+
+    seeds = []
+    for index in range(count):
+        try:
+            seeds.append(picker.selection(index).entity)
+        except Exception:
+            continue
+    if not seeds:
+        _face_count = count
+        return
+
+    occurrence = getattr(seeds[0], "assemblyContext", None)
+    have = {_face_key(face) for face in seeds}
+    extra = [
+        _in_context(face, occurrence)
+        for key, face in tangent_closure(seeds).items()
+        if key not in have
+    ]
+    if not extra:
+        _face_count = count
+        return
+
+    _chaining = True
+    try:
+        for face in extra:
+            try:
+                picker.addSelection(face)
+            except Exception:
+                ptutil.log(f"{CMD_NAME}: could not chain onto a tangent face")
+    finally:
+        _chaining = False
+    _face_count = picker.selectionCount
+    ptutil.capture_selections(inputs, _picks, INPUT_FACES, INPUT_PLANE)
+
+
+def _selected_face_count(inputs) -> int:
+    picker = adsk.core.SelectionCommandInput.cast(inputs.itemById(INPUT_FACES))
+    return picker.selectionCount if picker else 0
 
 
 def _place_triad(inputs) -> None:

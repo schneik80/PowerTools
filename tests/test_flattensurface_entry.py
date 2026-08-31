@@ -236,6 +236,7 @@ def test_the_dialog_offers_every_control(monkeypatch):
     for input_id in (
         entry.INPUT_PLANE,
         entry.INPUT_TRIAD,
+        entry.INPUT_CHAIN,
         entry.INPUT_FACES,
         entry.INPUT_QUALITY,
         entry.INPUT_RELAX,
@@ -250,6 +251,7 @@ def test_input_ids_are_unique():
     ids = [
         entry.INPUT_PLANE,
         entry.INPUT_TRIAD,
+        entry.INPUT_CHAIN,
         entry.INPUT_FACES,
         entry.INPUT_QUALITY,
         entry.INPUT_RELAX,
@@ -266,3 +268,101 @@ def test_triangle_budget_leaves_the_preview_usable():
     # raising it trades a responsive dialog for detail nobody asked for.
     assert 1000 <= entry._MAX_TRIANGLES <= 6000
     assert entry._COARSEN_ATTEMPTS >= 2
+
+
+class ChainFace:
+    """A face that knows its smooth neighbours, as BRepFace does."""
+
+    def __init__(self, token):
+        self.entityToken = token
+        self.tangentiallyConnectedFaces = []
+        self.assemblyContext = None
+
+
+def tangent_run(*tokens):
+    """A chain of faces each smoothly joined to the next."""
+    faces = [ChainFace(t) for t in tokens]
+    for left, right in zip(faces, faces[1:], strict=False):
+        left.tangentiallyConnectedFaces.append(right)
+        right.tangentiallyConnectedFaces.append(left)
+    return faces
+
+
+def test_chaining_walks_the_whole_tangent_run():
+    # tangentiallyConnectedFaces only reports a face's immediate smooth
+    # neighbours, so a filleted run is only reached by walking outward from
+    # each of them in turn.
+    faces = tangent_run("a", "b", "c", "d")
+
+    found = entry.tangent_closure([faces[0]])
+
+    assert set(found) == {"a", "b", "c", "d"}
+
+
+def test_chaining_starts_from_the_middle_too():
+    faces = tangent_run("a", "b", "c", "d", "e")
+
+    found = entry.tangent_closure([faces[2]])
+
+    assert set(found) == {"a", "b", "c", "d", "e"}
+
+
+def test_chaining_does_not_cross_a_sharp_edge():
+    smooth = tangent_run("a", "b")
+    other = tangent_run("x", "y")
+
+    found = entry.tangent_closure([smooth[0]])
+
+    assert set(found) == {"a", "b"}
+    assert other[0].entityToken not in found
+
+
+def test_chaining_terminates_on_a_loop():
+    # A fillet running right around a boss closes on itself; the walk has to
+    # notice it has been there before.
+    faces = tangent_run("a", "b", "c")
+    faces[0].tangentiallyConnectedFaces.append(faces[-1])
+    faces[-1].tangentiallyConnectedFaces.append(faces[0])
+
+    found = entry.tangent_closure([faces[0]])
+
+    assert set(found) == {"a", "b", "c"}
+
+
+def test_chaining_merges_runs_reached_from_several_seeds():
+    left = tangent_run("a", "b")
+    right = tangent_run("x", "y")
+
+    found = entry.tangent_closure([left[0], right[0]])
+
+    assert set(found) == {"a", "b", "x", "y"}
+
+
+def test_chaining_includes_the_seed_when_it_stands_alone():
+    lone = ChainFace("solo")
+
+    assert set(entry.tangent_closure([lone])) == {"solo"}
+
+
+def test_chaining_survives_a_face_that_refuses_to_report_neighbours():
+    class Awkward:
+        entityToken = "awkward"
+
+        @property
+        def tangentiallyConnectedFaces(self):
+            raise RuntimeError("unsupported in this context")
+
+    assert set(entry.tangent_closure([Awkward()])) == {"awkward"}
+
+
+def test_face_identity_falls_back_to_position_without_a_token():
+    class Tokenless:
+        @property
+        def entityToken(self):
+            raise RuntimeError("unsupported")
+
+        boundingBox = FakeBox((0.0, 0.0, 0.0), (1.0, 2.0, 3.0))
+
+    key = entry._face_key(Tokenless())
+
+    assert "1.000000" in key
