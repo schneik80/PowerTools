@@ -140,12 +140,13 @@ lines, circular runs become arcs, and a round hole becomes a real circle rather
 than a spline that merely looks like one. That matters downstream: you can
 dimension a circle, machine to it, and constrain to it.
 
-A run only becomes an arc or a circle if **every** point of it sits within the
-mesh tolerance of that shape, so nothing is straightened or rounded that was not
-already. Curves that are smooth but genuinely not circular — the outline of a
-doubly-curved panel, or an ellipse — stay as one spline, rather than being
-chopped into a chain of little arcs that would each be within tolerance and none
-of which would be the shape.
+A run only becomes a line, arc or circle when it fits that shape **exactly** —
+far more closely than the tolerance alone would allow. Real geometry does: the
+mesh points along a machined edge are genuinely collinear, and those around a
+hole genuinely lie on a circle. Curves that are smooth but not circular — the
+outline of a doubly-curved panel, or an ellipse — stay as one spline rather than
+being chopped into a chain of little pieces that each fit and none of which is
+the shape. Refining the mesh does not change which is which.
 
 The sketch is created on the plane you picked, positioned where you left the
 manipulator. Nothing else in the design is touched.

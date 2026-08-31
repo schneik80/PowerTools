@@ -208,22 +208,47 @@ means circle, `fillet` means arc, `machined edge` means line, and a sketch full
 of splines loses all of that.
 
 `segment_curve()` walks the chain greedily: from each start it extends a line as
-far as it fits within tolerance, extends a circle the same way, and takes
-whichever reaches further. `fit_circle()` is the algebraic (Kasa) fit — one 3x3
-solve, reduced to 2x2 by centring on the centroid, with no iteration.
+far as it fits, extends a circle the same way, and takes whichever reaches
+further. `fit_circle()` is the algebraic (Kasa) fit — one 3x3 solve, reduced to
+2x2 by centring on the centroid, with no iteration.
 
-Two guards do most of the work, and both exist because the naive version
-produces geometry nobody wants:
+### Fitting is not the hard part
 
-| Guard | Without it |
+Anything can be covered by enough short primitives that each pass a tolerance
+test, and doing so produces geometry nobody wants — a smooth outline faceted
+into chords. The test that separates the two cases is **how well** a primitive
+fits, not whether it fits:
+
+| Outline | Deviation of the fitted primitives |
 |---|---|
-| Reject a circle fit whose radius exceeds `MAX_ARC_RADIUS_SPANS` times the run's span | A straight edge fits a circle of enormous radius and gets drawn as a vast shallow arc |
-| Gather sliver segments and runs of more than `MAX_CHAINED_ARCS` arcs back into a spline | Any smooth non-circular curve is sliced into a chain of short pieces, each within tolerance, none of them the shape |
+| Extruded stadium, developable | 1e-6 cm — **0.0% of tolerance** |
+| Torus patch, doubly curved | 33% to 100% of tolerance |
 
-A primitive counts as real geometry if it covers `MIN_PRIMITIVE_POINTS` chain
-points, **or** reaches `MIN_PRIMITIVE_SPANS` times the typical spacing around it.
-The second test is what saves a flat edge the tessellator happened to leave as
-one long segment.
+Genuine geometry is exact. The mesh points on a machined edge really are
+collinear and the points around a bolt hole really do lie on a circle, so the fit
+lands at solver precision. A chord laid across a curve merely fits. So a
+primitive is kept only when its deviation is within `PRIMITIVE_FIT_FRACTION` of
+the tolerance; everything else is gathered back into a spline.
+
+That threshold applies to **acceptance, not to how far a primitive may reach**.
+Tightening the extension instead is the obvious move and it makes things worse:
+primitives simply become shorter, and a dense boundary shatters into more pieces
+rather than fewer. Measured on the same torus patch, at three mesh densities:
+
+| Approach | Entities in the outline |
+|---|---|
+| Fit to full tolerance | 6, 8, 15 — and worsening with mesh density |
+| Tighten the extension | 14, 11, 15 |
+| **Tighten acceptance** | **4, 4, 4** |
+
+The last row is the point: the answer should not move when the mesh is refined.
+
+One more guard, for a different failure: a circle fit whose radius exceeds
+`MAX_ARC_RADIUS_SPANS` times the run's own span is the straight line it really
+is. Without it a flat edge is drawn as a vast shallow arc, which no tolerance
+check would catch. And a primitive must still cover `MIN_PRIMITIVE_POINTS` chain
+points **or** reach `MIN_PRIMITIVE_SPANS` times the local spacing, which saves a
+flat edge the tessellator left as one long two-point segment.
 
 Worked results, all pinned by `tests/test_flattensurface_segments.py`:
 
@@ -231,16 +256,16 @@ Worked results, all pinned by `tests/test_flattensurface_segments.py`:
 |---|---|
 | Circle, 40 points | one `circle` |
 | Rectangle | four `line` |
-| Stadium (extruded profile with filleted ends) | `arc`, `line`, `arc`, `line` |
-| S of two tangent fillets | two `arc` — a real S is not an approximation |
+| Stadium (extruded profile, filleted ends) | `arc`, `line`, `arc`, `line` |
+| S of two tangent fillets | two `arc` |
 | Sine wave | one `spline` |
 | Ellipse | one `spline` |
+| Torus patch, any mesh density | four `spline`, one per edge |
 
-Cost is the reason this runs on the unthinned chain: a 400-point circle segments
-in well under a millisecond, and a 450-point mixed boundary in about 9 ms.
-Thinning first would be faster still but destroys the evidence the size tests
-depend on — a thinned straight edge is two points and looks exactly like a
-sliver.
+Cost is why this runs on the unthinned chain: a 400-point circle segments in well
+under a millisecond, a 450-point mixed boundary in about 9 ms. Thinning first
+would be faster but destroys the evidence the size tests depend on — a thinned
+straight edge is two points and looks exactly like a sliver.
 
 ## Performance envelope
 

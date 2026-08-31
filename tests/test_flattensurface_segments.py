@@ -220,3 +220,79 @@ def test_segmentation_is_quick_enough_for_a_dense_boundary():
     segments = flatten.segment_curve(points, 0.01, closed=True)
 
     assert kinds(segments) == ["circle"]
+
+
+def torus_patch(rows=26, cols=36, major=5.0, minor=1.5, usweep=1.2, vsweep=1.6):
+    """A doubly curved section of a torus - the classic fillet surface."""
+    coords, triangles = [], []
+    for i in range(rows):
+        v = -vsweep / 2.0 + vsweep * i / (rows - 1)
+        for j in range(cols):
+            u = -usweep / 2.0 + usweep * j / (cols - 1)
+            ring = major + minor * math.cos(v)
+            coords.append((ring * math.cos(u), ring * math.sin(u), minor * math.sin(v)))
+    for i in range(rows - 1):
+        for j in range(cols - 1):
+            a = i * cols + j
+            triangles.append((a, a + 1, a + cols + 1))
+            triangles.append((a, a + cols + 1, a + cols))
+    return coords, triangles
+
+
+def outline_segments(meshes):
+    """Segment the outer boundary the way the sketch writer does."""
+    result = flatten.flatten_meshes(meshes)
+    loop = [result.uvs[i] for i in result.boundary[0]]
+    xs = [p[0] for p in loop]
+    ys = [p[1] for p in loop]
+    tol = max(max(xs) - min(xs), max(ys) - min(ys)) * 0.0015
+    runs = flatten.split_at_corners(loop, closed=True)
+    segments = []
+    for run in runs:
+        segments += flatten.segment_curve(run, tol, closed=(len(runs) == 1))
+    return segments
+
+
+def test_a_doubly_curved_patch_does_not_shatter_into_pieces():
+    # A torus section has four boundary edges and no straight-and-circular
+    # decomposition. Fitting primitives to the full tolerance chopped it into a
+    # dozen chords that each happened to fit, and the outline came out faceted.
+    segments = outline_segments([torus_patch()])
+
+    assert len(segments) <= 6
+
+
+def test_a_doubly_curved_outline_is_stable_across_mesh_density():
+    # The worst symptom of fitting too eagerly was that refining the mesh made
+    # the outline worse, because a finer chain offers more places to fit a
+    # chord. The answer should barely move.
+    counts = [
+        len(outline_segments([torus_patch(rows, cols)]))
+        for rows, cols in ((14, 20), (26, 36), (40, 56))
+    ]
+
+    assert max(counts) - min(counts) <= 1
+
+
+def test_a_primitive_must_fit_far_better_than_tolerance():
+    # The rule that separates the two cases: real geometry is exact, a chord
+    # across a curve merely fits.
+    curve = [(k * 0.25, (k * 0.25) ** 2 * 0.05) for k in range(24)]
+    tol = 0.02
+
+    for kind, piece in flatten.segment_curve(curve, tol):
+        if kind == "line":
+            assert flatten.line_deviation(piece) <= tol * flatten.PRIMITIVE_FIT_FRACTION
+
+
+def test_geometry_that_really_is_exact_still_comes_through():
+    # The control: the same tolerance, on a shape whose edges genuinely are
+    # straight, still yields lines rather than splines.
+    corners = [(0.0, 0.0), (4.0, 0.0), (4.0, 2.0), (0.0, 2.0)]
+    points = []
+    for index, start in enumerate(corners):
+        points += line_points(start, corners[(index + 1) % 4], 12)[:-1]
+
+    segments = flatten.segment_curve(points, 0.05, closed=True)
+
+    assert kinds(segments) == ["line"] * 4

@@ -77,10 +77,13 @@ MAX_ARC_RADIUS_SPANS = 1000.0
 MIN_PRIMITIVE_POINTS = 4
 MIN_PRIMITIVE_SPANS = 3.0
 
-# Arcs in an unbroken row above this many are approximating something that is
-# not circular at all, and become one spline instead. Two in a row is left
-# alone, being an ordinary S of two fillets.
-MAX_CHAINED_ARCS = 3
+# How much of the sketch tolerance a line or arc may use and still count as
+# real geometry. Genuine geometry is exact, not merely within tolerance: a
+# machined edge or a bolt hole in a developable pattern fits to solver
+# precision, around a millionth of the budget, while a chord opportunistically
+# laid across a doubly curved outline uses a third of it or more. Fitting to
+# the full tolerance is what turns a smooth boundary into faceted debris.
+PRIMITIVE_FIT_FRACTION = 0.1
 
 # Passes allowed when stitching cracks. Splitting one triangle can expose the
 # next T-junction along, so it takes a few rounds to settle; the cap is only
@@ -1784,14 +1787,20 @@ def _median_step(points: list) -> float:
     return steps[len(steps) // 2] if steps else 0.0
 
 
-def _is_real_geometry(slice_points: list, step: float) -> bool:
-    """Whether a fitted primitive describes the shape or just spans a gap.
+def _is_real_geometry(slice_points: list, deviation: float, tol: float, step: float):
+    """Whether a fitted primitive is the shape, or just fits inside the budget.
 
-    A straight edge of the part covers many chain points, or if the tessellator
-    left it as a single long segment, a distance far greater than the spacing
-    around it. A smooth curve being sliced into two-point chords does neither,
-    and belongs in a spline.
+    Genuine geometry is exact rather than merely close. A machined edge or a
+    bolt hole on a pattern that flattens cleanly fits to solver precision -
+    around a millionth of the tolerance - because the mesh points really do lie
+    on it. A chord laid across a doubly curved outline passes the tolerance test
+    while using a third of the budget or more, and accepting those is what turns
+    a smooth boundary into faceted debris.
+
+    Size is checked too, so a two-point sliver cannot qualify on fit alone.
     """
+    if deviation > tol * PRIMITIVE_FIT_FRACTION:
+        return False
     if len(slice_points) >= MIN_PRIMITIVE_POINTS:
         return True
     length = math.dist(slice_points[0], slice_points[-1])
@@ -1806,50 +1815,23 @@ def _join(pieces: list) -> list:
     return points
 
 
-def _merge_arc_runs(segments: list) -> list:
-    """Replace a string of arcs with the spline it is really approximating.
-
-    A curve that is smooth but not circular - an ellipse, or the outline of a
-    doubly curved panel - is fitted as a chain of short arcs, each within
-    tolerance and none of them the actual shape. A run of them is worse geometry
-    than one spline, and worse to machine from, so it is put back together. Two
-    arcs in a row are left alone: that is an ordinary S of two fillets.
-    """
-    merged: list = []
-    index = 0
-    while index < len(segments):
-        if segments[index][0] != "arc":
-            merged.append(segments[index])
-            index += 1
-            continue
-        end = index
-        while end < len(segments) and segments[end][0] == "arc":
-            end += 1
-        if end - index >= MAX_CHAINED_ARCS:
-            merged.append(
-                ("spline", _join([piece for _k, piece in segments[index:end]]))
-            )
-        else:
-            merged.extend(segments[index:end])
-        index = end
-    return merged
-
-
-def _merge_slivers(segments: list, step: float) -> list:
-    """Gather stretches that no primitive described into splines."""
+def _merge_rejected(segments: list, tol: float, step: float) -> list:
+    """Gather everything no primitive described into splines."""
     merged: list = []
     buffer: list = []
 
     def flush():
         if not buffer:
             return
-        merged.append(
-            ("line", buffer[0]) if len(buffer) < 2 else ("spline", _join(buffer))
-        )
+        # A rejected stretch failed the line test, so it must not come back as
+        # a line. Only two points have no other option, and two points are a
+        # line exactly.
+        points = _join(buffer)
+        merged.append(("spline", points) if len(points) >= 3 else ("line", points))
         buffer.clear()
 
-    for kind, slice_points in segments:
-        if kind == "spline" or _is_real_geometry(slice_points, step):
+    for kind, slice_points, deviation in segments:
+        if _is_real_geometry(slice_points, deviation, tol, step):
             flush()
             merged.append((kind, slice_points))
         else:
@@ -1867,24 +1849,24 @@ def _merge_slivers(segments: list, step: float) -> list:
 
 
 def segment_curve(points: list, tol: float, closed: bool = False) -> list:
-    """Break a polyline into the longest straight and circular runs that fit.
+    """Break a polyline into the straight and circular runs it is really made of.
 
-    A flat pattern is mostly made of real geometry - a bolt hole is a circle, a
-    filleted corner is an arc - and emitting all of it as fitted splines throws
-    that away. Every stretch is measured against a line and against a circle and
-    the primitive reaching furthest wins, so the sketch carries arcs and circles
-    wherever the boundary genuinely has them.
+    A flat pattern is mostly made of things a CAD user expects to be real: a
+    bolt hole is a circle, a filleted corner is an arc, a machined edge is a
+    line. Emitting all of it as fitted splines throws that away.
 
-    Where neither describes the shape, the greedy walk would slice a smooth
-    curve into a string of two-point chords. Those are gathered back up into a
-    spline instead, which is what keeps an organic outline organic.
+    Each stretch is measured against a line and against a circle, the primitive
+    reaching furthest wins, and it is then kept only if it fits far better than
+    tolerance - see :func:`_is_real_geometry`. Anything rejected is gathered back
+    into a spline, which is what keeps a doubly curved outline smooth instead of
+    faceting it into chords that each happened to fit.
 
     Greedy rather than optimal: it takes the longest primitive it can from each
     starting point rather than searching for the fewest segments overall.
 
     Args:
         points: (u, v) tuples in centimetres, unthinned.
-        tol: Largest distance a point may sit from the primitive replacing it.
+        tol: Largest distance a point may sit from the curve replacing it.
         closed: True when the chain is a closed loop.
 
     Returns:
@@ -1895,8 +1877,12 @@ def segment_curve(points: list, tol: float, closed: bool = False) -> list:
     if len(points) < 2:
         return []
 
-    if closed and len(points) >= 3 and _fits_circle(points, tol):
-        return [("circle", list(points))]
+    if closed and len(points) >= 3:
+        fit = fit_circle(points)
+        if fit is not None and circle_deviation(points, *fit) <= (
+            tol * PRIMITIVE_FIT_FRACTION
+        ):
+            return [("circle", list(points))]
 
     chain = list(points)
     if closed and chain[0] != chain[-1]:
@@ -1921,13 +1907,17 @@ def segment_curve(points: list, tol: float, closed: bool = False) -> list:
             index += 1
 
         if arc_end > line_end:
-            segments.append(("arc", chain[start : arc_end + 1]))
+            piece = chain[start : arc_end + 1]
+            fit = fit_circle(piece)
+            deviation = circle_deviation(piece, *fit) if fit else float("inf")
+            segments.append(("arc", piece, deviation))
             start = arc_end
         else:
-            segments.append(("line", chain[start : line_end + 1]))
+            piece = chain[start : line_end + 1]
+            segments.append(("line", piece, line_deviation(piece)))
             start = line_end
 
-    return _merge_slivers(_merge_arc_runs(segments), step)
+    return _merge_rejected(segments, tol, step)
 
 
 def _loop_area(uvs: list, loop: list) -> float:
