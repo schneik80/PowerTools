@@ -1,21 +1,13 @@
-# Flatten Surface — background research
+# Flatten Surface — method background and sources
 
-Research compiled 2026-08-29 for a planned PowerTools "Flatten Surface" command:
-select one or more curved faces, flatten them to a planar pattern, preview a
-shrink/expand (strain) color map, and commit a sketch of the flattened outline.
-All URLs were verified by live fetch on 2026-08-29; dead or misremembered items
+A survey of how surface flattening is done elsewhere, the mathematics behind the
+distortion measurements, and the Fusion API facts the command depends on. This is
+reference material for anyone changing the solver or weighing a different
+approach; for what is actually implemented, read
+[the solver](Flatten%20Surface%20solver.md).
+
+All URLs were verified by live fetch on 2026-08-29. Dead or misremembered items
 were dropped or flagged.
-
-Feature intent (from the maintainer):
-
-- Pick one or more faces.
-- Pick a placement plane; a manipulator moves the preview in the plane's X/Y
-  (not WCS).
-- Preview the strain map live; on commit, generate a sketch outline of the
-  flattened geometry.
-- Candidate preview mechanisms considered: (a) duplicate body / OBJ import with
-  material, (b) HTML palette, (c) realtime temporary custom graphics on the
-  plane. Research verdict below: (c) is the right route; (a) is not viable.
 
 ---
 

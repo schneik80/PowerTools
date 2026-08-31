@@ -33,27 +33,26 @@ Each piece is squared up before it is placed, so a rectangular panel lands
 straight and landscape rather than at whatever angle the solver happened to
 finish at.
 
-## Why a shape made only of planes and cylinders can still show strain
+## Which shapes flatten exactly
 
-A plane flattens exactly. So does a cylinder. So does any number of them joined
-edge to edge — an extruded profile with filleted corners comes out with no
-strain at all.
+A plane flattens exactly. So does a cylinder, a cone, and any number of them
+joined edge to edge — an extruded profile with filleted corners comes out with
+no strain at all, and the dialog says **"Flattens exactly."**
 
 The exception is a **point where three or more faces meet**, like the corner of
 a box. The faces there enclose less than a full turn — three square corners give
 270 degrees, so 90 are missing — and that shortfall is curvature. No flat
-pattern can hold it, and no software can remove it. The dialog now says so
-explicitly, naming how many such corners there are and how much curvature they
-hold, so a strain map like that reads as geometry rather than as a fault.
+pattern can hold it and no software can remove it, so the dialog names how many
+such corners there are and how much curvature they hold. A strain map on a shape
+like that is reporting geometry, not a fault.
 
 Strain from a corner is spread across the whole piece rather than piled up at
-the corner, so flat faces near one will show some too. Turning **Relax pattern**
-off concentrates it instead, which is sometimes easier to interpret.
+the corner, so flat faces near one show some too. Turning **Relax pattern** off
+concentrates it instead, which is sometimes easier to interpret.
 
-Separately, neighbouring faces are meshed independently, and where they sample a
-shared edge differently the pieces would be joined at only a few points. Those
-gaps are found and closed before flattening, and the dialog reports how many —
-you should never see the irregular pattern they used to cause.
+Neighbouring faces are meshed independently, so where they sample a shared edge
+differently the pieces would meet at only a few points. Those gaps are closed
+before flattening and the dialog reports how many were closed.
 
 ## Tubes and other closed shapes
 
@@ -88,17 +87,19 @@ double curvature, and the strength of the colour is how much of it there is.
 Otherwise the dialog reports the worst stretch, the worst gather, and the
 average.
 
-The scale adapts to the part, so the colours show where the distortion is
-concentrated rather than how it compares against some fixed range. It stops
-adapting below a tenth of a percent, which no material notices — otherwise a
-part that flattens perfectly would have its rounding error magnified into a
-full-strength map.
+The scale adapts to the part, so the colours show where distortion is
+concentrated rather than how it measures against a fixed range. It stops
+adapting below a tenth of a percent, which no material notices; that floor is
+what keeps a part which flattens perfectly from having its rounding error
+magnified into a full-strength map.
 
-Two labelled spheres mark the extremes: **Max** in red at the worst stretch,
-**Min** in blue at the worst gather, each carrying its percentage. On a large
-pattern with a gentle gradient those spots are genuinely hard to find by eye,
-and they are what decides whether the pattern is usable. Both labels turn to
-face you from any viewpoint and hold their size as you zoom.
+When there is distortion to find, two labelled spheres mark the extremes:
+**Max** in red at the worst stretch, **Min** in blue at the worst gather, each
+carrying its percentage. On a large pattern with a gentle gradient those spots
+are hard to find by eye and they are what decides whether the pattern is usable.
+Both labels turn to face you from any viewpoint and hold their size as you zoom.
+On a shape that flattens exactly they are not drawn at all — there is no worst
+spot to mark.
 
 Grey lines across the preview are the **seams**: the joins between the faces you
 selected.
@@ -165,8 +166,8 @@ committing a sketch. It does not close the dialog.
 - **The pattern is an approximation** wherever the strain map is not white. That
   is the nature of the problem, not a defect — see the colour table above.
 - **Folded patterns are reported, not hidden.** If the layout turns back on
-  itself the dialog warns and the count appears in the report. Usually it means
-  too many faces at once, or a face with a slit in it; flatten fewer at a time.
+  itself the dialog warns and gives the count. Usually it means too many faces
+  at once, or a face with a slit in it; flatten fewer at a time.
 - **Faces must touch to be flattened together.** Coincidence is judged within 1
   micron (0.0001 cm), the same tolerance Measure Path uses.
 - The sketch outline is fitted through the meshed boundary, so it follows the
@@ -183,7 +184,8 @@ it appears only when beta commands are enabled.
 
 ---
 
-*Background and method sources:
-[docs/dev/Flatten Surface research.md](dev/Flatten%20Surface%20research.md).*
+*Developers: [architecture note](arch/Flatten%20Surface.md) ·
+[solver internals](dev/Flatten%20Surface%20solver.md) ·
+[method background and sources](dev/Flatten%20Surface%20research.md).*
 
 *Copyright © 2026 IMA LLC. All rights reserved.*

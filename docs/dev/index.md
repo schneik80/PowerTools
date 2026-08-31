@@ -105,6 +105,12 @@ read [**Custom graphics that stay painted**](Custom%20graphics%20that%20stay%20p
 undone by Fusion's next preview cycle, which looks like flaky rendering and is
 not.
 
+If your command needs real geometry processing, [**the Flatten Surface
+solver**](Flatten%20Surface%20solver.md) is the worked example of the pattern this
+repo uses for it: all the mathematics in a module that imports no `adsk`, taking
+and returning plain tuples, so it can be developed and tested without launching
+Fusion at all.
+
 ## Developer tooling
 
 The tooling is configured in `pyproject.toml` and installed as the `dev` extra.
@@ -188,7 +194,7 @@ verification checklist, and how to disable debugging for a shipping build are in
 |---|---|---|
 | [`docs/`](..) | End users | Per-command usage guides. |
 | [`docs/arch/`](../arch) | Developers | Architecture — C4 diagrams, lifecycle, shared library, `config.py`. |
-| [`docs/dev/`](.) | Developers | This guide, the [debugging guide](debugging.md), the [release process](release.md), the [insert-and-position recipe](Insert%20and%20position%20a%20component%20from%20a%20palette.md), and [custom graphics that stay painted](Custom%20graphics%20that%20stay%20painted.md). |
+| [`docs/dev/`](.) | Developers | This guide, the [debugging guide](debugging.md), the [release process](release.md), the [insert-and-position recipe](Insert%20and%20position%20a%20component%20from%20a%20palette.md), [custom graphics that stay painted](Custom%20graphics%20that%20stay%20painted.md), and the [Flatten Surface solver](Flatten%20Surface%20solver.md) with its [method background](Flatten%20Surface%20research.md). |
 
 ---
 

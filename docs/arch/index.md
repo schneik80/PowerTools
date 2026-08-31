@@ -68,6 +68,7 @@ matching end-user guide lives in [`../`](..).
 - [HideObjects](HideObjects.md)
 - [Timeline Compute Times](Timeline%20Compute%20Times.md)
 - [Measure Path](Measure%20Path.md)
+- [Flatten Surface](Flatten%20Surface.md)
 
 **Related Data**
 
