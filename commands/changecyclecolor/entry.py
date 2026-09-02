@@ -107,10 +107,12 @@ _selected_hex: Optional[str] = None
 # Component targets captured at command_created time; iterated in execute.
 _pending_targets: List[adsk.fusion.Component] = []
 
-# When the Custom-color flow has already applied a color via the native
-# picker, we dismiss the swatch dialog by calling cmd.doExecute(True) —
-# which fires command_execute. This flag tells command_execute to skip its
-# normal apply path so we don't double-apply or apply a stale swatch.
+# Tells command_execute there is nothing for it to apply. Set by two paths:
+# the Custom-color flow, which has already written the color via the native
+# picker and calls cmd.doExecute(True) only to dismiss the swatch dialog; and
+# _abort_before_dialog, where Fusion auto-executes a command that never built
+# a dialog. Without it, the first would double-apply and the second would
+# apply a stale swatch to stale targets.
 _skip_normal_execute: bool = False
 
 # Captured during command_created so the Custom-color flow can call
@@ -306,31 +308,46 @@ def _load_palette(env_name: Optional[str]) -> List[Swatch]:
 # ---------------------------------------------------------------------------
 
 
+def _abort_before_dialog(message: str) -> None:
+    """Bail out of ``command_created`` without building a dialog.
+
+    Never call ``Command.doExecute`` from ``command_created``. That callback
+    runs inside Fusion's ``CommandDefinition::createCommand``, so doExecute
+    re-enters the command manager on a half-constructed command and segfaults
+    Fusion — observed 2026-09-02 running the command with nothing selected,
+    with the faulting frame inside
+    ``Xl::APICommandDefinitionImpl::doOnCreateCommand``.
+
+    Creating no inputs is enough to end the command: ``Command.isAutoExecute``
+    defaults to true, so Fusion executes and terminates it on its own. The
+    message is deferred to ``command_destroy`` instead of shown here, keeping
+    modal UI out of the create callback as well.
+    """
+    global _pending_targets, _skip_normal_execute, _pending_error_message
+    # Both of these outlive a single invocation. Without clearing the targets,
+    # the auto-execute below would re-apply the previous run's color to the
+    # previous run's components.
+    _pending_targets = []
+    _skip_normal_execute = True
+    _pending_error_message = message
+    ptutil.log(f"{CMD_NAME}: aborted before building the dialog — {message}")
+
+
 def command_created(args: adsk.core.CommandCreatedEventArgs):
     ptutil.log(f"{CMD_NAME} Command Created Event")
 
     design = adsk.fusion.Design.cast(app.activeProduct)
     if design is None:
-        ui.messageBox(
-            "Open a Fusion design before running Change Cycle Color.",
-            CMD_NAME,
-            0,
-            2,
-        )
-        args.command.doExecute(True)
+        _abort_before_dialog("Open a Fusion design before running Change Cycle Color.")
         return
 
     targets = _collect_selected_components()
     if not targets:
-        ui.messageBox(
+        _abort_before_dialog(
             "Select one or more components in the browser (or right-click a "
             "component node and pick Change Cycle Color) before running "
-            "this command.",
-            CMD_NAME,
-            0,
-            2,
+            "this command."
         )
-        args.command.doExecute(True)
         return
 
     global _swatches, _swatches_env, _active_command, _pending_targets
@@ -740,13 +757,13 @@ def command_execute(args: adsk.core.CommandEventArgs):
     ptutil.log(f"{CMD_NAME} execute: start")
     global _pending_error_message, _skip_normal_execute
 
-    # The Custom-color flow has already written componentColor via the
-    # native picker, then calls cmd.doExecute(True) to dismiss the swatch
-    # dialog — which lands here. Skip the normal apply path so we don't
-    # double-apply or apply a stale swatch selection.
+    # Either the Custom-color flow already wrote componentColor and called
+    # doExecute(True) purely to dismiss the dialog, or command_created aborted
+    # before building one and Fusion auto-executed. Both mean there is nothing
+    # to apply; going on would double-apply or apply a stale swatch.
     if _skip_normal_execute:
         _skip_normal_execute = False
-        ptutil.log(f"{CMD_NAME} execute: skipped (custom-color flow)")
+        ptutil.log(f"{CMD_NAME} execute: skipped (nothing to apply)")
         return
 
     deferred_error = None
