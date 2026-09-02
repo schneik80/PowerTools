@@ -25,7 +25,11 @@ from ... import config
 
 # Import the ptAddInUtils module from the parent directory.
 from ...lib import ptAddInUtils as ptutil
-from .._command_abort import abort_before_dialog, consume_abort
+from .._command_abort import (
+    abort_before_dialog,
+    clear_abort,
+    consume_abort,
+)
 from . import pathgraph
 
 app = adsk.core.Application.get()
@@ -1667,6 +1671,9 @@ def command_execute(args: adsk.core.CommandEventArgs) -> None:
 
 def command_destroy(args: adsk.core.CommandEventArgs) -> None:
     global local_handlers, _cmd_inputs, _active_command
+    # Bound the abort flag to this invocation: consume_abort only clears it
+    # if command_execute ran, and destroy always runs.
+    clear_abort(CMD_ID)
     try:
         _clear_graphics()
         adsk.core.Application.get().activeViewport.refresh()

@@ -17,7 +17,11 @@ import adsk.fusion
 from ... import config
 from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
-from .._command_abort import abort_before_dialog, consume_abort
+from .._command_abort import (
+    abort_before_dialog,
+    clear_abort,
+    consume_abort,
+)
 from .design_properties import extract_design_properties
 from .html_report import generate_html_report
 from .param_fingerprint import attach_params_to_features, extract_feature_params
@@ -566,6 +570,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
 def command_destroy(args: adsk.core.CommandEventArgs):
     """Clean up on command destruction."""
     global local_handlers, _version_map
+    # Bound the abort flag to this invocation: consume_abort only clears it
+    # if command_execute ran, and destroy always runs.
+    clear_abort(CMD_ID)
     local_handlers = []
     _version_map = {}
     ptutil.log(f"{CMD_NAME} Command Destroy Event")

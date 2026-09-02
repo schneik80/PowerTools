@@ -38,7 +38,11 @@ import adsk.fusion
 
 from ... import config
 from ...lib import ptAddInUtils as ptutil
-from .._command_abort import abort_before_dialog, consume_abort
+from .._command_abort import (
+    abort_before_dialog,
+    clear_abort,
+    consume_abort,
+)
 from ..partnumber_shared import hub_fs, mfgdm_props, pn_cache, schemes
 
 app = adsk.core.Application.get()
@@ -522,6 +526,9 @@ def _missing_custom_property_html() -> str:
 
 def command_destroy(args: adsk.core.CommandEventArgs):
     global local_handlers, _pending_error_message
+    # Bound the abort flag to this invocation: consume_abort only clears it
+    # if command_execute ran, and destroy always runs.
+    clear_abort(CMD_ID)
     local_handlers = []
     ptutil.log(f"{CMD_NAME} Command Destroy Event")
 

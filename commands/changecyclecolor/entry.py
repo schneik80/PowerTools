@@ -846,9 +846,14 @@ def _set_component_color(target: adsk.fusion.Component, rgb: Color) -> bool:
 
 def command_destroy(args: adsk.core.CommandEventArgs):
     global local_handlers, _pending_error_message, _active_command, _pending_targets
+    global _skip_normal_execute
     local_handlers = []
     _active_command = None
     _pending_targets = []
+    # Bound the skip flag to this invocation. command_execute normally consumes
+    # it, but only if it runs; destroy always does. A flag left set would make
+    # the next invocation accept a swatch and then apply nothing.
+    _skip_normal_execute = False
     ptutil.log(f"{CMD_NAME} Command Destroy Event")
 
     if _pending_error_message:

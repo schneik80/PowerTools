@@ -16,7 +16,11 @@ import adsk.fusion
 
 from ... import config
 from ...lib import ptAddInUtils as ptutil
-from .._command_abort import abort_before_dialog, consume_abort
+from .._command_abort import (
+    abort_before_dialog,
+    clear_abort,
+    consume_abort,
+)
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -465,6 +469,9 @@ def command_destroy(args: adsk.core.CommandEventArgs) -> None:
         _selection_click_pos, \
         _vp_offset_x, \
         _vp_offset_y
+    # Bound the abort flag to this invocation: consume_abort only clears it
+    # if command_execute ran, and destroy always runs.
+    clear_abort(CMD_ID)
     _clear_preview()
     # Unregister the custom event so it doesn't accumulate across re-runs.
     try:

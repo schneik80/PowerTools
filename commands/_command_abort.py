@@ -44,6 +44,9 @@
 #         if consume_abort(CMD_ID, CMD_NAME):
 #             return
 #
+#     def command_destroy(args):
+#         clear_abort(CMD_ID)         # always runs, so the flag cannot persist
+#
 # Keyed by command ID so concurrently-registered commands cannot clear each
 # other's flag.
 
@@ -75,6 +78,18 @@ def consume_abort(cmd_id: str, cmd_name: str) -> bool:
     _aborted.discard(cmd_id)
     ptutil.log(f"{cmd_name} execute: skipped (aborted before dialog)")
     return True
+
+
+def clear_abort(cmd_id: str) -> None:
+    """Drop *cmd_id*'s flag unconditionally. Call from ``command_destroy``.
+
+    ``consume_abort`` normally clears the flag, but only if ``command_execute``
+    actually runs. ``command_destroy`` always runs, so clearing here bounds the
+    flag's life to exactly one invocation. Without it, an abort whose execute
+    never fired would leave the flag set and silently suppress the *next*,
+    legitimate run of the command.
+    """
+    _aborted.discard(cmd_id)
 
 
 def was_aborted(cmd_id: str) -> bool:

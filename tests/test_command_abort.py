@@ -85,6 +85,37 @@ def test_repeated_aborts_still_consume_once() -> None:
     assert abort.consume_abort(CMD_A, "Command A") is False
 
 
+def test_clear_abort_is_unconditional() -> None:
+    """destroy always runs, so clearing there bounds the flag to one invocation."""
+    abort.abort_before_dialog(CMD_A, "Command A", "no selection")
+    abort.clear_abort(CMD_A)
+    assert abort.consume_abort(CMD_A, "Command A") is False
+
+
+def test_clear_abort_is_safe_when_nothing_was_aborted() -> None:
+    """destroy calls it on every teardown, including normal invocations."""
+    abort.clear_abort(CMD_A)  # must not raise
+    assert abort.was_aborted(CMD_A) is False
+
+
+def test_clear_abort_only_touches_its_own_command() -> None:
+    """One command's teardown must not unblock another's pending abort."""
+    abort.abort_before_dialog(CMD_A, "Command A", "no selection")
+    abort.clear_abort(CMD_B)
+    assert abort.was_aborted(CMD_A) is True
+
+
+def test_stale_flag_cannot_suppress_the_next_invocation() -> None:
+    """The regression clear_abort exists for: an abort whose execute never
+    fired would otherwise leave the flag set, and the next legitimate run of
+    the command would come up and then silently do nothing."""
+    abort.abort_before_dialog(CMD_A, "Command A", "no selection")
+    # execute never ran -- only destroy did.
+    abort.clear_abort(CMD_A)
+    # Next invocation: a real one, which must not be skipped.
+    assert abort.consume_abort(CMD_A, "Command A") is False
+
+
 # ── repo-wide static guard ───────────────────────────────────────────────────
 def _do_execute_calls_in(path: pathlib.Path):
     """Yield (line, enclosing function name) for each doExecute call."""
