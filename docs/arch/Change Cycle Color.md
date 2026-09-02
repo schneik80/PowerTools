@@ -4,7 +4,7 @@
 
 ## Architecture
 
-Change Cycle Color is a selection-driven command surfaced only through Fusion's right-click marking menu. It subscribes to the `markingMenuDisplaying` event and, when at least one Component or Occurrence is selected and its preference is enabled, injects its entry into the linear marking menu immediately after Fusion's built-in **Cycle Component Color** command. On invocation it opens a dialog containing rows of rainbow swatch buttons plus a **Custom color…** button. The palette is read live from Fusion's own `ColorCycleTable` in `RiverRubicon.xml` and rendered as cached PNG icons built with only the Python standard library. Applying a color writes `Component.componentColor` (never **Appearance**) through the Fusion Python API for every selected component. The custom-color path opens the OS-native picker, applies the color directly, and dismisses the dialog through Fusion's normal execute path — guarded by a `_skip_normal_execute` flag so the color is not applied twice.
+Change Cycle Color is a selection-driven command surfaced only through Fusion's right-click marking menu. It subscribes to the `markingMenuDisplaying` event and, when at least one Component or Occurrence is selected and its preference is enabled, injects its entry into the linear marking menu immediately after Fusion's built-in **Cycle Component Color** command. On invocation it opens a dialog containing rows of rainbow swatch buttons plus a **Custom color…** button. The palette is read live from the `ColorCycleTable` of the lighting environment Fusion is currently rendering with — resolved from `Application.lightingEnvironment` — and rendered as cached PNG icons built with only the Python standard library. Applying a color writes `Component.componentColor` (never **Appearance**) through the Fusion Python API for every selected component. The custom-color path opens the OS-native picker, applies the color directly, and dismisses the dialog through Fusion's normal execute path — guarded by a `_skip_normal_execute` flag so the color is not applied twice.
 
 ```mermaid
 C4Context
@@ -13,12 +13,12 @@ C4Context
   Person(user, "Design Engineer", "Autodesk Fusion user working with a component assembly")
   System(addin, "PowerTools / Change Cycle Color", "Autodesk Fusion add-in command")
   System_Ext(fusion, "Autodesk Fusion", "Host application — adsk.core / adsk.fusion; fires markingMenuDisplaying")
-  System_Ext(riverrubicon, "RiverRubicon.xml", "Fusion resource file containing the built-in ColorCycleTable (palette source)")
+  System_Ext(riverrubicon, "Environment XMLs", "One shipped XML per lighting environment, each with its own built-in ColorCycleTable (palette source)")
   System_Ext(ospicker, "OS Color Picker", "macOS: AppleScript 'choose color' via /usr/bin/osascript; Windows: bundled pythonw.exe running tkinter.colorchooser")
 
   Rel(user, addin, "Right-clicks component, selects Change Cycle Color, picks swatch or custom color, clicks Apply")
-  Rel(addin, fusion, "Hooks markingMenuDisplaying; reads selection; writes Component.componentColor")
-  Rel(addin, riverrubicon, "Reads ColorCycleTable RGB values on first use")
+  Rel(addin, fusion, "Hooks markingMenuDisplaying; reads selection + lightingEnvironment; writes Component.componentColor")
+  Rel(addin, riverrubicon, "Reads the active environment's ColorCycleTable RGB values")
   Rel(addin, ospicker, "Opens native picker when user clicks Custom color…")
 ```
 
@@ -36,15 +36,15 @@ C4Container
   }
 
   System_Ext(fusion, "Fusion API", "adsk.core, adsk.fusion")
-  System_Ext(riverrubicon, "RiverRubicon.xml")
+  System_Ext(riverrubicon, "Environment XMLs")
   System_Ext(ospicker, "OS Color Picker")
 
   Rel(user, entry, "Right-click → dialog → swatch / Custom color… → Apply")
   Rel(entry, palette, "load_color_cycle / sort_rainbow")
   Rel(entry, icons, "ensure_all / ensure_quadrant_icon")
   Rel(icons, cache, "Writes 16/32/64 px PNGs")
-  Rel(palette, riverrubicon, "Parses ColorCycleTable")
-  Rel(entry, fusion, "markingMenuDisplaying; addCommand; componentColor")
+  Rel(palette, riverrubicon, "Parses the active environment's ColorCycleTable")
+  Rel(entry, fusion, "markingMenuDisplaying; addCommand; lightingEnvironment; componentColor")
   Rel(entry, ospicker, "Custom color… → native picker")
 ```
 
@@ -53,20 +53,20 @@ C4Component
   title Change Cycle Color – Module View
 
   Container_Boundary(cmd, "commands/changecyclecolor") {
-    Component(entry, "entry.py", "Command entry point", "start/stop lifecycle; markingMenuDisplaying hook (settings-gated); command_created builds the dialog; input_changed; execute writes componentColor; destroy surfaces deferred errors; _enter_custom_color_flow / _pick_color_native")
+    Component(entry, "entry.py", "Command entry point", "start/stop lifecycle; markingMenuDisplaying hook (settings-gated); _active_environment_name / _load_palette pick the palette source; command_created builds the dialog; input_changed; execute writes componentColor; destroy surfaces deferred errors; _enter_custom_color_flow / _pick_color_native")
     Component(colors, "colors.py", "Palette loader", "load_color_cycle parses ColorCycleTable; sort_rainbow orders by hue; hex_to_rgb / rgb_to_hex; missing-decimal-point repair for shipped XML typos")
     Component(swatches, "swatches.py", "Icon generator", "Stdlib-only PNG generation (struct + zlib, no PIL); per-color swatch folders + 4-quadrant Custom-color button icon; cached under cache/changecyclecolor/")
-    Component(install, "fusion_install.py", "Fusion path resolver", "find_river_rubicon_xml walks up from adsk.__file__ to locate RiverRubicon.xml; find_bundled_python locates the interpreter for the picker subprocess. Both path shapes are platform-dependent and resolved through pure, per-platform helpers")
+    Component(install, "fusion_install.py", "Fusion path resolver", "find_environments_dir / find_environment_xml locate a named environment's XML by walking up from adsk.__file__; lighting_environment_dirs maps the LightingEnvironments enum onto folder names; find_bundled_python locates the interpreter for the picker subprocess. Platform-dependent shapes live in pure, per-platform helpers")
     Component(picker, "_color_picker_subprocess.py", "Out-of-process Tk", "Runs tkinter.colorchooser in a fresh Python process; emits chosen hex on stdout (non-macOS path)")
   }
 
   System_Ext(fusion, "Fusion API")
-  System_Ext(riverrubicon, "RiverRubicon.xml")
+  System_Ext(riverrubicon, "Environment XMLs")
   System_Ext(ospicker, "OS Color Picker")
 
-  Rel(entry, colors, "Loads + sorts palette on command_created")
-  Rel(colors, install, "find_river_rubicon_xml")
-  Rel(colors, riverrubicon, "Parses ColorCycleTable XML")
+  Rel(entry, colors, "Loads + sorts the active environment's palette on command_created")
+  Rel(entry, install, "_active_environment_name → find_environment_xml")
+  Rel(colors, riverrubicon, "Parses the ColorCycleTable of the given XML")
   Rel(entry, swatches, "ensure_all (swatch icons); ensure_quadrant_icon (Custom button)")
   Rel(entry, picker, "Spawns bundled Python for the picker (non-macOS)")
   Rel(picker, ospicker, "tkinter.colorchooser")
@@ -95,10 +95,18 @@ sequenceDiagram
     User->>Fusion: Click Change Cycle Color
     Fusion->>Entry: command_created event
     Entry->>Entry: _collect_selected_components() (dedupe instances)
+    Entry->>Entry: Reuse cached palette only if the environment is unchanged
 
-    Entry->>Colors: load_color_cycle() → sort_rainbow()
-    Colors->>Install: find_river_rubicon_xml()
-    Install-->>Colors: Path to RiverRubicon.xml (or None)
+    Entry->>Fusion: app.lightingEnvironment
+    Fusion-->>Entry: LightingEnvironments value
+    Entry->>Install: lighting_environment_dirs() → find_environment_xml(name)
+    Install-->>Entry: Path to <Env>/<Env>.xml (or None)
+    alt environment resolved
+        Entry->>Colors: load_color_cycle(path) → sort_rainbow()
+    else unknown environment / no table
+        Entry->>Install: find_river_rubicon_xml()  // logged fallback
+        Entry->>Colors: load_color_cycle(fallback) → sort_rainbow()
+    end
     Colors-->>Entry: Sorted [(name, rgb)] swatches (empty if not found)
 
     Entry->>Swatches: ensure_all() + ensure_quadrant_icon()
@@ -152,10 +160,10 @@ sequenceDiagram
 
 ## Module breakdown
 
-- **`entry.py`** — command lifecycle (`start` / `stop`), the swatch dialog (`command_created`, `command_input_changed`, `command_execute`, `command_destroy`), the `markingMenuDisplaying` hook (`_on_marking_menu_displaying`, gated by the show-in-context-menu setting), selection collection (`_collect_selected_components`, instance dedupe), the custom-color flow (`_enter_custom_color_flow`, `_pick_color_native`, `_pick_color_macos`, `_pick_color_subprocess_python`), and the apply step (`_set_component_color`, which writes `componentColor` only).
-- **`colors.py`** — `load_color_cycle` parses the `ColorCycleTable` from `RiverRubicon.xml`; `sort_rainbow` orders swatches by hue (pushing pale neutrals to the end); `hex_to_rgb` / `rgb_to_hex` convert between formats. The RGB tokens are 0.0–1.0 floats, and the parser repairs shipped-XML typos where the leading decimal point is missing (e.g. `"5412"` → `0.5412`).
+- **`entry.py`** — command lifecycle (`start` / `stop`), palette sourcing (`_active_environment_name` reads `app.lightingEnvironment`; `_load_palette` resolves that environment's XML and falls back to RiverRubicon with a log line), the swatch dialog (`command_created`, `command_input_changed`, `command_execute`, `command_destroy`), the `markingMenuDisplaying` hook (`_on_marking_menu_displaying`, gated by the show-in-context-menu setting), selection collection (`_collect_selected_components`, instance dedupe), the custom-color flow (`_enter_custom_color_flow`, `_pick_color_native`, `_pick_color_macos`, `_pick_color_subprocess_python`), and the apply step (`_set_component_color`, which writes `componentColor` only).
+- **`colors.py`** — `load_color_cycle` parses the `ColorCycleTable` from whichever environment XML it is handed; `sort_rainbow` orders swatches by hue (pushing pale neutrals to the end); `hex_to_rgb` / `rgb_to_hex` convert between formats. The RGB tokens are 0.0–1.0 floats, and the parser repairs shipped-XML typos where the leading decimal point is missing (e.g. `"5412"` → `0.5412`).
 - **`swatches.py`** — stdlib-only PNG generation (no PIL): `ensure_swatch_folder` / `ensure_all` write per-color 16/32/64 px solid swatch PNGs, and `ensure_quadrant_icon` writes the 4-quadrant rainbow icon for the **Custom color…** button. Icons are cached under `cache/changecyclecolor/` (`swatches/` and `custom_btn/`) and regenerated only when missing.
-- **`fusion_install.py`** — resolves both of the command's install-relative paths. `find_river_rubicon_xml` discovers `RiverRubicon.xml` by walking up from `adsk.__file__` (falling back to `sys.executable`), trying each candidate prefix in `RIVER_RUBICON_RELS`, so the path tracks Fusion `webdeploy` hash changes automatically. `find_bundled_python` locates the interpreter that runs the picker subprocess, and `is_python_binary` filters the `sys.executable` fallback so the Fusion host binary is never mistaken for an interpreter. The shape-encoding helpers (`_python_candidates`, `RIVER_RUBICON_RELS`) are pure and take the platform as an argument, so the Windows layouts are covered by `tests/test_changecyclecolor_fusion_install.py` from a macOS run.
+- **`fusion_install.py`** — resolves every install-relative path the command needs. `find_river_rubicon_xml` walks up from `adsk.__file__` (falling back to `sys.executable`) trying each candidate prefix in `RIVER_RUBICON_RELS`, so paths track Fusion `webdeploy` hash changes automatically; `find_environments_dir` takes that file's grandparent as the shipped `Environments` directory, and `find_environment_xml` resolves a named environment's self-titled XML beneath it (`GreyRoom/GreyRoom.xml`), with `is_safe_environment_name` refusing anything that is not a single path component. `lighting_environment_dirs` maps `adsk.core.LightingEnvironments` values onto those folder names by introspecting the enum rather than hardcoding its integers. `find_bundled_python` locates the interpreter that runs the picker subprocess, and `is_python_binary` filters the `sys.executable` fallback so the Fusion host binary is never mistaken for an interpreter. The shape-encoding helpers (`_python_candidates`, `RIVER_RUBICON_RELS`, `lighting_environment_dirs`) are pure and take the platform or enum as an argument, so `tests/test_changecyclecolor_fusion_install.py` covers the Windows layouts from a macOS run — and, when a Fusion install is present, checks the derived folder names against what actually ships.
 - **`_color_picker_subprocess.py`** — a tiny standalone script that runs `tkinter.colorchooser` in a fresh Python process (used on non-macOS platforms), emitting the chosen hex on stdout. Running out-of-process avoids the in-process Tk run-loop conflict inside Fusion.
 
 ## Integration into PowerTools
@@ -168,7 +176,10 @@ sequenceDiagram
 ## Design decisions
 
 - **Stdlib-only PNG swatches.** Swatch and custom-button icons are built from raw bytes using only `struct` and `zlib`, producing valid 8-bit RGB PNGs. This avoids bundling PIL/Pillow into Fusion's embedded Python, which cannot reliably `pip install` extra dependencies.
-- **Dynamic install-path discovery.** `RiverRubicon.xml` lives under a `webdeploy`-hash directory that changes with every Fusion update. Walking up from `adsk.__file__` (rather than hard-coding a path) keeps the palette pointed at the currently installed version and survives updates silently.
+- **Dynamic install-path discovery.** The environment XMLs live under a `webdeploy`-hash directory that changes with every Fusion update. Walking up from `adsk.__file__` (rather than hard-coding a path) keeps the palette pointed at the currently installed version and survives updates silently.
+- **The palette follows the active lighting environment.** Every shipped environment carries its own `ColorCycleTable`, and they genuinely differ: the twelve shipped environments hold three distinct tables, and `RiverRubicon` — the file this command originally hardcoded — is the outlier, with 34 colors under its own naming scheme (Tangelo, Blueberry, Pistachio…) where the other five selectable environments share the same 32 (Light Pink, Dark Yellow, Turquoise Blue…). Reading a fixed file therefore showed colors that were not in the active cycle table for any user not on River Rubicon. The palette is now read from `Application.lightingEnvironment`.
+- **The enum is introspected, not transcribed.** `lighting_environment_dirs` derives folder names from the `adsk.core.LightingEnvironments` member names (`GreyRoomLightingEnvironment` → `GreyRoom`) instead of hardcoding the integers `0`–`5`. Hardcoding would silently load the wrong environment's palette if Autodesk ever reordered or extended the enum — a failure that produces plausible-looking wrong colors rather than an error.
+- **Palette cache keyed on the environment.** The loaded swatches are memoized in a module global, so the key includes the environment they came from; switching environments mid-session reloads on the next invocation rather than serving a stale palette. Swatch PNGs are cached by hex color, so that cache stays shared across environments and is unaffected.
 - **osascript on macOS (Gatekeeper workaround).** macOS Sequoia blocks Fusion from re-spawning its bundled `Python.app` GUI helper. `/usr/bin/osascript` is a system-signed binary at a fixed path that Gatekeeper always allows, and AppleScript's `choose color` uses `NSColorPanel` underneath — so macOS uses osascript while other platforms run `tkinter.colorchooser` in a subprocess.
 - **Settings-gated, live context-menu entry.** The command surfaces only through the marking menu, gated by a preference the `markingMenuDisplaying` handler re-reads on every right-click. Turning the toggle off suppresses the entry immediately, with no handler re-registration and no Fusion restart.
 - **`_skip_normal_execute` to prevent double-apply.** The custom-color flow applies the picked color directly, then calls `cmd.doExecute(True)` to close the dialog through Fusion's normal execute path. The flag tells `command_execute` that the work is already done so it returns without re-applying the (now stale) swatch selection.

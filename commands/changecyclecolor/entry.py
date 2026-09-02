@@ -49,7 +49,12 @@ from .colors import (
     rgb_to_hex,
     sort_rainbow,
 )
-from .fusion_install import find_bundled_python
+from .fusion_install import (
+    find_bundled_python,
+    find_environment_xml,
+    find_river_rubicon_xml,
+    lighting_environment_dirs,
+)
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -91,6 +96,10 @@ local_handlers: list = []
 
 # Cached at first command_created — XML doesn't change during a session.
 _swatches: List[Swatch] = []
+# Environment the cached _swatches were loaded from. The palette differs per
+# lighting environment, so a switch mid-session has to invalidate the cache;
+# None means nothing is cached yet.
+_swatches_env: Optional[str] = None
 
 # Selection state: hex string of the chosen color (uppercase, no '#').
 _selected_hex: Optional[str] = None
@@ -240,6 +249,59 @@ def _collect_selected_components() -> List[adsk.fusion.Component]:
 
 
 # ---------------------------------------------------------------------------
+# Palette source — the active lighting environment
+# ---------------------------------------------------------------------------
+
+
+def _active_environment_name() -> Optional[str]:
+    """Folder name of the lighting environment Fusion is rendering with, or
+    ``None`` if it cannot be determined.
+
+    ``Application.lightingEnvironment`` returns an
+    ``adsk.core.LightingEnvironments`` value, and each of its members names an
+    environment folder that ships its own ColorCycleTable.
+    """
+    try:
+        value = app.lightingEnvironment
+        name = lighting_environment_dirs(adsk.core.LightingEnvironments).get(value)
+    except Exception as exc:
+        ptutil.log(f"{CMD_NAME}: could not read lightingEnvironment: {exc!r}")
+        return None
+    if name is None:
+        ptutil.log(f"{CMD_NAME}: unmapped lightingEnvironment value {value!r}")
+    return name
+
+
+def _load_palette(env_name: Optional[str]) -> List[Swatch]:
+    """Load the ColorCycleTable for *env_name*, falling back to RiverRubicon.
+
+    The fallback keeps the dialog populated when the environment cannot be
+    identified or ships no table of its own. It is a guess at that point — the
+    palette shown may not be the one Fusion cycles through — so it is logged
+    rather than silently substituted.
+    """
+    if env_name:
+        xml_path = find_environment_xml(env_name)
+        if xml_path:
+            loaded = load_color_cycle(xml_path)
+            if loaded:
+                ptutil.log(
+                    f"{CMD_NAME}: palette from {env_name} ({len(loaded)} colors)"
+                )
+                return loaded
+            ptutil.log(f"{CMD_NAME}: {env_name} has no usable ColorCycleTable")
+        else:
+            ptutil.log(f"{CMD_NAME}: no environment XML for {env_name}")
+
+    fallback = find_river_rubicon_xml()
+    loaded = load_color_cycle(fallback) if fallback else []
+    ptutil.log(
+        f"{CMD_NAME}: falling back to RiverRubicon palette ({len(loaded)} colors)"
+    )
+    return loaded
+
+
+# ---------------------------------------------------------------------------
 # Command created — validate selection, build the dialog
 # ---------------------------------------------------------------------------
 
@@ -271,12 +333,13 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         args.command.doExecute(True)
         return
 
-    global _swatches, _active_command, _pending_targets
+    global _swatches, _swatches_env, _active_command, _pending_targets
     _pending_targets = targets
 
-    if not _swatches:
-        loaded = load_color_cycle()
-        _swatches = sort_rainbow(loaded)
+    env = _active_environment_name()
+    if not _swatches or _swatches_env != env:
+        _swatches = sort_rainbow(_load_palette(env))
+        _swatches_env = env
         if _swatches:
             try:
                 swatch_png.ensure_all(SWATCH_CACHE_DIR, _swatches)

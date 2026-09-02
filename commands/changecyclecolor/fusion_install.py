@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 # Stable tail of the RiverRubicon path, below whatever wrapper directories the
 # platform's install puts above it.
@@ -96,6 +96,81 @@ def find_river_rubicon_xml() -> Optional[str]:
             prev = cur
             cur = os.path.dirname(cur)
     return None
+
+
+# ---------------------------------------------------------------------------
+# Lighting environments
+#
+# Every environment ships its own ColorCycleTable, and they are not the same
+# table: the twelve shipped environments carry three distinct palettes, and
+# RiverRubicon's is the outlier (34 colors under its own naming scheme, where
+# every other environment carries the same 32 colors in a different cycle
+# order). So the palette has to come from the environment Fusion is actually
+# rendering with, not from a fixed file.
+# ---------------------------------------------------------------------------
+
+_ENV_SUFFIX = "LightingEnvironment"
+
+
+def find_environments_dir() -> Optional[str]:
+    """Return the shipped ``Environments`` directory, or ``None``.
+
+    Anchored on RiverRubicon.xml rather than probed for directly: that file is
+    present in every install, so locating it validates the whole path shape,
+    and the ``Environments`` directory is simply its grandparent. Probing for a
+    bare directory named ``Environments`` would accept a false positive higher
+    up the tree.
+    """
+    xml = find_river_rubicon_xml()
+    if not xml:
+        return None
+    return os.path.dirname(os.path.dirname(xml))
+
+
+def is_safe_environment_name(name: str) -> bool:
+    """True if *name* is usable as a single path component.
+
+    Environment names come from an ``adsk.core.LightingEnvironments`` attribute
+    name, so they are already well-formed — this only keeps a surprising future
+    enum value from being joined into a path unchecked.
+    """
+    return bool(name) and name.isalnum()
+
+
+def find_environment_xml(name: str) -> Optional[str]:
+    """Return the XML for the named environment, or ``None`` if absent.
+
+    Each environment stores its resources in a self-named folder, so
+    ``GreyRoom`` resolves to ``Environments/GreyRoom/GreyRoom.xml``.
+    """
+    if not is_safe_environment_name(name):
+        return None
+    directory = find_environments_dir()
+    if not directory:
+        return None
+    candidate = os.path.join(directory, name, f"{name}.xml")
+    return candidate if os.path.isfile(candidate) else None
+
+
+def lighting_environment_dirs(enum_cls: object) -> Dict[int, str]:
+    """Map ``adsk.core.LightingEnvironments`` values to environment folder names.
+
+    Built by introspecting the enum rather than hardcoding its integers, so a
+    Fusion update that reorders or extends the list stays correct instead of
+    silently loading the wrong palette. Each member is named
+    ``<Folder>LightingEnvironment`` and the folder it names ships under
+    ``Environments/`` — ``GreyRoomLightingEnvironment`` → ``GreyRoom``.
+    """
+    out: Dict[int, str] = {}
+    for attr in dir(enum_cls):
+        if not attr.endswith(_ENV_SUFFIX) or attr == _ENV_SUFFIX:
+            continue
+        value = getattr(enum_cls, attr, None)
+        # Guard against bool, which is an int subclass, and against the
+        # descriptor objects a stub class can expose instead of plain values.
+        if isinstance(value, int) and not isinstance(value, bool):
+            out[value] = attr[: -len(_ENV_SUFFIX)]
+    return out
 
 
 # ---------------------------------------------------------------------------
