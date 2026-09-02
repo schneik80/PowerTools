@@ -30,6 +30,7 @@ import adsk.fusion
 
 from ... import config
 from ...lib import ptAddInUtils as ptutil
+from .._command_abort import abort_before_dialog, consume_abort
 from . import rounding
 
 app = adsk.core.Application.get()
@@ -141,7 +142,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                 "Double-click a sketch in the browser to open it, then try again.",
                 CMD_NAME,
             )
-            args.command.doExecute(False)
+            abort_before_dialog(CMD_ID, CMD_NAME, "no active sketch")
             return
 
         _cached_sketch = adsk.fusion.Sketch.cast(design.activeEditObject)
@@ -330,6 +331,13 @@ def command_execute_preview(args: adsk.core.CommandEventArgs):
 # Execute — apply for the no-preview path (idempotent, so always safe)
 # ---------------------------------------------------------------------------
 def command_execute(args: adsk.core.CommandEventArgs):
+    # command_created bailed out before building a dialog, so Fusion is
+    # auto-executing a command with no inputs. _apply_rounding would then read
+    # inputs that do not exist and raise, reporting a traceback on top of the
+    # message the user already saw.
+    if consume_abort(CMD_ID, CMD_NAME):
+        return
+
     try:
         inputs = args.command.commandInputs
         count = _apply_rounding(inputs)

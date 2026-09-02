@@ -29,6 +29,7 @@ import adsk.fusion
 from ... import config
 from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
+from .._command_abort import abort_before_dialog, consume_abort
 from ..partnumber_shared import hub_fs, pn_cache, schemes
 from ..partnumber_shared import intent as intent_mod
 
@@ -134,7 +135,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
     # --- Pre-validation ------------------------------------------------------
     if not ptutil.isSaved():
-        args.command.doExecute(True)
+        abort_before_dialog(CMD_ID, CMD_NAME, "document not saved")
         return
 
     product = app.activeProduct
@@ -146,7 +147,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
             0,
             2,
         )
-        args.command.doExecute(True)
+        abort_before_dialog(CMD_ID, CMD_NAME, "no active 3D design")
         return
 
     _targets = intent_mod.iter_targets(design)
@@ -159,6 +160,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     # MFGDMDataReady event callback per Autodesk's sample code. Calling it
     # from command_created, followed by ui.messageBox() and
     # args.command.doExecute(True), was observed to crash Fusion on dismiss.
+    # The doExecute call was the actual mechanism there — see
+    # commands/_command_abort.py — and has since been removed from this
+    # command's pre-validation, but the MFGDM timing rule still stands.
     # The readback verification in command_execute (below) is our real
     # safety net — it catches the silent-set failure mode at the moment it
     # matters, from a regular try/except scope where a crash can't take
@@ -501,6 +505,13 @@ def _prefix_from_label(label: str) -> Optional[str]:
 
 def command_execute(args: adsk.core.CommandEventArgs):
     ptutil.log(f"{CMD_NAME} execute: start")
+    # command_created bailed out before building a dialog, so Fusion is
+    # auto-executing a command with no inputs. _collect_choices would find
+    # nothing and fall through harmlessly, but the guard keeps that an explicit
+    # decision rather than an accident of the collection order.
+    if consume_abort(CMD_ID, CMD_NAME):
+        return
+
     deferred_error: Optional[str] = None
     try:
         inputs = args.command.commandInputs

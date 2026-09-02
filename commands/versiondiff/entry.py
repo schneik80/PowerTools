@@ -17,6 +17,7 @@ import adsk.fusion
 from ... import config
 from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
+from .._command_abort import abort_before_dialog, consume_abort
 from .design_properties import extract_design_properties
 from .html_report import generate_html_report
 from .param_fingerprint import attach_params_to_features, extract_feature_params
@@ -106,7 +107,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                 0,
                 2,
             )
-            args.command.doExecute(True)  # cancel
+            abort_before_dialog(CMD_ID, CMD_NAME, "document not saved")
             return
 
         # Check active product is a Fusion 3D design
@@ -119,7 +120,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                 0,
                 2,
             )
-            args.command.doExecute(True)
+            abort_before_dialog(CMD_ID, CMD_NAME, "no active 3D design")
             return
 
         # Check design is parametric (has timeline), not direct modeling
@@ -131,7 +132,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                 0,
                 2,
             )
-            args.command.doExecute(True)
+            abort_before_dialog(CMD_ID, CMD_NAME, "direct-modeling design")
             return
 
         # Check document has more than one version
@@ -145,7 +146,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                 0,
                 2,
             )
-            args.command.doExecute(True)
+            abort_before_dialog(CMD_ID, CMD_NAME, "fewer than two versions")
             return
 
         # --- Phase 2: Build Dialog ---
@@ -437,6 +438,13 @@ def on_input_changed(args: adsk.core.InputChangedEventArgs):
 
 def command_execute(args: adsk.core.CommandEventArgs):
     """Execute the version diff: walk timelines, compute diff, generate report."""
+    # command_created bailed out before building a dialog, so Fusion is
+    # auto-executing a command with no inputs. Without this the dropdown
+    # lookup below dereferences None and reports a spurious failure on top of
+    # the message the user already saw.
+    if consume_abort(CMD_ID, CMD_NAME):
+        return
+
     compare_doc = None
 
     try:

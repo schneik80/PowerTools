@@ -16,6 +16,7 @@ import adsk.fusion
 
 from ... import config
 from ...lib import ptAddInUtils as ptutil
+from .._command_abort import abort_before_dialog, consume_abort
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -137,7 +138,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs) -> None:
                 "Double-click a sketch in the browser to open it, then try again.",
                 CMD_NAME,
             )
-            args.command.doExecute(False)
+            abort_before_dialog(CMD_ID, CMD_NAME, "no active sketch")
             return
 
         cmd = args.command
@@ -417,6 +418,13 @@ def command_validate(args: adsk.core.ValidateInputsEventArgs) -> None:
 
 
 def command_execute(args: adsk.core.CommandEventArgs) -> None:
+    # command_created bailed out before building a dialog, so Fusion is
+    # auto-executing a command with no inputs. The preview state is still None
+    # here so the fallback below would no-op; the guard makes that explicit and
+    # keeps _clear_preview off a command that never drew anything.
+    if consume_abort(CMD_ID, CMD_NAME):
+        return
+
     _clear_preview()
 
     # If geometry was already created on mouse-click, nothing left to do.

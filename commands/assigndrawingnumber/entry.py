@@ -38,6 +38,7 @@ import adsk.fusion
 
 from ... import config
 from ...lib import ptAddInUtils as ptutil
+from .._command_abort import abort_before_dialog, consume_abort
 from ..partnumber_shared import hub_fs, mfgdm_props, pn_cache, schemes
 
 app = adsk.core.Application.get()
@@ -155,7 +156,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     ptutil.log(f"{CMD_NAME} Command Created Event")
 
     if not ptutil.isSaved():
-        args.command.doExecute(True)
+        abort_before_dialog(CMD_ID, CMD_NAME, "document not saved")
         return
 
     doc = app.activeDocument
@@ -166,7 +167,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
             0,
             2,
         )
-        args.command.doExecute(True)
+        abort_before_dialog(CMD_ID, CMD_NAME, "active document is not a drawing")
         return
 
     current = _read_existing_drawing_number(doc) or ""
@@ -253,6 +254,14 @@ def _peek_next_drawing_number() -> tuple:
 
 def command_execute(args: adsk.core.CommandEventArgs):
     ptutil.log(f"{CMD_NAME} execute: start")
+    # command_created bailed out before building a dialog, so Fusion is
+    # auto-executing a command with no inputs. This guard matters most on the
+    # unsaved-document path: the document can still be a drawing, so without it
+    # the command would go on and assign a number to the very document the
+    # precondition just refused.
+    if consume_abort(CMD_ID, CMD_NAME):
+        return
+
     deferred_error = None
     try:
         doc = app.activeDocument

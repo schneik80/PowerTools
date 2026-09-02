@@ -25,6 +25,7 @@ from ... import config
 
 # Import the ptAddInUtils module from the parent directory.
 from ...lib import ptAddInUtils as ptutil
+from .._command_abort import abort_before_dialog, consume_abort
 from . import pathgraph
 
 app = adsk.core.Application.get()
@@ -256,7 +257,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs) -> None:
         design = adsk.fusion.Design.cast(app.activeProduct)
         if not design:
             ui.messageBox("Measure Path needs an open design.", CMD_NAME)
-            args.command.doExecute(False)
+            abort_before_dialog(CMD_ID, CMD_NAME, "no open design")
             return
 
         _reset_state()
@@ -1650,6 +1651,12 @@ def _reset_graph_only() -> None:
 
 def command_execute(args: adsk.core.CommandEventArgs) -> None:
     """Copy the measured length to the clipboard."""
+    # command_created bailed out before building a dialog, so Fusion is
+    # auto-executing a command with no inputs. _result_cm is reset state here,
+    # so this would fall through anyway; the guard says so out loud.
+    if consume_abort(CMD_ID, CMD_NAME):
+        return
+
     try:
         if _result_cm <= 0.0:
             return
