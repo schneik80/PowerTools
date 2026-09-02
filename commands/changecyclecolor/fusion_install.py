@@ -13,40 +13,51 @@ The webdeploy hash in the install path changes with every Fusion update, so
 callers must never hardcode a path. We anchor on the bundled ``adsk`` Python
 package (``adsk.__file__``) and walk up looking for the well-known relative
 sub-path that contains the resource we want.
+
+Both resources here sit at different depths on macOS and Windows, because the
+macOS install wraps everything in an ``Autodesk Fusion.app`` bundle and the
+Windows one does not. The helpers that encode those shapes take the platform
+(and the interpreter values they read) as arguments, so the Windows layout is
+verifiable from a macOS test run rather than only on Windows.
 """
 
 from __future__ import annotations
 
 import os
 import sys
-from typing import Iterable, Optional
+from typing import Iterable, List, Optional, Sequence, Tuple
 
-# Relative path to RiverRubicon.xml from the install root, on each platform.
-# macOS bundles everything under ``Autodesk Fusion.app/Contents/...``.
-_RIVER_RUBICON_RELS = (
-    os.path.join(
-        "Contents",
-        "Libraries",
-        "Neutron",
-        "Neutron",
-        "Server",
-        "Scene",
-        "Resources",
-        "Environments",
-        "RiverRubicon",
-        "RiverRubicon.xml",
-    ),
-    os.path.join(
-        "Libraries",
-        "Neutron",
-        "Neutron",
-        "Server",
-        "Scene",
-        "Resources",
-        "Environments",
-        "RiverRubicon",
-        "RiverRubicon.xml",
-    ),
+# Stable tail of the RiverRubicon path, below whatever wrapper directories the
+# platform's install puts above it.
+_RIVER_RUBICON_TAIL = os.path.join(
+    "Neutron",
+    "Server",
+    "Scene",
+    "Resources",
+    "Environments",
+    "RiverRubicon",
+    "RiverRubicon.xml",
+)
+
+# Directories between an ancestor of the walk and the tail above. macOS is the
+# confirmed first entry: ``Autodesk Fusion.app/Contents/Libraries/Neutron`` +
+# the tail (the doubled "Neutron" is real — the prefix ends in one and the tail
+# begins with another). The shorter forms cover the Windows webdeploy layout,
+# which has no ``.app`` wrapper and may hold the libraries at the install root.
+# Every prefix is tried on every platform: a miss costs one stat, and covering
+# all the shapes keeps the palette working rather than silently empty if a
+# layout differs from what we expect.
+_RIVER_RUBICON_PREFIXES = (
+    os.path.join("Contents", "Libraries", "Neutron"),
+    os.path.join("Libraries", "Neutron"),
+    "Neutron",
+    "",
+)
+
+RIVER_RUBICON_RELS: Tuple[str, ...] = tuple(
+    # join("", tail) is just tail, so the empty prefix needs no special case.
+    os.path.join(prefix, _RIVER_RUBICON_TAIL)
+    for prefix in _RIVER_RUBICON_PREFIXES
 )
 
 
@@ -78,10 +89,97 @@ def find_river_rubicon_xml() -> Optional[str]:
         prev = None
         while cur and cur != prev and cur not in seen:
             seen.add(cur)
-            for rel in _RIVER_RUBICON_RELS:
+            for rel in RIVER_RUBICON_RELS:
                 candidate = os.path.join(cur, rel)
                 if os.path.isfile(candidate):
                     return candidate
             prev = cur
             cur = os.path.dirname(cur)
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Bundled Python interpreter (for the out-of-process color picker)
+# ---------------------------------------------------------------------------
+
+
+def is_python_binary(path: str) -> bool:
+    """True if *path* names a Python interpreter rather than some other binary.
+
+    Inside Fusion, ``sys.executable`` is the host application — ``Fusion360.exe``
+    on Windows — not a Python binary, so any fallback to it has to be filtered.
+    Handing the host executable to ``subprocess`` would fail silently from the
+    user's point of view: no picker appears and no error is raised.
+
+    ``splitext`` leaves the POSIX ``python3.14`` as ``python3`` and turns
+    ``pythonw.exe`` into ``pythonw``; both start with "python", while
+    ``Fusion360`` does not.
+
+    The basename is taken on both separators rather than via ``os.path``, which
+    only understands the host's own. In production that makes no difference —
+    Windows paths are only ever evaluated on Windows — but it lets the Windows
+    behavior be tested from a macOS run, as the module docstring promises.
+    """
+    if not path:
+        return False
+    base = path.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+    stem = os.path.splitext(base)[0].lower()
+    return stem.startswith("python")
+
+
+def _python_candidates(
+    platform: str,
+    exec_prefix: str,
+    executable: str,
+    version_info: Sequence[int],
+) -> List[str]:
+    """Interpreter-path candidates for *platform*, most likely first.
+
+    Windows keeps the interpreter directly in the prefix (``<prefix>\\python.exe``)
+    while POSIX keeps it in a ``bin`` subdirectory with a version-suffixed name
+    (``<prefix>/bin/python3.14``) — so neither platform's candidates exist on the
+    other. On Windows, ``pythonw.exe`` is tried first: it is the GUI build of the
+    interpreter, so spawning it does not flash a console window behind the picker.
+    """
+    out: List[str] = []
+    if exec_prefix:
+        if platform == "win32":
+            for directory in (exec_prefix, os.path.join(exec_prefix, "Scripts")):
+                for name in ("pythonw.exe", "python.exe"):
+                    out.append(os.path.join(directory, name))
+        else:
+            bin_dir = os.path.join(exec_prefix, "bin")
+            major, minor = version_info[0], version_info[1]
+            for name in (f"python{major}.{minor}", f"python{major}", "python"):
+                out.append(os.path.join(bin_dir, name))
+    if is_python_binary(executable):
+        out.append(executable)
+    return out
+
+
+def _is_runnable_file(path: str) -> bool:
+    """True if *path* is a file we can execute.
+
+    The executable bit is only checked on POSIX. On Windows ``os.access``
+    ignores ``X_OK`` entirely and reduces to an existence test, so testing it
+    there would wrongly accept any file that happens to exist.
+    """
+    if not path or not os.path.isfile(path):
+        return False
+    if os.name == "nt":
+        return True
+    return os.access(path, os.X_OK)
+
+
+def find_bundled_python() -> Optional[str]:
+    """Locate the Python interpreter bundled with Fusion, or ``None``.
+
+    ``sys.executable`` inside Fusion points at the host application rather than
+    a Python binary, so the path is derived from ``sys.exec_prefix``.
+    """
+    for path in _python_candidates(
+        sys.platform, sys.exec_prefix, sys.executable, sys.version_info
+    ):
+        if _is_runnable_file(path):
+            return path
     return None

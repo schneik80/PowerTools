@@ -49,6 +49,7 @@ from .colors import (
     rgb_to_hex,
     sort_rainbow,
 )
+from .fusion_install import find_bundled_python
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -599,7 +600,7 @@ def _pick_color_subprocess_python(initial_hex_no_hash: str) -> Optional[Color]:
     """
     ptutil.log(f"{CMD_NAME}: subprocess-Python picker, initial=#{initial_hex_no_hash}")
 
-    py = _find_bundled_python()
+    py = find_bundled_python()
     if not py:
         ptutil.log(f"{CMD_NAME}: could not locate Python interpreter")
         ui.messageBox(
@@ -618,46 +619,53 @@ def _pick_color_subprocess_python(initial_hex_no_hash: str) -> Optional[Color]:
         )
         return None
 
+    # Windows: keep the console window hidden. pythonw.exe is preferred and
+    # has none, but python.exe is the fallback and would flash one up behind
+    # the picker dialog. The flag does not exist on POSIX.
+    creationflags = 0
+    if sys.platform == "win32":
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
     try:
         proc = subprocess.run(
             [py, COLOR_PICKER_SCRIPT, "#" + initial_hex_no_hash],
             capture_output=True,
             text=True,
             timeout=600,
+            creationflags=creationflags,
         )
     except Exception as exc:
         ptutil.log(f"{CMD_NAME}: picker subprocess failed: {exc!r}")
+        ui.messageBox(
+            f"The color picker could not be started.\n\n{exc}",
+            CMD_NAME,
+            0,
+            2,
+        )
         return None
 
     ptutil.log(
         f"{CMD_NAME}: picker rc={proc.returncode}, "
         f"stdout={proc.stdout!r}, stderr={proc.stderr!r}"
     )
+    # A non-zero exit means the helper could not show a dialog at all — most
+    # likely tkinter is missing from this Fusion build's Python. Report it:
+    # returning None here is indistinguishable from a cancel, so staying
+    # silent would leave the Custom color... button looking simply dead.
     if proc.returncode != 0:
+        detail = (proc.stderr or "").strip() or f"exit code {proc.returncode}"
+        ui.messageBox(
+            f"The color picker could not be opened.\n\n{detail}",
+            CMD_NAME,
+            0,
+            2,
+        )
         return None
+    # Exit code 0 with no output is the user cancelling — stay silent.
     hex_str = (proc.stdout or "").strip()
     if not hex_str:
         return None
     return hex_to_rgb(hex_str)
-
-
-def _find_bundled_python() -> Optional[str]:
-    """Locate the Python interpreter binary bundled with Fusion. ``sys.executable``
-    inside Fusion typically points to the Fusion app, not the Python binary, so
-    we derive the binary path from ``sys.exec_prefix``.
-    """
-    candidates = []
-    if sys.exec_prefix:
-        bin_dir = os.path.join(sys.exec_prefix, "bin")
-        version_short = f"python{sys.version_info.major}.{sys.version_info.minor}"
-        for name in (version_short, f"python{sys.version_info.major}", "python"):
-            candidates.append(os.path.join(bin_dir, name))
-    if sys.executable:
-        candidates.append(sys.executable)
-    for path in candidates:
-        if path and os.path.isfile(path) and os.access(path, os.X_OK):
-            return path
-    return None
 
 
 # ---------------------------------------------------------------------------
