@@ -222,6 +222,30 @@ outlive this note.
 
 That shape is sound and worth keeping. The failure was in *when* it ran.
 
+Three constraints on the push itself, which any future attempt still has to
+respect:
+
+- **Push `setDocumentName` / `setOpenDocs` / `setRecentDocs` only — never
+  `setTargetProject`.** That one calls `cache.resolve_target_folder`
+  (`entry.py:531`, `:628`), the only cloud-touching call anywhere on the
+  refresh path, and the page already re-checks the target project on focus.
+  Including it would put a network round-trip on every tab switch.
+- **Look the palette up by id first and bail unless it is visible.**
+  Application-level handlers registered through `ptutil.add_handler` live in a
+  module-global list that `PowerTools.py:69` clears via `clear_handlers()`
+  *before* `commands.stop()`; `stop()` itself detaches nothing. The palette
+  lookup is what makes a stray handler call after teardown a harmless no-op, so
+  it has to come before any work.
+- **On `documentClosing`, exclude the closing document by `DataFile` id, not by
+  object identity.** The event fires *before* the document leaves
+  `app.documents`, so it would otherwise still be listed — and identity
+  comparison is unreliable here, since `id()` of Fusion's short-lived
+  `Document` wrappers can collide once a wrapper is garbage collected (the same
+  trap already documented at `entry.py:248`, `:420`). Note also that an unsaved
+  document has no `DataFile` at all and is filtered out; saving is what makes it
+  insertable, which is why `documentSaved` looked like a necessary trigger in
+  the first place.
+
 ### Why it is parked
 
 The first live test — insert, click back into the palette, second insert — took
