@@ -38,5 +38,12 @@ paths:
     `scrollbar-color` makes Chromium ignore them (f104dcc).
   - Verify structural changes headlessly against the real registry (count
     nav entries == top-level sections, no duplicate labels) (00302fd).
+- **Refresh a palette by pushing to the palette looked up by id**, never by
+  calling the show/create path again -- that rebuilds the page and loses the
+  active tab, scroll, filter and per-session state. Signature-compare first so
+  a tab switch does not repaint identically.
+- **`assemblypalette._diag` only reaches the Text Commands window.** Nothing it
+  writes reaches `cache/powertools-debug.log`, so a crash takes the reasoning
+  with it. Use `ptutil.log` for anything that must outlive the session.
 - Command descriptions and doc text come from `docs/`, not invented; ASCII
   only (aa6802e).

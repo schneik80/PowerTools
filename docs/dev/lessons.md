@@ -126,6 +126,31 @@ the close drains before the next open; re-acquire the `Design` after a pumped
 `computeAll`. Property names were verified against the API reference, not
 guessed. -- `a1d22e1`
 
+**Reading the document model from an application event can abort Fusion's
+background autosave thread.** Attempting to auto-refresh the Assembly Palette
+galleries on `documentActivated` / `Opened` / `Closing` / `Closed` / `Saved`
+took Fusion down on the second insert of a session. The CER dump aborts on
+Fusion's own saver thread, with no Python, palette or CEF frame anywhere on the
+stack:
+
+```
+Ns::_AutoSaveTask -> DocumentMgrImpl::backupToDisk -> _saveAssets
+  -> SegmentSaver::save -> tbb -> BinaryBulkSaveVisitor::onVisit
+  -> PassiveRefMetaType::doSave -> std::terminate -> abort
+```
+
+**Recognising it:** an *idle* `_AutoSaveTask` thread parked in
+`condition_variable::wait_for` with **no abort frame** is the benign shape and
+appears in unrelated dumps -- the `doSave -> std::terminate -> abort` chain is
+the fault. The suspected mechanism is main-thread data-model reads
+(`Document.documentReferences`, `Document.dataFile`) walking the document graph
+while the background saver serialises it; `documentSaved` is the worst offender
+because it fires precisely during a save. Never proven to the level of the
+other entries here, but it was enough to park the work. Constraints for anyone
+reviving it are in
+[`docs/arch/Assembly Palette.md`](../arch/Assembly%20Palette.md). -- parked on
+`feat/assemblyintent-gallery-autorefresh`
+
 **Configured designs crash Fusion's own PIM data model on open; skip them and
 drain events before each open.** Root cause pinned to `NsBaseCore10.dll`
 during `PLM360OpenAttachmentCommand`, which Python cannot catch.
@@ -430,6 +455,14 @@ is git-ignored so a distribution is always in ship mode.** When DEBUG is on,
 `ptutil.log` also appends to `cache/powertools-debug.log` (5 MB cap) -- before
 that there was literally no add-in log file to collect. -- `fe5efcb`, `f388ad9`,
 `16be595`
+
+**Diagnose through `ptutil.log`, not `_diag`.** `commands/assemblypalette`
+carries a local `_diag` helper that only reaches Fusion's **Text Commands**
+window; nothing it writes lands in `cache/powertools-debug.log`. During the
+parked gallery auto-refresh work every refresh decision was logged through
+`_diag`, so when the crash happened none of that reasoning survived in the log
+file that gets collected -- the investigation had to proceed from the CER stack
+alone. If a trace needs to outlive the session, it goes through `ptutil.log`.
 
 **Debugging setup traps (macOS/Zed)** are in [debugging.md](debugging.md):
 Fusion's Python has no pip; `in_process_debug_adapter=True` or a second Fusion

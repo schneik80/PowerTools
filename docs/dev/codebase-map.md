@@ -231,15 +231,23 @@ tool above except Fusion.
 ## Stale, dead, or known-missing
 
 - `commands/assemblyintent/` -- dead leftover (`__pycache__` only) from the
-  rename to `assemblypalette`.
+  rename to `assemblypalette` (`7dee722`); untracked, so it never ships.
+  `settings_store.RENAMED_COMMANDS` carries the migration and must stay.
+- **Gallery auto-refresh for the Assembly Palette is written but parked** after
+  it aborted Fusion's autosave thread. The crash analysis and the five
+  constraints for reviving it are in
+  [`docs/arch/Assembly Palette.md`](../arch/Assembly%20Palette.md) under
+  "Attempted and parked"; the code predates the `assemblyintent` ->
+  `assemblypalette` rename, so it needs porting rather than merging.
 - `docs/arch/Animation Named View.md` and
   `docs/arch/Set Up Shared Add-ins Folder.md` do not exist; every other
   command has its arch note.
 - `docs/arch/architecture.md` "File structure reference" still shows
   `docs_arch/` and lists ~42 commands; the folder is `docs/arch/` and the
-  registry has 52.
-- `docs/dev/debugging.md` is written for the macOS dev machine
-  (pre-production Fusion build, `~/Library/...` paths).
+  registry has 53.
+- `docs/dev/debugging.md` is written against `ADSKMVG91G2F5W` (the macOS dev
+  box, `~/Library/...` paths) and this checkout's pre-production Fusion
+  channel; `g16win.local` differs. Device roster: `.agent/environment.md`.
 - `config.get_or_create_pt_settings_dropdown()` and the PTSettings flyout are
   legacy (the flyout was consolidated into Preferences in `b6f4525`); the
   bootstrap no longer creates it.

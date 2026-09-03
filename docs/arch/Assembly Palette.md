@@ -193,3 +193,80 @@ Fasteners has no public insert API — `FastenerOccurrenceDefinition` is a previ
 
 ### Why a per-session "inserted" filter?
 A document inserted from the palette is not "open in a tab," so the next refresh would re-list it under Recent and a second click would silently add a duplicate occurrence. Inserted DataFile ids are tracked for the current palette session and hidden from both galleries; the set is cleared each time the palette is opened so deliberate re-insertion is still possible in a fresh session.
+
+---
+
+## Attempted and parked: automatic gallery refresh
+
+The Open and Recent galleries repaint only on the ↻ button. That is wrong the
+moment the user switches tabs, because both lists are computed relative to the
+active document — Open excludes whichever document is active and Recent
+excludes its `DataFile` — so a tab switch changes what both should show. An
+implementation that followed `documentActivated` / `Opened` / `Closing` /
+`Closed` / `Saved` was written, tested live, and **parked after it took Fusion
+down**. The reasoning is recorded here because the branch it lives on may not
+outlive this note.
+
+### What the implementation did
+
+- `_refresh_galleries(reason, *, exclude_ids=None, force=False)` pushed only the
+  two galleries and the banner name to the palette **looked up by id** — never
+  `_show_palette`, which rebuilds the palette and would lose the active tab,
+  scroll position, filter text and the per-session `_inserted_in_session` set.
+- `_gallery_signature` suppressed the identical repaints a tab switch would
+  otherwise trigger.
+- `_refresh_is_safe` deferred while `_pending_finish` was set or
+  `ui.activeCommand` was busy.
+- `_strip_sent_thumbs` sent each base64 thumbnail once per page load, with
+  `app.js` caching them by `dataFileId`.
+
+That shape is sound and worth keeping. The failure was in *when* it ran.
+
+### Why it is parked
+
+The first live test — insert, click back into the palette, second insert — took
+Fusion down. The CER dump aborts on Fusion's own autosave thread, with no
+Python, palette or CEF frame on the stack:
+
+```
+Ns::_AutoSaveTask -> DocumentMgrImpl::backupToDisk -> _saveAssets
+  -> SegmentSaver::save -> tbb -> BinaryBulkSaveVisitor::onVisit
+  -> PassiveRefMetaType::doSave -> std::terminate -> abort
+```
+
+Two earlier dumps were checked and are a *different*, benign shape: their
+`_AutoSaveTask` thread sits idle in `condition_variable::wait_for` and neither
+contains an abort frame. So this was not a pre-existing crash.
+
+What implicates the change: it added main-thread data-model reads
+(`Document.documentReferences`, `Document.dataFile`) on five application
+events, including `documentSaved`. That can walk the document graph exactly
+while the background saver serialises it, inside the insert + Edit Initial
+Position window where the crash happened. Unproven, but unshippable as it
+stood.
+
+### Constraints if this is revived
+
+1. **Drop the `documentSaved` handler.** It is the one that reads the model
+   during a save.
+2. **Route every refresh through `fireCustomEvent` + `threading.Timer`** — the
+   same deferral `_schedule_finish_insert` already uses — so nothing runs
+   inside a Fusion event handler or the palette's `incomingFromHTML`.
+3. **Drop the focus-driven `flushGalleries`.** Clicking back into the palette
+   while Edit Initial Position was open is what the crash run did.
+4. **Guard `addByInsert` itself, not just the window after it.**
+   `_pending_finish` is set only once `addByInsert` has returned.
+5. **Log through `ptutil.log`, not `_diag`.** `_diag` only reaches the Text
+   Commands window, so none of the refresh decisions survived in
+   `cache/powertools-debug.log` and the investigation had to work from the CER
+   stack alone.
+
+### The code needs porting, not merging
+
+The parked work predates `7dee722`, which renamed the command from **New
+Assembly** to **Assembly Palette**. It patches `commands/assemblyintent/entry.py`,
+`docs/New Assembly.md` and `docs/arch/New Assembly.md` — paths that no longer
+exist. Reviving it means porting ~750 lines across that rename (including a
+382-case `tests/test_assemblyintent_autorefresh.py`), not merging a branch.
+Given the constraints above rewrite the trigger layer anyway, treat the old
+diff as reference material rather than a starting point.

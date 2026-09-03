@@ -63,6 +63,15 @@ explains it. Full write-ups: `docs/dev/lessons.md`.
 - **The Fusion Data API is main-thread only.** A `threading.Timer` worker may
   call exactly one thing: `app.fireCustomEvent(...)`. Not `ptutil.log`, not
   the API (266e2c2, c440ad3).
+- **Do not read the document model from an application event handler** --
+  `Document.documentReferences` / `Document.dataFile` on `documentActivated`,
+  `documentSaved` and friends can walk the document graph while Fusion's
+  background saver serialises it, aborting the saver thread
+  (`Ns::_AutoSaveTask` -> `SegmentSaver::save` -> `doSave` ->
+  `std::terminate`). `documentSaved` is the worst case: it fires during a save.
+  Defer the work through `fireCustomEvent` + `threading.Timer`. This parked the
+  Assembly Palette gallery auto-refresh -- see
+  `docs/arch/Assembly Palette.md`, "Attempted and parked".
 - **Starting a Fusion command from a palette `incomingFromHTML` handler needs
   a later main-loop turn**: `threading.Timer` -> `fireCustomEvent` -> handler.
   Firing the custom event inline is not enough (c440ad3,
