@@ -62,6 +62,7 @@ ICON_SETS = (
     IconSet("assigndrawingnumber", THEME_VARIANTS, "docinfo"),
     IconSet("measurepath", THEME_VARIANTS, None),
     IconSet("flattensurface", THEME_VARIANTS, None),
+    IconSet("dochistory", ALL_VARIANTS, None),
 )
 
 
