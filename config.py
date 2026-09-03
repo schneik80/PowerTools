@@ -467,6 +467,9 @@ preferences_palette_id = (
 team_addins_palette_id = (
     f"{COMPANY_NAME.replace(' ', '_')}_{ADDIN_NAME}_team_addins_palette"
 )
+document_history_palette_id = (
+    f"{COMPANY_NAME.replace(' ', '_')}_{ADDIN_NAME}_document_history_palette"
+)
 
 # ---------------------------------------------------------------------------
 # 8. Preferences / user settings store

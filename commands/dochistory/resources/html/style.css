@@ -1,0 +1,407 @@
+/* Copyright (C) Industrial Machine Arts LLC WA, USA - All Rights Reserved
+   Document History palette styles. The theme variables mirror the other
+   PowerTools palettes (preferences/assemblypalette/assemblybuilder) so the
+   whole add-in reads as one product; the graph tokens below them are this
+   view's own.
+
+   The chart itself is SVG built in app.js, which reads these variables through
+   getComputedStyle rather than carrying a second copy of the palette. Anything
+   drawn in a colour that is not derived from a person's identity must come
+   from here. */
+
+:root {
+    --bg-primary: #2A3442;
+    --bg-panel: #323E50;
+    --bg-input: #1e2a38;
+    --bg-hover: #3a4658;
+    --border-color: #4a5568;
+    --text-primary: #ffffff;
+    --text-secondary: #a0aec0;
+    --text-muted: #718096;
+    --accent: #0696d7;
+    --accent-hover: #0aa3e8;
+    /* Releases are milestones the user named, so they take the accent a shade
+       deeper rather than a hue of their own — the same relationship the web
+       view draws with darken(primary, 0.25). */
+    --accent-deep: #05719f;
+    /* The public-share ring. Deliberately the one warm colour in the chart:
+       it says "visible outside the hub", which nothing else here does. */
+    --share: #d69e2e;
+    --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.45);
+    /* The alternating row band, composited over the panel. */
+    --band: rgba(255, 255, 255, 0.05);
+}
+
+html.light {
+    --bg-primary: #f4f4f4;
+    --bg-panel: #ffffff;
+    --bg-input: #f0f0f0;
+    --bg-hover: #e8e8e8;
+    --border-color: #d1d5db;
+    --text-primary: #333333;
+    --text-secondary: #555555;
+    --text-muted: #888888;
+    --accent: #0696d7;
+    --accent-hover: #0580b8;
+    --accent-deep: #04597c;
+    --share: #b7791f;
+    --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.18);
+    --band: rgba(0, 0, 0, 0.04);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    height: 100%;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    overflow: hidden;
+}
+
+.app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    padding: 0 14px 12px;
+}
+
+header {
+    padding: 12px 0 6px;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-bottom: 6px;
+}
+
+.caption {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+}
+
+.toggle input {
+    accent-color: var(--accent);
+    margin: 0;
+    cursor: pointer;
+}
+
+.banner {
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding: 6px 0;
+}
+
+.banner:empty {
+    display: none;
+}
+
+.banner.error {
+    color: var(--share);
+}
+
+/* Day view fits the panel and only ever scrolls down; thread view adds the
+   horizontal axis and gets `wide` (see app.js). Both bars belong to this one
+   box so the themed scrollbar corner applies. */
+.scroller {
+    position: relative;
+    flex: 1;
+    min-height: 120px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-panel);
+}
+
+.scroller.wide {
+    overflow-x: auto;
+}
+
+.stack {
+    position: relative;
+}
+
+/* Scrollbars: -webkit- pseudo-elements only. Adding scrollbar-width or
+   scrollbar-color makes Chromium ignore these entirely (f104dcc). */
+.scroller::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.scroller::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.scroller::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 5px;
+}
+
+.scroller::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+}
+
+.scroller::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+/* ── one day row ───────────────────────────────────────────────────────── */
+
+.row {
+    flex-shrink: 0;
+}
+
+.row.band {
+    background: var(--band);
+}
+
+/* The date line and the gap label are pinned to the left edge of the viewport
+   rather than the stack: in thread view the stack runs thousands of pixels
+   right, and "when" must not scroll out of sight. */
+.row-header {
+    position: sticky;
+    left: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px;
+}
+
+.row-header .day {
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.row-header .saves {
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.row-body {
+    display: flex;
+    align-items: flex-start;
+}
+
+/* The avatar column is a frozen gutter, not part of the plot: however far
+   right the reader scrolls, every row still says who. It has to be opaque so
+   dots slide under it instead of through it, and it paints paper plus the same
+   band the row has rather than the translucent band alone — which would
+   composite twice and read a shade darker than the row it sits in. */
+.gutter {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    flex-shrink: 0;
+    background: var(--bg-panel);
+}
+
+.gutter.band {
+    background-image: linear-gradient(var(--band), var(--band));
+}
+
+.gutter.ruled {
+    border-right: 1px solid var(--border-color);
+}
+
+.avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.avatar-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.plot {
+    display: block;
+    flex-shrink: 0;
+}
+
+.plot .hit {
+    cursor: default;
+}
+
+/* ── the band between two days ─────────────────────────────────────────── */
+
+.gap {
+    flex-shrink: 0;
+}
+
+.gap-inner {
+    position: sticky;
+    left: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px;
+}
+
+.gap-rule {
+    flex: 1;
+    border-top: 1px solid var(--border-color);
+}
+
+.gap.wide .gap-rule {
+    border-top-style: dashed;
+}
+
+.gap.tight .gap-rule {
+    opacity: 0.6;
+}
+
+.gap-label {
+    font-size: 10px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.gap.tight .gap-label {
+    color: var(--text-muted);
+}
+
+/* ── footer: the row cap, and the legend ───────────────────────────────── */
+
+.more {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding-top: 8px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.more:empty {
+    display: none;
+}
+
+.more button {
+    font: inherit;
+    color: var(--accent);
+    background: none;
+    border: none;
+    padding: 2px 4px;
+    cursor: pointer;
+    text-transform: none;
+}
+
+.more button:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
+}
+
+.legend {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    padding-top: 8px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* ── the hover card ────────────────────────────────────────────────────── */
+
+.card {
+    position: fixed;
+    z-index: 10;
+    max-width: 230px;
+    padding: 8px 10px;
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--text-primary);
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    box-shadow: var(--shadow-card);
+    pointer-events: none;
+}
+
+.card[hidden] {
+    display: none;
+}
+
+.card img {
+    display: block;
+    width: 100%;
+    max-height: 140px;
+    object-fit: contain;
+    border-radius: 2px;
+    margin-bottom: 6px;
+    background: rgba(0, 0, 0, 0.15);
+}
+
+.card .title {
+    font-weight: 600;
+}
+
+.card .share {
+    color: var(--share);
+    font-weight: 600;
+}
+
+.card .comment {
+    margin-top: 4px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.card .muted {
+    font-style: italic;
+    opacity: 0.6;
+}
+
+.card .when {
+    margin-top: 4px;
+    opacity: 0.85;
+}
+
+.card .who {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+}

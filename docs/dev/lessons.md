@@ -22,7 +22,7 @@ changes how commands are written, also add it to
 - [Dialogs, selections, custom graphics](#dialogs-selections-custom-graphics)
 - [Data, cloud, identifiers](#data-cloud-identifiers)
 - [UI placement](#ui-placement)
-- [Preferences palette](#preferences-palette)
+- [HTML palettes](#html-palettes)
 - [Python and portability](#python-and-portability)
 - [Tooling, CI, docs, release](#tooling-ci-docs-release)
 - [Security hardening already in place](#security-hardening-already-in-place)
@@ -331,7 +331,23 @@ tabs exist depends on version and entitlement. -- `b3bed5f`
 
 ---
 
-## Preferences palette
+## HTML palettes
+
+**A palette's first paint comes from `init.js`; never make it wait on a message
+from the page.** The Document History palette shipped inverted: `init.js`
+carried only the theme, the page painted "Reading version history..." and asked
+Python for the data over `adsk.fusionSendData`, and the answer never came - the
+palette sat on the banner. The DEBUG log named the culprit precisely, by what
+was missing: `History Command Created Event` was there, the gather's own log
+line was not, and neither was a traceback, so the page had never reached
+Python. Preferences and Assembly Palette both send the same handshake and both
+looked fine only because each already had its whole state in `init.js`; the
+handshake is cache-busting (Fusion's embedded browser caches `init.js` by URL
+across palette recreations on Windows), not a data channel. Write the state
+before `palettes.add`, answer the handshake from what that read already
+produced rather than reading again, and log every action the page sends so the
+next silence says which side went quiet. -- `assemblypalette` `htmlReady`,
+`dochistory`
 
 **Ship the defaults a new install should start with; `load()` merges stored
 values over defaults, so existing users keep their choices.** Six commands ship

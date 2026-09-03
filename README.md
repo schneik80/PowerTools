@@ -71,7 +71,7 @@ Most commands appear in **Design › Tools › Power Tools**. Some appear in oth
 | Command | Location | Description |
 | --- | --- | --- |
 | [Document Information](./docs/Document%20Information.md) | Design › Tools › Power Tools | Display cloud data identifiers and metadata for the active document. |
-| [Document History](./docs/Document%20History.md) | Design › Tools › Power Tools | Show the version history of the active document. |
+| [Document History](./docs/Document%20History.md) | Quick Access Toolbar | Show the active document's version history as a palette of day rows: a track per author, saves on a clock axis, and the elapsed time between days. |
 | [Version Diff](./docs/Version%20Diff.md) | Design › Tools › Power Tools | Compare versions of the active document. |
 | [Assign Part Numbers](./docs/Assign%20Part%20Numbers.md) | Design › Tools › Power Tools | Assign part numbers across the active design. |
 | [Assign Drawing Number](./docs/Assign%20Drawing%20Number.md) | Drawing › Power Tools | Assign a drawing number inside the Drawing workspace. |

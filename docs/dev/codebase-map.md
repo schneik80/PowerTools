@@ -73,7 +73,7 @@ the unit-testable cores.
 | document | `closealldocuments` | `Close All Documents.md` | ✓ | `logic.py` | `test_closealldocuments_logic.py` | QAT File; work in `commandCreated` |
 | document | `datatoggle` | `Toggle Data Pane.md` | ✓ | — | — | QAT File launcher |
 | document | `defaultfolders` | `Default Folders.md` | ✓ | — | — | settings (`DEFAULT_FOLDER_SETS`) |
-| document | `dochistory` | `Document History.md` | ✓ | — | — | |
+| document | `dochistory` | `Document History.md` | ✓ | `history_model.py` | `test_dochistory_history_model.py` | QAT button; HTML palette (day rows); geometry in `app.js`, bucketing in Python |
 | document | `docinfo` | `Document Information.md` | ✓ | — | — | |
 | document | `docopen` | `Show In Location.md` | ✓ | — | — | settings; no button (document events); ships disabled |
 | document | `favorites` | `Favorites.md` | ✓ | — | — | `cache/favorites_<hub>.json` |
@@ -158,7 +158,7 @@ Import order in `__init__.py` is fixed (`general_utils` first; `# ruff: noqa: I0
 | Inspect panels, all design workspaces | discovered at runtime | command | `measurepath` |
 | Marking (right-click) menu | `markingMenuDisplaying` hook | command | `changecyclecolor` |
 | Assembly INSERT panel | below Insert STEP | command | `assemblypalette` launch button |
-| Palettes | `IMA_LLC_PowerTools_*` (`config.py` section 7) | command | `assemblybuilder`, `assemblypalette`, `preferences`, `teamaddins` |
+| Palettes | `IMA_LLC_PowerTools_*` (`config.py` section 7) | command | `assemblybuilder`, `assemblypalette`, `dochistory`, `preferences`, `teamaddins` |
 
 Built-in tabs and panels are never deleted; only our controls are.
 
@@ -188,8 +188,8 @@ Built-in tabs and panels are never deleted; only our controls are.
 | Retrying a QAT control from `documentActivated` | `commands/preferences/entry.py::_ensure_control` |
 | Self-correcting flyout placement, candidate control IDs | `commands/openrecent/entry.py` |
 | Ending a command from `commandCreated` when a precondition fails | `commands/_command_abort.py`; `commands/changecyclecolor/entry.py`, `versiondiff`, `roundsketchdimensions`, `assigndrawingnumber` |
-| `threading.Timer` -> `fireCustomEvent` deferral | `commands/assemblypalette/entry.py` (post-insert chain, thumbnail pump), `commands/teamaddins/entry.py` (launch check) |
-| Polling an `adsk.core.Future` without blocking | `commands/assemblypalette/entry.py` thumbnails; inline variant behind a progress bar in `commands/refmanager` |
+| `threading.Timer` -> `fireCustomEvent` deferral | `commands/assemblypalette/entry.py` (post-insert chain, thumbnail pump), `commands/dochistory/entry.py` (thumbnail pump), `commands/teamaddins/entry.py` (launch check) |
+| Polling an `adsk.core.Future` without blocking | `commands/assemblypalette/entry.py` and `commands/dochistory/entry.py` thumbnails; inline variant behind a progress bar in `commands/refmanager` |
 | Deferring heavy work to a `CustomEvent` after the dialog closes | `commands/externalize/entry.py` |
 | Waiting on a save/upload | `ptutil.wait_for_upload`, used by `bottomupupdate`, `closealldocuments` |
 | Suspend autosave / re-acquire handles across pumped waits | `commands/bottomupupdate/entry.py` (`_suspend_autosave`, `close_processed_document`, `sweep_stray_documents`) |

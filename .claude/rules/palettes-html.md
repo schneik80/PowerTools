@@ -3,11 +3,18 @@ paths:
   - "commands/*/resources/html/**"
 ---
 
-# HTML palettes (assemblybuilder, assemblypalette, preferences, teamaddins)
+# HTML palettes (assemblybuilder, assemblypalette, dochistory, preferences, teamaddins)
 
 - **`init.js` and `intent-icons.css` are generated** when a palette opens
   (git-ignored by glob). Never hand-edit or commit them; the Python side
   writes `window.__ptInit` (20efeea, 270047d).
+- **The first paint comes from `init.js`, never from a page message.** Write
+  the palette's whole state before `palettes.add`; the page's load handshake
+  (`htmlReady`) only forces a repaint, because Fusion's embedded browser caches
+  `init.js` by URL across palette recreations on Windows. Answer that handshake
+  from the state the open already gathered -- re-reading it is a second round
+  of cloud calls. A palette that waits on the page for its data shows an empty
+  frame forever when the message does not arrive (`dochistory`).
 - **Page -> Python** goes through `palette.incomingFromHTML` with a JSON
   action. **A raise inside that handler is swallowed** by DEBUG-gated
   `handle_error`, so the user sees "nothing happens". Guard every Fusion call
