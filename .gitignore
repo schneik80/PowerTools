@@ -141,8 +141,13 @@ cache/
 # above are regenerated whenever a palette opens. Both are per-machine state, not
 # shipped config.
 settings/preferences.json
-.claude/
 .cursor/rules/
+
+# Agent guidance is tracked: AGENTS.md (entry point), .claude/settings.json
+# (shared permission allowlist), .claude/rules/ and .claude/skills/. Only the
+# per-machine permission overrides stay local. None of it ships -- the release
+# build strips .claude/, CLAUDE.md and AGENTS.md (tools/release/build_release.py).
+.claude/settings.local.json
 
 # Developer-only DEBUG marker: create an empty `.debug` file in the add-in root
 # to enable verbose logging (config.DEBUG). Never committed.

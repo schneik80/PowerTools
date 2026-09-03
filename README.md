@@ -152,6 +152,8 @@ For developer-oriented documentation — system context, C4 diagrams, the add-in
 
 For local development setup, tooling, and how to debug the add-in in VS Code or Zed, see the **[developer guide](./docs/dev/index.md)**.
 
+AI coding agents start at **[AGENTS.md](./AGENTS.md)**, which links the [codebase map](./docs/dev/codebase-map.md) and the [lessons ledger](./docs/dev/lessons.md).
+
 ## Support
 
 This add-in is developed and maintained by IMA LLC.

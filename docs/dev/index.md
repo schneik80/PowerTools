@@ -195,6 +195,9 @@ verification checklist, and how to disable debugging for a shipping build are in
 | [`docs/`](..) | End users | Per-command usage guides. |
 | [`docs/arch/`](../arch) | Developers | Architecture — C4 diagrams, lifecycle, shared library, `config.py`. |
 | [`docs/dev/`](.) | Developers | This guide, the [debugging guide](debugging.md), the [release process](release.md), the [insert-and-position recipe](Insert%20and%20position%20a%20component%20from%20a%20palette.md), [custom graphics that stay painted](Custom%20graphics%20that%20stay%20painted.md), and the [Flatten Surface solver](Flatten%20Surface%20solver.md) with its [method background](Flatten%20Surface%20research.md). |
+| [`codebase-map.md`](codebase-map.md) | Developers, AI agents | "Search less" index: command table (module → docs → tests), `ptutil` function index, UI access points, on-disk state, where-is-the-example-of, stale items. |
+| [`lessons.md`](lessons.md) | Developers, AI agents | The mistakes ledger — Fusion API traps, tooling regressions and process rules distilled from the commit history, each citing its commit. |
+| [`/AGENTS.md`](../../AGENTS.md) + `.claude/` | AI agents | Entry point (loaded via `CLAUDE.md`), the non-negotiable rules, path-scoped `.claude/rules/`, and the `build-readme-pdf` / `generate-icons` skills. Tracked, but stripped from the release. |
 
 ---
 

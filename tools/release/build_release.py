@@ -16,10 +16,10 @@
 # checked-in PDF current so that path stays cold. See refresh_readme_pdf.
 #
 # The file list comes from `git ls-files`, so everything git-ignored (.debug,
-# .env, .claude/, caches, venvs, settings/preferences.json, generated palette
-# init.js, ...) is stripped by construction. On top of that, tracked dev-only
-# paths (tests, tools, CI config, architecture docs, design sources) are
-# excluded below. What remains is exactly what an end user needs to run the
+# .env, caches, venvs, settings/preferences.json, generated palette init.js,
+# ...) is stripped by construction. On top of that, tracked dev-only paths
+# (tests, tools, CI config, architecture docs, agent guidance, design sources)
+# are excluded below. What remains is exactly what an end user needs to run the
 # add-in, zipped under a top-level `PowerTools/` folder so extracting into
 # Fusion's AddIns directory yields a correctly named add-in folder.
 
@@ -44,23 +44,29 @@ ADDIN_NAME = "PowerTools"
 # whenever README.md changes. This script refreshes it before zipping.
 PDF_BUILDER = HERE.parent / "pandoc" / "build_readme_pdf.py"
 
-# Tracked directories that are dev-only. Matched as path prefixes.
+# Tracked directories that are dev-only. Matched as path prefixes. `.claude/`
+# is tracked on purpose (shared agent settings, rules and skills) and is as
+# developer-only as `tests/`.
 EXCLUDED_DIRS = (
     "tests/",
     "tools/",
     ".github/",
+    ".claude/",
     "docs/arch/",
     "docs/dev/",
 )
 
 # Tracked individual files that are dev-only or must not ship. `hub.json` is
 # the stale root copy carrying org-specific hub IDs; the live one the add-in
-# reads is cache/hub.json (git-ignored, per-machine).
+# reads is cache/hub.json (git-ignored, per-machine). AGENTS.md and CLAUDE.md
+# are the AI-agent entry docs (CLAUDE.md is a one-line import of AGENTS.md).
 EXCLUDED_FILES = (
     ".gitignore",
     ".git-blame-ignore-revs",
     "pyproject.toml",
     "hub.json",
+    "AGENTS.md",
+    "CLAUDE.md",
 )
 
 # Design sources checked in next to runtime resources. fnmatch patterns.

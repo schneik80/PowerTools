@@ -71,6 +71,7 @@ table does too).
 | Tests and CI | `tests/`, `.github/`, `pyproject.toml`, `.gitignore`, `.git-blame-ignore-revs` |
 | Dev tooling | `tools/` (including this release script itself) |
 | Developer docs | `docs/arch/`, `docs/dev/` |
+| Agent guidance | `AGENTS.md`, `CLAUDE.md`, `.claude/` |
 | Stale org config | the root `hub.json` (the live copy the add-in reads is the git-ignored `cache/hub.json`) |
 | Design sources in `resources/` | `generate_icons.py` helpers, `*.idraw`, `*.pxd` bundles, `fusion_icon_resources` (zip and extracted folder) |
 

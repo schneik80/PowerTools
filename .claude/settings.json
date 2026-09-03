@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ruff *)",
+      "Bash(.venv/bin/ruff *)",
+      "Bash(pytest *)",
+      "Bash(python -m pytest *)",
+      "Bash(python3 -m pytest *)",
+      "Bash(.venv/bin/python -m pytest *)",
+      "Bash(python3 -m venv .venv)",
+      "Bash(.venv/bin/pip install *)",
+      "Bash(python tools/release/build_release.py *)",
+      "Bash(python3 tools/release/build_release.py *)",
+      "Bash(python tools/pandoc/build_readme_pdf.py *)",
+      "Bash(python3 tools/pandoc/build_readme_pdf.py *)",
+      "Bash(python commands/*/resources/generate_icons.py)",
+      "Bash(python3 commands/*/resources/generate_icons.py)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git ls-files *)",
+      "Bash(git check-ignore *)",
+      "Bash(git blame *)",
+      "Bash(pandoc --version)",
+      "Bash(xelatex --version)"
+    ]
+  }
+}
