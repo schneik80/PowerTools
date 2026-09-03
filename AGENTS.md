@@ -9,7 +9,8 @@ does not load them automatically.
 ## What this is
 
 - **PowerTools** is a single Autodesk Fusion add-in (Python) consolidating
-  ~52 commands behind one entry point (`PowerTools.py`), one registry
+  **53 commands** (`_cmd(` entries in `command_registry.py` — count it, do not
+  quote this number) behind one entry point (`PowerTools.py`), one registry
   (`command_registry.py`), one settings store (`settings_store.py`) and one
   shared helper package (`lib/ptAddInUtils`, imported as `ptutil`).
 - It runs inside **Fusion's bundled Python 3.14**, has **no runtime
@@ -26,21 +27,51 @@ does not load them automatically.
 python3 -m venv .venv && .venv/bin/pip install "ruff==0.15.20" "pytest>=8.0"
 
 # the four CI gates -- run them all before every commit
-ruff format .            # (CI runs `ruff format --check .`)
+ruff format .                             # (CI runs `ruff format --check .`)
 ruff check .
-python -m pytest -q      # expect "N passed, a few skipped" (Fusion-only checks skip off-Fusion)
-python tools/pandoc/build_readme_pdf.py --check   # README.pdf built from this README.md?
+.venv/bin/python -m pytest -q             # -> "782 passed, 2 skipped" (count grows)
+python3 tools/pandoc/build_readme_pdf.py --check   # README.pdf built from this README.md?
 
-python tools/release/build_release.py --version v0.0.0-test   # release dry run -> dist/
-python tools/pandoc/build_readme_pdf.py                       # after any README.md edit
-python commands/<cmd>/resources/generate_icons.py             # icon sets
+python3 tools/release/build_release.py --version v0.0.0-test  # dry run -> dist/ (git add first)
+python3 tools/pandoc/build_readme_pdf.py                      # after any README.md edit
+python3 commands/<cmd>/resources/generate_icons.py            # icon sets
 ```
+
+**Development happens on three devices, so check where you are** (`hostname`)
+before trusting any environment note, and name the device in anything you write
+down -- "on this machine" is ambiguous and therefore useless:
+
+| Device | Fusion | Role |
+|---|---|---|
+| `ADSKMVG91G2F5W` -- MacBook Air M4, macOS 26.5.1, arm64 | Yes -- **both** channels | macOS dev box; everything below was verified here |
+| `g16win.local` -- Windows 11, x86_64 | Yes -- **both** channels | Catches the Windows-only path bugs (`25d5f48`, `93c6b36`) |
+| `ryzen-nobara.local` -- Nobara 44 (Fedora base), x86_64 | **No** -- no native Linux client exists | Lint / test / zip / PDF only -- always "not yet exercised in Fusion" |
+
+Both Fusion devices run **production and pre-production**, so a device name
+alone does not identify the build. For anything build-sensitive, **say device
++ channel** -- a bug on one and not the other is as often a channel difference
+as a platform one.
+
+Roster detail and per-device paths:
+[`.agent/environment.md`](.agent/environment.md#device-roster).
+
+On **`ADSKMVG91G2F5W`** use the invocations above verbatim: `python -m pytest`
+and `python3 -m pytest` both fail there with `No module named pytest` because
+pytest exists only in `.venv`, which in turn has no `ruff`. Bare `ruff` is
+0.15.20 and matches the CI pin; check `ruff --version` against `ci.yml` before
+trusting a `--check` result, and fall back to `uvx ruff@<pin>` on a mismatch.
+The other two devices' toolchains have **not** been characterised -- verify
+rather than assume, and record what you find.
 
 - `.debug` (git-ignored marker in the repo root) turns on `ptutil.log` and the
   debugpy server. Without it **logging is a no-op**.
 - `.claude/settings.json` is the shared permission allowlist; put personal
   overrides in `.claude/settings.local.json` (git-ignored).
 - Skills: `build-readme-pdf`, `generate-icons` (`.claude/skills/`).
+- The `fusion` MCP server (`localhost:27182`) introspects a **running** Fusion;
+  `ConnectionRefused` means Fusion is not running, not that the tool is
+  missing. `autodesk-product-help` searches the official API reference — use it
+  instead of recalling API names.
 
 ## Non-negotiables
 
@@ -100,7 +131,12 @@ Each one has cost a fix already; hashes are `git show`-able and the long form is
     re-enters the command manager on a half-built command and segfaults
     Fusion. Bail out with `commands/_command_abort.abort_before_dialog()`,
     `consume_abort()` in `execute`, `clear_abort()` in `destroy`; an AST test
-    enforces it (`14871d7`, `a90be46`, `5bae0e3`).
+    enforces it (`14871d7`, `a90be46`, `5bae0e3`). **The ban is that one
+    callback only** -- `doExecute` is still the right mechanism from
+    `inputChanged` and from deferred custom events, and three call sites are
+    deliberate. Read
+    [the doExecute rule](.agent/symptom-index.md#the-doexecute-rule-read-before-touching-it)
+    before removing any of them.
 
 ## Where to look
 
@@ -108,6 +144,8 @@ Full index: [`docs/dev/codebase-map.md`](docs/dev/codebase-map.md).
 
 | Task | Open |
 |---|---|
+| **Diagnose a symptom** ("graphics flash", "nothing happens", segfault) | [`.agent/symptom-index.md`](.agent/symptom-index.md) -- start here, it routes |
+| Which command to run; Fusion paths; crash dumps; MCP | [`.agent/environment.md`](.agent/environment.md) |
 | Add / rename a command | `command_registry.py`, `settings_store.py`, `.claude/rules/commands-registry.md` |
 | How a command is wired | `commands/closealldocuments/` (simple), `commands/measurepath/` (dialog + graphics + `pathgraph.py`), `commands/assemblypalette/` (palette) |
 | Shared helpers before writing new ones | `lib/ptAddInUtils/` index in the codebase map |
@@ -123,12 +161,17 @@ Full index: [`docs/dev/codebase-map.md`](docs/dev/codebase-map.md).
 
 ## Working conventions
 
+- **This repo does not use pull requests.** Never offer or open one. Branch,
+  commit, merge to `main` (`--ff-only` when it applies), push, then delete the
+  branch **locally and on `origin`**. Do not commit or push unless asked -- but
+  once asked, finish that whole sequence without confirming each step.
+  **"commit and sync" means commit and `git push` to `main`.** Long form:
+  [`.agent/workflow.md`](.agent/workflow.md).
 - **Commits**: `Area: imperative summary` (e.g. `Preferences: open the palette
   from commandCreated, not execute`) or a plain imperative line; a prose body
   that explains *why*, cites the commits it corrects or builds on, and ends
   with `Closes #N` when applicable. A `Co-Authored-By:` trailer is customary
-  for agent-written commits. Do not commit or push unless asked; **"commit and
-  sync" means commit and `git push` to `main`.**
+  for agent-written commits.
 - **Verify API names against the official Fusion reference**, not memory; the
   commit says which properties were verified.
 - **Read the DEBUG log / crash report before theorising.** Two identical-looking
@@ -143,6 +186,10 @@ Full index: [`docs/dev/codebase-map.md`](docs/dev/codebase-map.md).
 
 | Doc | Read it for |
 |---|---|
+| [`.agent/README.md`](.agent/README.md) | How this guidance is layered, and where a new learning goes |
+| [`.agent/symptom-index.md`](.agent/symptom-index.md) | Symptom -> cause -> the rule and commit that explain it |
+| [`.agent/environment.md`](.agent/environment.md) | Verified commands, Fusion paths, API stubs, crash dumps, MCP |
+| [`.agent/workflow.md`](.agent/workflow.md) | Branch/commit/merge/issue conventions (no PRs) |
 | [`docs/dev/index.md`](docs/dev/index.md) | Setup, layout, tooling, `.debug`, doc map |
 | [`docs/dev/codebase-map.md`](docs/dev/codebase-map.md) | Where everything is; command table; ptutil index; stale items |
 | [`docs/dev/lessons.md`](docs/dev/lessons.md) | The mistakes ledger (long form of the rules above) |

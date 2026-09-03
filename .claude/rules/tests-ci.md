@@ -18,8 +18,18 @@ follow-up reformat (ef424c6); the PDF went stale twice (48722db, 28188f7).
 
 - No venv is committed. Bootstrap:
   `python3 -m venv .venv && .venv/bin/pip install "ruff==0.15.20" "pytest>=8.0"`.
+- **Local invocations differ from CI's.** `python -m pytest` and
+  `python3 -m pytest` both fail on `ADSKMVG91G2F5W` (MacBook Air M4, macOS
+  26.5.1) with `No module named pytest` — pytest is only in `.venv`, which has
+  no `ruff`, while `ruff` is only on `PATH`. Verify on the other two devices
+  rather than assuming. Run
+  `.venv/bin/python -m pytest -q` (782 passed, 2 skipped at time of writing) and bare
+  `ruff`. Full detail: `.agent/environment.md`.
 - **The ruff pin in `ci.yml` must equal the version that formatted the tree**
   (ef14b11). Bump both together and verify `ruff format --check .` first.
+  Check `ruff --version` against the pin before trusting a `--check` result; on
+  a mismatch use `uvx ruff@<pin>` (uv resolves from cache, which matters
+  because PyPI is proxy-blocked on the Autodesk corporate network).
 - Mechanical reformat commits are isolated and listed in
   `.git-blame-ignore-revs` (0de55c8, 89f298d, ef424c6).
 - `ruff` excludes `cache/`, `settings/`, `**/resources/**`, `docs/`. It only
@@ -58,8 +68,14 @@ follow-up reformat (ef424c6); the PDF went stale twice (48722db, 28188f7).
 - `test_command_abort.py::test_no_command_created_calls_do_execute` is an AST
   guard over `commands/`; if it fails you added a `doExecute` call to a
   `commandCreated` handler -- use `_command_abort` instead (a90be46).
-- Cross-platform: CI runs on Linux; `os.path.normcase` only folds case on
-  Windows, so casefold explicitly (4cb4901); OR permission bits instead of
-  assigning them (19ac0f7).
+- Cross-platform: CI runs on Linux (`ubuntu-latest`); `os.path.normcase` only
+  folds case on Windows, so casefold explicitly (4cb4901); OR permission bits
+  instead of assigning them (19ac0f7).
+- Green CI is **not** platform coverage. The runner is `ubuntu-latest`, which
+  matches none of the three dev devices — `ADSKMVG91G2F5W` (macOS 26.5.1,
+  arm64), `g16win.local` (Windows 11) and `ryzen-nobara.local` (Nobara 44,
+  Fedora-based, so `dnf` not `apt`). It also stubs `adsk`, so it never
+  exercises Fusion. Windows-only path bugs have shipped past a green suite
+  (25d5f48, 93c6b36); name the device you actually tested on.
 - Report the real result: the suite ends "N passed, N skipped" -- the skips
   are tests that need a real Fusion install and skip on CI and on Linux.

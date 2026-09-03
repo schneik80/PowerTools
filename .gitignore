@@ -143,10 +143,13 @@ cache/
 settings/preferences.json
 .cursor/rules/
 
-# Agent guidance is tracked: AGENTS.md (entry point), .claude/settings.json
-# (shared permission allowlist), .claude/rules/ and .claude/skills/. Only the
-# per-machine permission overrides stay local. None of it ships -- the release
-# build strips .claude/, CLAUDE.md and AGENTS.md (tools/release/build_release.py).
+# Agent guidance is tracked on purpose: AGENTS.md (entry point), CLAUDE.md,
+# .agent/ (tool-neutral: environment, symptom index, workflow),
+# .claude/settings.json (shared permission allowlist), .claude/rules/ and
+# .claude/skills/. Do NOT add any of those here -- the learnings are meant to
+# travel with the repo. Only the per-machine permission overrides stay local.
+# None of it ships: the release build strips .agent/, .claude/, CLAUDE.md and
+# AGENTS.md (tools/release/build_release.py EXCLUDED_DIRS / EXCLUDED_FILES).
 .claude/settings.local.json
 
 # Developer-only DEBUG marker: create an empty `.debug` file in the add-in root

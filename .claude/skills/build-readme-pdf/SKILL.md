@@ -12,8 +12,9 @@ skill and both files are staged together.
 ## Prerequisites
 
 - `pandoc` and `xelatex` on PATH (`pandoc --version`, `xelatex --version`).
-  The Linux dev box has both (Homebrew pandoc, TeX Live xelatex); the script
-  was written against MiKTeX on Windows and works with either.
+  `ryzen-nobara.local` (Linux) has both (Homebrew pandoc, TeX Live xelatex);
+  the script was written against MiKTeX on `g16win.local` (Windows) and works
+  with either. Device roster: `.agent/environment.md`.
 - No Python packages: `tools/pandoc/build_readme_pdf.py` is stdlib-only and
   shells out.
 
@@ -49,7 +50,7 @@ skill and both files are staged together.
 5. Stage `README.md` and `README.pdf` together. Mention the regeneration in the
    commit body (see `docs/dev/lessons.md#docs-release`).
 
-## Known environment trap (Linux box, TeX Live 2026)
+## Known environment trap (`ryzen-nobara.local`, TeX Live 2026)
 
 `build()` treats *any* pandoc stderr as failure on purpose (a99202d). On a
 TeX Live install whose `array.sty` is newer than its compiled `xelatex.fmt`,

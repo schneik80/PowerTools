@@ -36,7 +36,7 @@ paths:
 ## Release zip (`tools/release/build_release.py`)
 
 - File list = `git ls-files` minus `EXCLUDED_DIRS` (`tests/`, `tools/`,
-  `.github/`, `.claude/`, `docs/arch/`, `docs/dev/`), `EXCLUDED_FILES`
+  `.github/`, `.claude/`, `.agent/`, `docs/arch/`, `docs/dev/`), `EXCLUDED_FILES`
   (`.gitignore`, `.git-blame-ignore-revs`, `pyproject.toml`, root `hub.json`,
   `AGENTS.md`, `CLAUDE.md`), `EXCLUDED_GLOBS` (icon design sources).
   **Anything newly tracked at the root or in a new top-level folder ships
@@ -55,5 +55,9 @@ paths:
 
 - All of `tools/` is stdlib-only and shells out (`git`, `pandoc`, `xelatex`);
   keep it that way -- nothing third-party is installed in CI or in Fusion.
+- `tools/debug/update_debug_path.py` repoints `.env` + `.zed/settings.json` at
+  the newest *complete* Fusion build for a channel (most webdeploy hash dirs
+  are partial deltas). Both targets are git-ignored per-device state; the
+  macOS layout is verified, Windows is probed and unverified.
 - `tools/icons/iconkit.py` is loaded by path from each
   `commands/*/resources/generate_icons.py` (skill `generate-icons`).

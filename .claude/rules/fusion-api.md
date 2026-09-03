@@ -24,6 +24,19 @@ explains it. Full write-ups: `docs/dev/lessons.md`.
   `_command_abort.abort_before_dialog()`, add no inputs, return; then
   `consume_abort()` in `execute` and `clear_abort()` in `destroy`. An AST test
   fails CI otherwise (14871d7, a90be46, 5bae0e3).
+  - **Do not over-apply this.** The ban is scoped to that one callback;
+    `doExecute` is still correct from `inputChanged` and from deferred custom
+    events. Three sites are deliberate and must survive a cleanup pass:
+    `changecyclecolor._enter_custom_color_flow` (dismiss the swatch dialog
+    after the native picker), `refrences.on_input_changed`
+    (`parentCommand.doExecute(False)`), and
+    `sketchcirclecenterpoint.custom_event_commit` (deferred out of the
+    mouse-event stack, which raises `RuntimeError` if called inline). The AST
+    guard only inspects `command_created` handlers, so it permits these.
+  - **After an abort, `execute` still fires** — Fusion auto-executes an
+    input-less command. Module-level state outlives the invocation, so an
+    unguarded execute acts on the *previous* run's data; that is what
+    `consume_abort`/`clear_abort` exist for (5bae0e3).
 - **Never close a document inside a command event** -- do it from
   `commandCreated` after the command terminates, and pump events after each
   close (11cfc51).

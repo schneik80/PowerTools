@@ -45,13 +45,14 @@ ADDIN_NAME = "PowerTools"
 PDF_BUILDER = HERE.parent / "pandoc" / "build_readme_pdf.py"
 
 # Tracked directories that are dev-only. Matched as path prefixes. `.claude/`
-# is tracked on purpose (shared agent settings, rules and skills) and is as
-# developer-only as `tests/`.
+# and `.agent/` are tracked on purpose (shared agent settings, rules, skills
+# and tool-neutral guidance) and are as developer-only as `tests/`.
 EXCLUDED_DIRS = (
     "tests/",
     "tools/",
     ".github/",
     ".claude/",
+    ".agent/",
     "docs/arch/",
     "docs/dev/",
 )

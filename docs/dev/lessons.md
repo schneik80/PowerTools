@@ -469,6 +469,24 @@ Do not regress these (`a06e049`, `266e2c2`):
 - **Descriptions and doc text come from `docs/`, not invented** (`aa6802e`).
 - **A commit message explains why**, cites prior hashes it corrects or builds
   on, and closes the issue (`Closes #N`).
+- **No pull requests.** Branch, commit, merge to `main`, push, delete the
+  branch locally and on `origin`. This had to be corrected more than once, so
+  it is the standing default, not a per-task question. Long form:
+  [`.agent/workflow.md`](../../.agent/workflow.md).
+- **Scope a ban to the callback that earned it.** The `doExecute` fix
+  (`14871d7`, `a90be46`, `5bae0e3`) removed 13 calls from `command_created`,
+  and the immediate follow-up question was whether the legitimate uses had
+  been broken too. They had not — three sites outside `createCommand` are
+  deliberate — but the rule as first written did not say so, which is how a
+  correct fix becomes a future regression. When writing down a prohibition,
+  record the surviving exceptions and why they are safe.
+- **State the mechanism, not just the outcome.** "Removed the doExecute calls"
+  was not a usable answer; "the ban is `command_created` only, because it runs
+  inside `createCommand`; here are the three remaining sites" was.
+- **A tool invocation that fails on the dev machine costs every session.**
+  `AGENTS.md` told agents to run `python -m pytest -q`, which has never worked
+  here (pytest is only in `.venv`). Verify the commands you document by
+  running them.
 
 ---
 

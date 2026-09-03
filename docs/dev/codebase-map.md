@@ -220,6 +220,7 @@ Built-in tabs and panels are never deleted; only our controls are.
 | README PDF | `python tools/pandoc/build_readme_pdf.py` (pandoc + xelatex), `--check` (stamp vs. README, no toolchain), `--if-stale` (what the release build runs). On a TeX Live install with a stale `xelatex.fmt` the wrapper stops on a kernel-date warning after writing the PDF -- see the `build-readme-pdf` skill |
 | Icons | `python commands/<cmd>/resources/generate_icons.py` |
 | Debug in Fusion | `touch .debug`, Run the add-in, attach on 5678 (Zed) or use the Debug button (VS Code, 9000) -- [debugging.md](debugging.md) |
+| Repoint the debug paths after a Fusion update | `python3 tools/debug/update_debug_path.py <channel>` (`--list`, `--dry-run`). Finds the newest *complete* build per channel; most webdeploy hash dirs are partial deltas -- [debugging.md](debugging.md#pointing-the-config-at-a-build-update_debug_pathpy) |
 | Blame without reformat noise | `git config blame.ignoreRevsFile .git-blame-ignore-revs` |
 
 Fusion itself runs only on macOS and Windows; a Linux checkout can run every

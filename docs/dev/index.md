@@ -150,8 +150,23 @@ a developer machine, so:
 `docs/`.
 
 **Continuous integration.** `.github/workflows/ci.yml` runs on every push and
-pull request and enforces three hard gates: `ruff check .`, `ruff format --check .`,
-and `pytest`. Keep them green locally before pushing.
+enforces **four** hard gates: `ruff format --check .`, `ruff check .`,
+`pytest`, and `python tools/pandoc/build_readme_pdf.py --check` (the shipped
+`README.pdf` carries a hash of the `README.md` it was built from). Keep all
+four green locally before pushing.
+
+The exact invocations that work on a dev machine are not the CI ones — pytest
+lives only in `.venv` here, and `ruff` only on `PATH`. See
+[`.agent/environment.md`](../../.agent/environment.md):
+
+```bash
+ruff format --check . && ruff check .
+.venv/bin/python -m pytest -q
+python3 tools/pandoc/build_readme_pdf.py --check
+```
+
+This project does **not** use pull requests; branches merge straight to `main`.
+See [`.agent/workflow.md`](../../.agent/workflow.md).
 
 ## The `.debug` marker
 
@@ -198,6 +213,7 @@ verification checklist, and how to disable debugging for a shipping build are in
 | [`codebase-map.md`](codebase-map.md) | Developers, AI agents | "Search less" index: command table (module → docs → tests), `ptutil` function index, UI access points, on-disk state, where-is-the-example-of, stale items. |
 | [`lessons.md`](lessons.md) | Developers, AI agents | The mistakes ledger — Fusion API traps, tooling regressions and process rules distilled from the commit history, each citing its commit. |
 | [`/AGENTS.md`](../../AGENTS.md) + `.claude/` | AI agents | Entry point (loaded via `CLAUDE.md`), the non-negotiable rules, path-scoped `.claude/rules/`, and the `build-readme-pdf` / `generate-icons` skills. Tracked, but stripped from the release. |
+| [`/.agent/`](../../.agent/README.md) | AI agents, developers | Tool-neutral guidance: the [symptom index](../../.agent/symptom-index.md) (symptom → cause → commit), the [environment reference](../../.agent/environment.md) (verified commands, Fusion paths, crash dumps, MCP), and the [workflow conventions](../../.agent/workflow.md). Tracked, stripped from the release. |
 
 ---
 

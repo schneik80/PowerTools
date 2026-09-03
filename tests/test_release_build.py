@@ -40,6 +40,8 @@ _spec.loader.exec_module(build_release)
         ".claude/settings.json",
         ".claude/rules/fusion-api.md",
         ".claude/skills/build-readme-pdf/SKILL.md",
+        ".agent/README.md",
+        ".agent/symptom-index.md",
         "docs/arch/architecture.md",
         "docs/dev/index.md",
         "docs/dev/lessons.md",

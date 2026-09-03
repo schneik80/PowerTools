@@ -13,6 +13,7 @@ For general setup, the repository layout, and tooling, see the
 
 - [The two debugging models](#the-two-debugging-models)
 - [Prerequisites](#prerequisites)
+- [Pointing the config at a build (`update_debug_path.py`)](#pointing-the-config-at-a-build-update_debug_pathpy)
 - [Enabling the attach-debug server](#enabling-the-attach-debug-server)
 - [Debugging in VS Code](#debugging-in-vs-code)
 - [Debugging in Zed](#debugging-in-zed)
@@ -22,6 +23,7 @@ For general setup, the repository layout, and tooling, see the
 - [Verification checklist](#verification-checklist)
 - [Disabling debugging (ship mode)](#disabling-debugging-ship-mode)
 - [After a Fusion update](#after-a-fusion-update)
+- [When Fusion crashes: reading a CER report](#when-fusion-crashes-reading-a-cer-report)
 - [Reference](#reference)
 
 ---
@@ -63,25 +65,121 @@ The script locates the current Fusion Python, bootstraps `pip` via `ensurepip`
 into Fusion's `--user` site (which survives Fusion upgrades), and rewrites the
 editor config's webdeploy paths.
 
-> **Pre-production caveat (this machine).** `setup-fusion-debug.sh` scans
-> `~/Library/Application Support/Autodesk/webdeploy/**production**`. This project
-> is configured against a **pre-production** Fusion build (see the paths in
-> `.zed/settings.json` and `.env`). If you run the stock script it will repoint
-> the config to a *production* install. Either:
-> - hand-edit the generated `.zed/settings.json` `pythonPath` and `.env`
->   `PYTHONPATH` back to the `webdeploy/pre-production/<hash>/…` paths, or
-> - point the script at production only if that is the build you actually run.
+> **Channel caveat — the checkout on `ADSKMVG91G2F5W` (MacBook Air M4,
+> macOS 26.5.1).** Both Fusion devices (`ADSKMVG91G2F5W` and `g16win.local`)
+> have **production and pre-production installed side by side** — that machine
+> carries five webdeploy trees (`production`, `pre-production`, `develop`,
+> `feature--1fx-globalnav`, `meta`). So the debugger must be pointed at the
+> build you are actually running; attaching to the wrong tree looks like
+> breakpoints that never trip.
 >
-> On the current machine `debugpy` is already installed
+> This checkout is configured against a **pre-production** build (see the paths
+> in `.zed/settings.json` and `.env`), while `setup-fusion-debug.sh` scans
+> `webdeploy/**production**`. Run the stock script and it silently repoints the
+> config at production. The fix is
+> [`update_debug_path.py`](#pointing-the-config-at-a-build-update_debug_pathpy),
+> which takes the channel as an argument — run it after the setup script to put
+> the paths back, or instead of it whenever `debugpy` is already installed.
+>
+> This is a property of the **checkout**, not the device — the same choice
+> exists on `g16win.local`, under `%LOCALAPPDATA%\Autodesk\webdeploy\`.
+>
+> On `ADSKMVG91G2F5W` `debugpy` is already installed
 > (`~/Library/Python/3.14/lib/python/site-packages/debugpy`), so no install is
 > needed — only re-run the step after a Fusion update if imports or the listener
-> stop working.
+> stop working. That location is the **user site for Python 3.14**, and every
+> channel checked bundles Python 3.14, so the one install serves production and
+> pre-production alike; it needs redoing only if a Fusion update bumps the
+> bundled Python *minor* version. On `g16win.local`, verify before assuming.
+>
+> **The `PYTHONPATH` shape is easy to get wrong.** The API packages live at
+> `<channel>/<hash>/Autodesk Fusion.app/Contents/Api/Python/packages` — note
+> the `Autodesk Fusion.app/Contents/` segment. Check the path in `.env` still
+> resolves after any Fusion update; a rotated hash leaves it silently pointing
+> at nothing:
+>
+> ```bash
+> ls -d "$(grep -o '/Users/.*packages' .env)" || echo "STALE — re-run setup"
+> ```
+>
+> A given hash is **not** unique to a channel — `8d5cf31c…` currently appears
+> under both `production/` and `pre-production/` — so the hash alone does not
+> tell you which build you are attached to.
 
 Verify at any time:
 
 ```bash
 "<Fusion Python>" -c "import debugpy; print(debugpy.__version__)"
 ```
+
+## Pointing the config at a build (`update_debug_path.py`)
+
+Two config values are absolute paths into the webdeploy tree, and both rotate
+out from under you on every Fusion update:
+
+| File | Key | Points at |
+|---|---|---|
+| `.env` | `PYTHONPATH` | `…/<build>/Autodesk Fusion.app/Contents/Api/Python/packages` |
+| `.zed/settings.json` | `lsp.pyright.settings.python.pythonPath` | `…/<build>/Autodesk Fusion.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python` |
+
+Rather than hand-editing them, select a channel and let the script find the
+newest build that is actually complete:
+
+```bash
+python3 tools/debug/update_debug_path.py --list          # what is available
+python3 tools/debug/update_debug_path.py pre-production  # repoint both configs
+python3 tools/debug/update_debug_path.py                 # prompt for a channel
+python3 tools/debug/update_debug_path.py develop --dry-run
+```
+
+```
+pre-production
+  -> 5c7e4bae1a38  Fusion 2705.1.4     deployed 2026-08-21 19:26
+
+production
+  -> 5b508d94493e  Fusion 2704.1.53    deployed 2026-08-05 09:50
+```
+
+It writes only those two keys — `extraPaths`, the Debugpy adapter path and
+anything else in `.zed/settings.json` are preserved — and skips
+`.zed/settings.json` entirely if the file is absent. Both files are
+git-ignored, so this is per-device state and never lands in a commit. Restart
+the add-in (**Stop**, then **Run**) and re-attach afterwards.
+
+### Why "latest" is not just the newest folder
+
+**Most hash directories under a channel are partial.** webdeploy keeps
+incremental delta payloads beside the real installs, and they are hard to tell
+apart from outside: a partial directory still has an `Autodesk Fusion.app` with
+a `Contents/`. Only a few carry the full `Api/Python` subtree.
+
+On 2026-09-03 `pre-production` held **8** hash directories and exactly **one**
+was complete — and both `.env` and `.zed/settings.json` were pointing at a
+partial one (`8d5cf31c…`), so the debug `PYTHONPATH` resolved to nothing. That
+fails silently: no import error, just unresolved `adsk.*` stubs and breakpoints
+that never trip.
+
+So the script only considers a build a candidate when **both** artifacts exist
+— `Api/Python/packages/adsk` *and* the bundled interpreter — which are exactly
+the two things the configs need. Among those it takes the most recently
+deployed, by app-bundle mtime. It prints the Fusion version beside each
+candidate so you can sanity-check the ordering; the version is displayed only,
+never used to sort, because it is not readable on every layout.
+
+Two related traps:
+
+- **A hash is not unique to a channel.** `8d5cf31c…` currently appears under
+  both `production/` and `pre-production/`, so you cannot tell which build you
+  are attached to from the hash alone. Pick the channel explicitly.
+- **`develop` and `feature--…` channels are included** if they have a complete
+  build; `meta` is skipped, as it is webdeploy bookkeeping rather than a Fusion
+  install.
+
+The script is stdlib-only and probes for the webdeploy root instead of
+hardcoding it. The **macOS layout is verified**; the Windows candidates are
+unverified, and if none match it exits with what it tried rather than writing a
+guess into your config. If you hit that on `g16win.local`, print the real tree
+and add its relative paths to `API_RELS` / `PYTHON_RELS`.
 
 ## Enabling the attach-debug server
 
@@ -272,16 +370,68 @@ lsof -nP -iTCP:5678 -sTCP:LISTEN   # should return nothing
 A Fusion auto-update rotates the `webdeploy` hash, which breaks the absolute
 paths in `.zed/settings.json` / `.env` and can wipe `debugpy`. Symptoms: pyright
 stops resolving `adsk.*`, `lsof` no longer shows port 5678, or
-`ModuleNotFoundError: debugpy` appears in the Text Commands log. Re-run the setup
-step (minding the [pre-production caveat](#prerequisites)):
+`ModuleNotFoundError: debugpy` appears in the Text Commands log.
+
+**For the rotated paths**, repoint both configs at the newest complete build of
+whichever channel you are running — this is the normal fix and it respects the
+channel you chose:
+
+```bash
+python3 tools/debug/update_debug_path.py pre-production
+```
+
+See [Pointing the config at a build](#pointing-the-config-at-a-build-update_debug_pathpy).
+
+**Only if `debugpy` itself is gone** do you need the upstream setup script,
+which also rewrites the paths — minding the
+[channel caveat](#prerequisites), since it scans `production`:
 
 ```bash
 ~/Source/Zed_Debug/scripts/setup-fusion-debug.sh /Users/schneik/Source/PowerTools
 ```
 
+## When Fusion crashes: reading a CER report
+
+The debugger is no help for the failure mode this add-in hits most: a **native
+fault**. When Fusion segfaults (`0xC0000005` on Windows, `SIGSEGV` on macOS)
+there is **no Python exception and no traceback**, so nothing appears in the
+DEBUG log and the breakpoint never trips. Absence of a traceback is not
+evidence that a handler ran.
+
+Fusion writes a Customer Error Report instead. On macOS:
+
+```bash
+ls -t ~/Library/Application\ Support/Autodesk/CER/*/*/ | head
+# newest folder holds crashLog.txt.dmp.zip
+unzip -o <path>/crashLog.txt.dmp.zip -d /tmp/cer && sed -n '1,120p' /tmp/cer/crashLog.txt
+```
+
+On Windows the reports live under
+`%LOCALAPPDATA%\Autodesk\CER\`. Read the top of the stack; two frame patterns
+in this codebase name their cause directly:
+
+| Stack contains | Cause |
+|---|---|
+| `Xl::APICommandDefinitionImpl::doOnCreateCommand` beneath `createCommand` ← `Nu::CommandMgr::executeCommand` | Something re-entered the command manager from `command_created` — almost always an `args.command.doExecute()` call. Use `commands/_command_abort.py` instead (`14871d7`) |
+| A fault after a long save/close run | A `Document`/`Design` handle held across a pumped wait went stale. Re-acquire after every wait; check `isValid` before closing (`a1d22e1`) |
+
+Two habits that have saved real time here:
+
+- **Read the log and the crash stack before theorising.** Two
+  identical-looking "Preferences needs a document" bugs had different root
+  causes, and each was settled by the log line or CER frame that pinned it.
+- **When the user hands you a crash zip path, open it.** It is faster and more
+  reliable than reasoning about which of several recent changes was
+  responsible.
+
+The full symptom-to-cause table, including the non-crashing failure modes, is
+[`.agent/symptom-index.md`](../../.agent/symptom-index.md).
+
 ## Reference
 
 - [Developer Guide](index.md) — setup, layout, tooling, the `.debug` marker.
+- [`.agent/symptom-index.md`](../../.agent/symptom-index.md) — symptom → cause → commit.
+- [`.agent/environment.md`](../../.agent/environment.md) — Fusion paths, API stubs, MCP servers.
 - [Architecture](../arch/architecture.md) — add-in lifecycle and the command model.
 - [`schneik80/Zed_Debug`](https://github.com/schneik80/Zed_Debug) — the upstream
   recipe, helper scripts, and full write-up of the four traps.
