@@ -35,10 +35,16 @@
              option. Mirrors the web view's header exactly. -->
         <div class="controls">
             <span class="caption" id="version-count"></span>
-            <label class="toggle" id="thread-toggle">
-                <input type="checkbox" id="thread-check" />
-                <span>Show thread across days</span>
-            </label>
+            <span class="toggles">
+                <label class="toggle" id="change-toggle" hidden>
+                    <input type="checkbox" id="change-check" />
+                    <span>Show other changes</span>
+                </label>
+                <label class="toggle" id="thread-toggle">
+                    <input type="checkbox" id="thread-check" />
+                    <span>Show thread across days</span>
+                </label>
+            </span>
         </div>
 
         <div class="banner" id="banner"></div>

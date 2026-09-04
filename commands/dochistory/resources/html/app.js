@@ -59,6 +59,7 @@
     var HALO_R = NODE_R + RING_W + 1.5;
     var SHARE_R = HALO_R + 3;
     var HIT_R = NODE_R + 5;
+    var CHANGE_R = NODE_R - 2.5; // a non-save event, smaller than a save
     var DRIFT_VISIBLE = 3; // px a dot must be nudged before we mark its true time
 
     // Day view: the closest two dots may sit on one track before the declutter
@@ -73,6 +74,7 @@
 
     var S = window.__ptInit || { theme: "dark", docName: "", status: "loading" };
     var thread = false;
+    var showChanges = false;
     var showAll = false;
     var viewW = 720;         // measured; seeded so the first paint is not a flash
     var thumbs = {};         // versionId -> data: URL, or "" for "none available"
@@ -443,16 +445,23 @@
         cardTarget = target;
         clear(cardEl);
 
-        var thumb = v.versionId ? thumbs[v.versionId] : "";
+        var isChange = v.kind === "change";
+        var thumb = !isChange && v.versionId ? thumbs[v.versionId] : "";
         if (thumb) {
             cardEl.appendChild(el("img", { src: thumb, alt: "" }));
-        } else if (v.versionId && thumbs[v.versionId] === "") {
+        } else if (!isChange && v.versionId && thumbs[v.versionId] === "") {
             cardEl.appendChild(el("div", { class: "muted", text: "No preview for this version" }));
         }
 
-        var marks = "v" + v.number;
-        if (v.isMilestone) marks += " · Milestone";
-        if (v.revision) marks += " · Release " + v.revision;
+        var marks;
+        if (v.kind === "change") {
+            // No version number, because no version was made.
+            marks = v.changeLabel || "Change";
+        } else {
+            marks = "v" + v.number;
+            if (v.isMilestone) marks += " · Milestone";
+            if (v.revision) marks += " · Release " + v.revision;
+        }
         cardEl.appendChild(el("div", { class: "title", text: marks }));
         if (v.publicShare) {
             cardEl.appendChild(el("div", { class: "share", text: "Public share" }));
@@ -462,7 +471,7 @@
         // distinguishable from "the description did not render".
         cardEl.appendChild(el("div", {
             class: v.comment ? "comment" : "comment muted",
-            text: v.comment || "No description"
+            text: v.comment || (isChange ? "No detail recorded" : "No description")
         }));
         cardEl.appendChild(el("div", { class: "when", text: fmtStamp(v.createdOnMs) }));
 
@@ -473,7 +482,7 @@
         ]));
 
         placeCard(target);
-        requestThumb(v);
+        if (!isChange) requestThumb(v);
     }
 
     function requestThumb(v) {
@@ -519,6 +528,26 @@
     // fill="transparent" rather than "none" because "none" is not hit-testable.
     // Milestones and releases decorate the dot in place; vertical space belongs
     // to days and people, so they get no lane of their own.
+    // An edit that produced no version: a property changed, a milestone marked,
+    // a part number set. Drawn as a small open ring in the author's own colour
+    // so it reads as a lighter event on the same track - a save is a filled
+    // dot, and a property tweak must never be mistaken for one.
+    function changeNode(v, cx, cy, railColor) {
+        var g = svgEl("g", {}, [
+            svgEl("circle", { class: "hit", cx: cx, cy: cy, r: HIT_R, fill: "transparent" }),
+            svgEl("circle", {
+                cx: cx, cy: cy, r: CHANGE_R, fill: C.paper,
+                stroke: railColor, "stroke-width": RING_W
+            })
+        ]);
+        g.addEventListener("mouseenter", function () {
+            if (hoverTimer) clearTimeout(hoverTimer);
+            hoverTimer = setTimeout(function () { showVersionCard(g, v); }, HOVER_DELAY_MS);
+        });
+        g.addEventListener("mouseleave", hideCard);
+        return g;
+    }
+
     function dotNode(v, cx, cy) {
         // A milestone keeps a save's grey dot and gains the accent ring; a
         // release fills that same ring in. So the ring means "marked" and the
@@ -562,6 +591,19 @@
         return g;
     }
 
+    // "5 saves" is a lie once the row also holds property edits, so the header
+    // counts what is actually on it.
+    function rowTally(row) {
+        var changes = 0;
+        row.tracks.forEach(function (track) {
+            track.dots.forEach(function (d) { if (d.v.kind === "change") changes++; });
+        });
+        var saves = row.count - changes;
+        if (!changes) return plural(saves, "save", "saves");
+        if (!saves) return plural(changes, "change", "changes");
+        return plural(saves, "save", "saves") + " · " + plural(changes, "change", "changes");
+    }
+
     function rowNode(row, band, plotW, base) {
         var withAxis = !thread;
         var ticks = withAxis ? hourTicks(plotW) : [];
@@ -572,7 +614,7 @@
             style: { width: viewW + "px", height: HEADER_H + "px" }
         }, [
             el("span", { class: "day", text: dayLabel(row.day) }),
-            el("span", { class: "saves", text: plural(row.count, "save", "saves") })
+            el("span", { class: "saves", text: rowTally(row) })
         ]);
 
         var gutter = el("div", {
@@ -626,7 +668,13 @@
                 }));
             });
 
-            track.dots.forEach(function (d, i) { group.push(dotNode(d.v, xs[i], y)); });
+            track.dots.forEach(function (d, i) {
+                group.push(
+                    d.v.kind === "change"
+                        ? changeNode(d.v, xs[i], y, track.overflow ? C.secondary : userColor(track.key))
+                        : dotNode(d.v, xs[i], y)
+                );
+            });
             kids.push(svgEl("g", {}, group));
         });
 
@@ -643,7 +691,7 @@
 
         var plot = svgEl("svg", {
             class: "plot", width: plotW, height: h, role: "img",
-            "aria-label": dayLabel(row.day) + " - " + plural(row.count, "save", "saves")
+            "aria-label": dayLabel(row.day) + " - " + rowTally(row)
         }, kids);
 
         return el("div", { class: "row" + (band ? " band" : "") }, [
@@ -747,6 +795,20 @@
         ]);
     }
 
+    function changeLegendItem() {
+        var size = (NODE_R + RING_W + 3) * 2;
+        var c = size / 2;
+        return el("span", { class: "legend-item" }, [
+            svgEl("svg", { width: size, height: size, "aria-hidden": "true" }, [
+                svgEl("circle", {
+                    cx: c, cy: c, r: CHANGE_R, fill: C.paper,
+                    stroke: C.secondary, "stroke-width": RING_W
+                })
+            ]),
+            el("span", { text: "Other changes" })
+        ]);
+    }
+
     // ── render ───────────────────────────────────────────────────────────────
 
     function render() {
@@ -780,7 +842,16 @@
         banner.className = "banner";
         toggle.style.visibility = "visible";
 
-        var allRows = S.rows || [];
+        var changeCount = S.changeCount || 0;
+        var changeToggle = document.getElementById("change-toggle");
+        // Hidden rather than disabled when there is nothing to show: the
+        // DataFile fallback cannot see these events at all, and a dead
+        // checkbox would imply the history has none.
+        changeToggle.hidden = changeCount === 0;
+        if (changeCount === 0) showChanges = false;
+        document.getElementById("change-check").checked = showChanges;
+
+        var allRows = (showChanges ? S.rowsWithChanges : S.rows) || S.rows || [];
         var capped = !showAll && allRows.length > DAY_ROWS_CAP;
         var rows = capped ? allRows.slice(0, DAY_ROWS_CAP) : allRows;
         var shown = rows.reduce(function (n, r) { return n + r.count; }, 0);
@@ -788,7 +859,9 @@
         var plotW = thread ? threadWidth(shown) : plotWidth(viewW);
         var stackW = thread ? GUTTER_W + threadWidth(shown) : viewW;
 
-        countEl.textContent = plural(S.versionCount || 0, "version", "versions");
+        countEl.textContent =
+            plural(S.versionCount || 0, "version", "versions")
+            + (showChanges ? " · " + plural(changeCount, "other change", "other changes") : "");
         scroller.classList.toggle("wide", thread);
         stackEl.style.width = stackW + "px";
         stackEl.style.minWidth = "100%";
@@ -827,6 +900,9 @@
         if (versions.some(function (v) { return v.publicShare; })) {
             legend.appendChild(legendItem(C.secondary, "Public shares", null, C.share));
         }
+        if (showChanges && versions.some(function (v) { return v.kind === "change"; })) {
+            legend.appendChild(changeLegendItem());
+        }
     }
 
     // ── wiring ───────────────────────────────────────────────────────────────
@@ -836,6 +912,20 @@
         thread = threadCheck.checked;
         render();
     });
+    var changeCheck = document.getElementById("change-check");
+    changeCheck.addEventListener("change", function () {
+        showChanges = changeCheck.checked;
+        render();
+    });
+    var changeToggleEl = document.getElementById("change-toggle");
+    changeToggleEl.addEventListener("mouseenter", function () {
+        showTip(
+            changeToggleEl,
+            "Include edits that made no new version - property changes, milestones, part numbers - and the people who made them"
+        );
+    });
+    changeToggleEl.addEventListener("mouseleave", hideCard);
+
     var toggleEl = document.getElementById("thread-toggle");
     toggleEl.addEventListener("mouseenter", function () {
         showTip(toggleEl, "Line up every save on one continuous axis and thread them in order");

@@ -64,11 +64,11 @@ MAX_PAGES = 60
 # The two lists are paginated independently, so they take separate cursors even
 # though they travel in one document.
 #
-# The history is fetched UNFILTERED and sorted out here rather than with
-# ``input: { filterTypes: MODEL_WRITTEN }``. The unfiltered form is the one that
-# was actually exercised against the live endpoint; the filter argument was
-# never tested, and a query that fails outright would cost the whole history to
-# save one page of rows the client can drop for free.
+# The history is fetched UNFILTERED rather than with
+# ``input: { filterTypes: MODEL_WRITTEN }``: the unfiltered form is the one that
+# was actually exercised against the live endpoint, and the rows a filter would
+# have excluded are wanted anyway - they are the property edits and milestones
+# the palette shows behind its own toggle.
 _QUERY = """
 query($m: ID!, $vLimit: Int!, $hLimit: Int!, $vCursor: String, $hCursor: String) {
   model(modelId: $m) {
@@ -88,6 +88,7 @@ query($m: ID!, $vLimit: Int!, $hLimit: Int!, $vCursor: String, $hCursor: String)
         __typename
         timestamp
         description
+        author { id userName firstName lastName }
       }
     }
   }
@@ -106,15 +107,22 @@ class HistoryUnavailable(Exception):
     """MFGDM could not answer, so the caller should fall back."""
 
 
-def fetch_records(model_id: str) -> list[dict]:
-    """Return version records for *model_id*, newest first.
+def fetch_records(model_id: str) -> tuple[list[dict], list[dict]]:
+    """Return *model_id*'s history as ``(versions, other changes)``.
+
+    Both come out of the one request. The second list is everything the history
+    holds that did not produce a version - property edits, milestones, part
+    number changes - which the palette shows behind its own toggle. They are
+    worth keeping: on the test design two of the nine people who touched it
+    never saved a version, so saves alone credit it to eight.
 
     Args:
         model_id: The design's timeless ``mfgdmModelId``. Must have been read
             outside ``commandCreated`` - see the module docstring.
 
     Returns:
-        Records in the shape :func:`history_model.bucket_by_day` consumes.
+        Two lists of records in the shape :func:`history_model.bucket_by_day`
+        consumes, each newest first.
 
     Raises:
         HistoryUnavailable: No model id, or the endpoint failed or returned
@@ -126,6 +134,7 @@ def fetch_records(model_id: str) -> list[dict]:
 
     versions: list[dict] = []
     writes: list[dict] = []
+    others: list[dict] = []
     v_cursor = h_cursor = None
     # The two lists page independently and one usually finishes first. Once a
     # list has handed back a null cursor its rows are ignored on later turns:
@@ -159,11 +168,11 @@ def fetch_records(model_id: str) -> list[dict]:
             v_cursor = (v_page.get("pagination") or {}).get("cursor")
             v_done = not v_cursor
         if not h_done:
-            writes.extend(
-                row
-                for row in (h_page.get("results") or [])
-                if row.get("__typename") == _SAVE_CHANGE
-            )
+            for row in h_page.get("results") or []:
+                if row.get("__typename") == _SAVE_CHANGE:
+                    writes.append(row)
+                else:
+                    others.append(row)
             h_cursor = (h_page.get("pagination") or {}).get("cursor")
             h_done = not h_cursor
         if v_done and h_done:
@@ -177,4 +186,4 @@ def fetch_records(model_id: str) -> list[dict]:
     if not versions:
         raise HistoryUnavailable("MFGDM returned no versions for this design")
 
-    return model.merge_cloud_history(versions, writes)
+    return model.merge_cloud_history(versions, writes), model.change_records(others)

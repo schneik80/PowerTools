@@ -37,6 +37,7 @@ on their own clock, not the UTC day it lands in east of Greenwich.
 from __future__ import annotations
 
 import calendar
+import re
 from datetime import date, datetime, timezone
 
 # Above this many authors in one day, the tail merges into a single overflow
@@ -121,6 +122,89 @@ def merge_cloud_history(versions: list[dict], writes: list[dict]) -> list[dict]:
                 "revision": "",
                 "publicShare": False,
                 "versionId": str(int(number)),
+            }
+        )
+    return records
+
+
+# MFGDM's history carries more than saves. These are the other change types it
+# has been observed to return, mapped to what a reader should see. The raw
+# names are GraphQL ``__typename`` values, and an unmapped one falls back to a
+# de-camel-cased form rather than being dropped: the schema has ten change
+# types and only the ones a test design happened to produce are pinned here.
+CHANGE_LABELS = {
+    "PropertiesUpdatedHistoryChange": "Property change",
+    "ComponentPrimaryHistoryChange": "Component change",
+    "ComponentPartNumberHistoryChange": "Part number change",
+    "ModelComponentHistoryChange": "Component update",
+    "VersionCreatedHistoryChange": "Milestone",
+    "RevisionCreatedHistoryChange": "Release",
+    "MarkerHistoryChange": "Marker",
+    "DrawingItemWrittenHistoryChange": "Drawing saved",
+    "BasicItemWrittenHistoryChange": "File saved",
+}
+
+
+def change_label(typename: str) -> str:
+    """Render a ``HistoryChange`` type name as something a reader can use.
+
+    Args:
+        typename: The GraphQL ``__typename``.
+
+    Returns:
+        A mapped label, or the type name split on its capitals with the
+        "HistoryChange" suffix dropped. An unmapped type still says something
+        truthful rather than vanishing from the history.
+    """
+    known = CHANGE_LABELS.get(typename)
+    if known:
+        return known
+    stem = (
+        typename[: -len("HistoryChange")]
+        if typename.endswith("HistoryChange")
+        else typename
+    )
+    words = re.findall(r"[A-Z][a-z0-9]*|[A-Z]+(?![a-z])", stem)
+    return " ".join(words) if words else (stem or "Change")
+
+
+def change_records(rows: list[dict]) -> list[dict]:
+    """Turn non-save history entries into records the day rows can carry.
+
+    These are edits that did not produce a version - a property changed, a
+    milestone marked, a part number set. They have an author and an instant but
+    no version number, no description of their own beyond what the change was,
+    and nothing to show a thumbnail of.
+
+    They matter because a design's history is not only its saves: on the test
+    document two of the nine people who touched it never saved a version, so a
+    saves-only view credits the design to eight.
+
+    Args:
+        rows: ``HistoryChange`` rows other than the save event, each with
+            ``__typename``, ``timestamp``, ``description`` and ``author``.
+
+    Returns:
+        Records in the shape :func:`bucket_by_day` consumes, marked
+        ``kind == "change"`` so the page can draw them as the lighter thing
+        they are.
+    """
+    records = []
+    for row in rows:
+        user = row.get("author") or {}
+        records.append(
+            {
+                "kind": "change",
+                "number": None,
+                "changeLabel": change_label(row.get("__typename") or ""),
+                "createdOnMs": iso_to_epoch_ms(row.get("timestamp")),
+                "createdBy": person_name(user),
+                "createdById": user.get("id") or "",
+                "comment": row.get("description") or "",
+                "isMilestone": False,
+                "revision": "",
+                "publicShare": False,
+                "versionId": "",
             }
         )
     return records

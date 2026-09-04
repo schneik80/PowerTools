@@ -614,7 +614,12 @@ def _gather_history() -> dict:
         "status": "error",
         "message": "",
         "versionCount": 0,
+        # Non-save history entries, and the day rows that include them. The
+        # DataFile fallback cannot see them at all, so it leaves both at their
+        # defaults and the page hides the toggle.
+        "changeCount": 0,
         "rows": [],
+        "rowsWithChanges": [],
     }
 
     try:
@@ -650,7 +655,7 @@ def _gather_history() -> dict:
     # a hub, an offline session or an MFGDM outage should still get a history,
     # just one that cannot say who saved what.
     try:
-        records = mfgdm_history.fetch_records(_model_id(doc))
+        records, changes = mfgdm_history.fetch_records(_model_id(doc))
     except Exception as exc:
         ptutil.log(f"{CMD_NAME}: MFGDM history unavailable ({exc}); using DataFile.")
         records = None
@@ -660,10 +665,18 @@ def _gather_history() -> dict:
             _decorate_cloud_records(records, data_file)
             state["status"] = "ok"
             state["versionCount"] = len(records)
+            state["changeCount"] = len(changes)
             state["rows"] = model.bucket_by_day(records)
+            # Two stacks, because bucketing is done here and the toggle is on
+            # the page: which day a change lands on, and whose track it joins,
+            # is the same tested arithmetic as a save's. Shipping both costs a
+            # little JSON and keeps the page free of it.
+            state["rowsWithChanges"] = (
+                model.bucket_by_day(records + changes) if changes else state["rows"]
+            )
             ptutil.log(
-                f"{CMD_NAME}: read {len(records)} versions from MFGDM in "
-                f"{time.monotonic() - started:.2f}s "
+                f"{CMD_NAME}: read {len(records)} versions and {len(changes)} "
+                f"other changes from MFGDM in {time.monotonic() - started:.2f}s "
                 f"({len(state['rows'])} day rows)."
             )
             return state
@@ -721,6 +734,7 @@ def _gather_history() -> dict:
     state["status"] = "ok"
     state["versionCount"] = len(records)
     state["rows"] = model.bucket_by_day(records)
+    state["rowsWithChanges"] = state["rows"]
     ptutil.log(
         f"{CMD_NAME}: read {len(records)} versions from DataFile in "
         f"{time.monotonic() - started:.2f}s ({len(state['rows'])} day rows)."

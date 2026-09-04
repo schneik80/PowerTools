@@ -67,6 +67,10 @@ The history comes from **MFGDM over GraphQL**, with the desktop Data API as a fa
 
 **Timing.** `rootDataComponent.mfgdmModelId` must not be read from `commandCreated` — doing so and then showing a modal crashed Fusion (234b043). The read runs from a timer-fired custom event instead, which also means the palette appears immediately and fills in, rather than freezing Fusion before it is on screen.
 
+**Other changes.** The history query is unfiltered, so it also returns the entries that produced no version: on the test design, 11 `PropertiesUpdatedHistoryChange` ("Estimated Cost: 100"), 3 `ComponentPrimaryHistoryChange` and the milestone, against 27 saves. `history_model.change_records` turns them into records marked `kind == "change"`, and they are worth keeping because **two of that design's nine contributors never saved a version at all** — a saves-only history credits it to eight.
+
+The gather buckets twice and ships both stacks (`rows`, `rowsWithChanges`), because the bucketing is tested Python and the toggle is on the page; sending both costs a little JSON and keeps the arithmetic out of the browser. The DataFile fallback cannot see these entries, so it leaves `changeCount` at zero and the page hides the checkbox rather than offering a dead one.
+
 **Still on the desktop API**, because each is one read for the whole file rather than one per version: milestones (`DataFile.milestones`), the public share (`DataFile.sharedLink`), and the version `DataFile` behind a hover thumbnail — resolved lazily by version number, index guess verified rather than trusted.
 
 Two things are read once for the whole file rather than per version, because both are cloud calls:

@@ -412,3 +412,92 @@ def test_merged_records_bucket_into_day_rows_by_author():
     # cloud read.
     assert len(rows[0]["tracks"]) == 2
     assert {t["key"] for t in rows[0]["tracks"]} == {"u-ada", "u-grace"}
+
+
+# ---------------------------------------------------------------------------
+# History entries that are not saves
+# ---------------------------------------------------------------------------
+
+
+def ch(typename: str, iso: str, description: str = "", first: str = "") -> dict:
+    """Build a non-save HistoryChange row the way MFGDM returns one."""
+    return {
+        "__typename": typename,
+        "timestamp": iso,
+        "description": description,
+        "author": {"id": "u-" + (first or "x"), "firstName": first, "lastName": ""},
+    }
+
+
+@pytest.mark.parametrize(
+    ("typename", "expected"),
+    [
+        ("PropertiesUpdatedHistoryChange", "Property change"),
+        ("VersionCreatedHistoryChange", "Milestone"),
+        ("RevisionCreatedHistoryChange", "Release"),
+        # Unmapped types still say something truthful. The schema has ten
+        # change types and only the ones a real design produced are pinned.
+        ("BomEditHistoryChange", "Bom Edit"),
+        ("SomethingBrandNewHistoryChange", "Something Brand New"),
+        ("Unrecognised", "Unrecognised"),
+    ],
+)
+def test_change_label_names_every_type_including_ones_we_have_not_seen(
+    typename, expected
+):
+    assert model.change_label(typename) == expected
+
+
+def test_change_records_carry_the_author_and_the_detail():
+    rows = [
+        ch(
+            "PropertiesUpdatedHistoryChange",
+            "2026-08-12T09:00:00Z",
+            "Cost: 100",
+            "Cyan",
+        )
+    ]
+    (record,) = model.change_records(rows)
+    assert record["kind"] == "change"
+    assert record["number"] is None
+    assert record["changeLabel"] == "Property change"
+    assert record["comment"] == "Cost: 100"
+    assert record["createdBy"] == "Cyan"
+    assert record["createdById"] == "u-Cyan"
+    # Nothing to preview and no version to mark.
+    assert record["versionId"] == ""
+    assert record["isMilestone"] is False
+
+
+def test_changes_surface_people_who_never_saved_a_version():
+    """The reason this exists: a saves-only history under-credits a design."""
+    versions = [dv(1, "2026-08-11T08:00:00Z", "Ada", "Lovelace", "u-ada")]
+    changes = model.change_records(
+        [
+            ch(
+                "PropertiesUpdatedHistoryChange",
+                "2026-08-11T10:00:00Z",
+                "Cost: 5",
+                "Cyan",
+            )
+        ]
+    )
+    saves_only = model.bucket_by_day(model.merge_cloud_history(versions, []))
+    with_changes = model.bucket_by_day(
+        model.merge_cloud_history(versions, []) + changes
+    )
+    assert len(saves_only[0]["tracks"]) == 1
+    assert len(with_changes[0]["tracks"]) == 2
+    assert {t["name"] for t in with_changes[0]["tracks"]} == {"Ada Lovelace", "Cyan"}
+
+
+def test_changes_bucket_onto_their_own_day_and_stay_in_order():
+    changes = model.change_records(
+        [
+            ch("PropertiesUpdatedHistoryChange", "2026-08-12T09:00:00Z", "b", "Cyan"),
+            ch("PropertiesUpdatedHistoryChange", "2026-08-11T09:00:00Z", "a", "Cyan"),
+        ]
+    )
+    rows = model.bucket_by_day(changes)
+    assert [row["day"] for row in rows] == ["2026-08-12", "2026-08-11"]
+    assert [d["v"]["comment"] for d in dots_of(rows)] == ["b", "a"]

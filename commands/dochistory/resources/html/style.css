@@ -93,6 +93,17 @@ header h1 {
     color: var(--text-secondary);
 }
 
+.toggles {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+}
+
+.toggle[hidden] {
+    display: none;
+}
+
 .toggle {
     display: inline-flex;
     align-items: center;

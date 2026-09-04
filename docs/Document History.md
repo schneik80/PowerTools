@@ -44,6 +44,7 @@ Saves closer together than the dots are wide are nudged apart so a burst does no
 | Marker | Meaning |
 |---|---|
 | Plain grey dot | An ordinary save. |
+| Small open ring | An edit that made no new version &mdash; only shown with **Show other changes** on. |
 | Grey dot with a blue ring | A milestone. |
 | Blue dot with a blue ring | A release &mdash; a milestone you gave a revision name, such as "A" or "Rev B". Milestones Fusion names for itself ("Milestone V7", "Item Update") are shown as milestones, not releases. |
 | Outer ring | The version a public share link points at. |
@@ -56,6 +57,8 @@ Between two day rows, a rule and a phrase say how long the design was untouched.
 
 ### The hover card
 
+Rest the pointer on an open ring to see what the change was &mdash; "Property change", the property and its new value, when, and who. There is no thumbnail or version number, because no version was made.
+
 Rest the pointer on a dot to see that version's thumbnail, version number, milestone and release markers, the description typed at save time, the exact local timestamp, and who saved it.
 
 The thumbnail is fetched from the cloud only for the version you actually rest on, and cached for the rest of the session, so scanning across a busy day costs nothing.
@@ -64,6 +67,7 @@ The thumbnail is fetched from the cloud only for the version you actually rest o
 
 | Option | What it does |
 |---|---|
+| **Show other changes** | Adds the edits that did not produce a version &mdash; property changes, milestones, part numbers &mdash; each as a small open ring on its author's track. This can add people: someone who edited a property but never saved does not appear at all with this off. Hidden entirely for a document whose history could not be read from the cloud, since those edits are not visible there. |
 | **Show thread across days** | Switches the horizontal axis from the clock to the version's position in the history: every save is one column apart, and a line threads them in order across the day rows. Empty time then costs no width, so a long history scrolls sideways inside the box, with a dashed seam wherever the axis crosses from one day into the next. |
 | **Show all N days** | Appears when a history runs past 60 days. The view renders the most recent 60 by default; this draws the rest. |
 
