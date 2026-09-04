@@ -59,6 +59,17 @@ class PropertyNotFoundError(MfgdmPropsError):
 # ---------------------------------------------------------------------------
 
 
+def gql(query: str, variables: Optional[dict] = None) -> dict:
+    """Public alias for :func:`_gql`.
+
+    The transport - Fusion's own ``HttpRequest`` against ``mfgdm://v3``, which
+    attaches the signed-in user's credentials - is the reusable part of this
+    module. Document History reads version authorship over the same endpoint
+    and has no business reaching for a private name to do it.
+    """
+    return _gql(query, variables)
+
+
 def _gql(query: str, variables: Optional[dict] = None) -> dict:
     """POST a GraphQL query/mutation and return the ``data`` object.
 

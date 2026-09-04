@@ -34,11 +34,13 @@ import threading
 import time
 
 import adsk.core
+import adsk.fusion
 
 from ... import config
 from ...lib import ptAddInUtils as ptutil
 from ...lib.ptAddInUtils import recents_utils as recents
 from . import history_model as model
+from . import mfgdm_history
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -79,6 +81,15 @@ INIT_JS_PATH = os.path.join(_HTML_DIR, "init.js")
 # thread while the palette is on screen, so each poll is one turn of a
 # timer-fired custom event instead - the same shape the Assembly Palette
 # gallery uses, and for the same reason.
+# Custom event that carries the history read off the commandCreated stack.
+# Two reasons it cannot happen inline. Reading
+# ``rootDataComponent.mfgdmModelId`` from commandCreated destabilised Fusion
+# once already (234b043, commands/partnumber_shared/intent.py). And the read is
+# a cloud call: doing it before the palette exists meant the user stared at
+# nothing for as long as it took - 21 seconds on a 27-version design.
+_LOAD_EVENT_ID = "PTND_history_loadHistory"
+_LOAD_DELAY_SECONDS = 0.1
+
 _THUMB_EVENT_ID = "PTND_history_thumbTick"
 _THUMB_TICK_SECONDS = 0.15
 _THUMB_MAX_INFLIGHT = 8
@@ -103,7 +114,7 @@ _version_files: dict = {}
 
 # The state last written into init.js. Kept so the page's load handshake can be
 # answered from memory instead of reading the whole history from the cloud a
-# second time - see _show_palette.
+# second time - see _open_palette.
 _last_state: dict = {}
 
 # versionId -> (future, started_monotonic) for downloads in flight.
@@ -113,6 +124,7 @@ _thumb_missing: set = set()
 _thumb_tick_pending = False
 _thumb_tick_scheduled_at = 0.0
 _thumb_event_handler = None
+_load_event_handler = None
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +133,7 @@ _thumb_event_handler = None
 
 
 def start():
-    global _thumb_event_handler
+    global _thumb_event_handler, _load_event_handler
 
     cmd_def = ui.commandDefinitions.addButtonDefinition(
         CMD_ID, CMD_NAME, CMD_Description, ICON_FOLDER
@@ -142,9 +154,17 @@ def start():
     _thumb_event_handler = _ThumbTickHandler()
     thumb_event.add(_thumb_event_handler)
 
+    try:
+        app.unregisterCustomEvent(_LOAD_EVENT_ID)
+    except Exception:
+        pass
+    load_event = app.registerCustomEvent(_LOAD_EVENT_ID)
+    _load_event_handler = _LoadHistoryHandler()
+    load_event.add(_load_event_handler)
+
 
 def stop():
-    global _thumb_event_handler
+    global _thumb_event_handler, _load_event_handler
 
     qat = ui.toolbars.itemById("QAT")
     if qat:
@@ -163,11 +183,13 @@ def stop():
         except Exception:
             pass
 
-    try:
-        app.unregisterCustomEvent(_THUMB_EVENT_ID)
-    except Exception:
-        pass
+    for event_id in (_THUMB_EVENT_ID, _LOAD_EVENT_ID):
+        try:
+            app.unregisterCustomEvent(event_id)
+        except Exception:
+            pass
     _thumb_event_handler = None
+    _load_event_handler = None
     _reset_thumb_pump()
     _version_files.clear()
 
@@ -194,7 +216,11 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     if not ptutil.isSaved():
         return
 
-    _show_palette()
+    # The palette is opened by the deferred load, not here: it can only be
+    # populated through init.js, which has to be written before the page loads,
+    # and the read that fills it must not happen on this stack. See
+    # _LoadHistoryHandler.
+    _schedule_load()
 
 
 # ---------------------------------------------------------------------------
@@ -202,34 +228,34 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 # ---------------------------------------------------------------------------
 
 
-def _show_palette():
-    """Show the palette, refreshing an already-open one in place.
+def _open_palette(state: dict):
+    """Write *state* into init.js and show a palette built from it.
 
-    The history is read BEFORE the palette is created and written into init.js,
-    so the first paint already has it. An earlier version painted a "reading..."
-    banner and waited for the page to ask for the data; the page's message never
-    arrived and the palette sat on the banner forever. Every other palette in
-    this add-in seeds itself from init.js for the same reason, and none of them
-    depends on the page-to-Python channel for its first paint.
+    init.js is the only channel to this page that is known to work. The page
+    sends `htmlReady` on load and Python answers with `setHistory`, but that
+    handshake has never once been observed arriving - the log has counted zero
+    of them across every session - so anything the first paint needs has to be
+    on disk before the page loads. A build that opened the palette first and
+    pushed the history afterwards left it blank.
 
-    Re-clicking the button on an open palette pushes fresh history rather than
-    rebuilding the page, so the thread toggle and the scroll position survive.
-    A closed palette is deleted by _palette_closed, so a miss here really does
-    mean "not open" and never the torn-down husk that makes isVisible a no-op.
+    An open palette is therefore torn down and rebuilt rather than refreshed in
+    place: a live page cannot be made to re-read init.js. That costs the thread
+    toggle and the scroll position on a re-click, which is the price of showing
+    the right history.
     """
     global _last_state
+    _last_state = state
 
     palettes = ui.palettes
-    palette = palettes.itemById(PALETTE_ID)
-    if palette is not None:
-        _last_state = _gather_history()
-        palette.isVisible = True
-        _push_state(palette)
-        return
+    existing = palettes.itemById(PALETTE_ID)
+    if existing is not None:
+        try:
+            existing.deleteMe()
+        except Exception:
+            pass
 
     _reset_thumb_pump()
-    _last_state = _gather_history()
-    _write_init_js(_last_state)
+    _write_init_js(state)
     palette = palettes.add(
         id=PALETTE_ID,
         name=PALETTE_NAME,
@@ -265,6 +291,42 @@ def _palette_closed(args: adsk.core.UserInterfaceGeneralEventArgs):
             palette.deleteMe()
         except Exception:
             pass
+
+
+def _schedule_load() -> None:
+    """Hand the history read to a later main-loop turn.
+
+    Not merely cosmetic. ``rootDataComponent.mfgdmModelId`` is documented as
+    safe only away from a synchronous command callback (234b043), and the read
+    is a cloud round trip that would otherwise freeze Fusion before the palette
+    is even on screen.
+    """
+    timer = threading.Timer(_LOAD_DELAY_SECONDS, _fire_load_event)
+    timer.daemon = True
+    timer.start()
+
+
+def _fire_load_event() -> None:
+    """Runs on the timer thread, so it may touch nothing but fireCustomEvent."""
+    try:
+        app.fireCustomEvent(_LOAD_EVENT_ID)
+    except Exception:
+        pass
+
+
+class _LoadHistoryHandler(adsk.core.CustomEventHandler):
+    """Read the history, then open the palette on it. Main thread.
+
+    This is a later main-loop turn than commandCreated, which is what makes it
+    safe to touch ``rootDataComponent.mfgdmModelId`` (234b043) and what keeps a
+    multi-second cloud read off the click.
+    """
+
+    def notify(self, args):
+        try:
+            _open_palette(_gather_history())
+        except Exception:
+            ptutil.handle_error(CMD_NAME, show_message_box=True)
 
 
 def _write_init_js(state: dict) -> None:
@@ -339,26 +401,58 @@ def _doc_name() -> str:
 # ---------------------------------------------------------------------------
 
 
+# Author properties, in the order _user_fields tries them. Order is the whole
+# point of this constant - see that function.
+_AUTHOR_ATTRS = ("createdBy", "lastUpdatedBy")
+
+
+def _read_user(version, attr: str) -> tuple[str, str]:
+    """Read one User-valued property as ``(display name, stable id)``.
+
+    Returns ("", "") for a property that is absent, null, or raises - a version
+    whose author will not resolve is drawn as an unknown author, not dropped.
+    """
+    try:
+        user = getattr(version, attr, None)
+    except Exception:
+        return "", ""
+    if user is None:
+        return "", ""
+    try:
+        return (user.displayName or user.userName or ""), (user.userId or "")
+    except Exception:
+        return "", ""
+
+
+def _probe_indexes(count: int, limit: int = 6) -> frozenset:
+    """Pick up to *limit* version indexes spread across a history of *count*.
+
+    Used only by the DEBUG author probe, whose whole question is whether a
+    property varies from version to version. The ends matter most - a
+    file-level property shows up as the first and last version agreeing - so
+    the sample is evenly spaced and always includes both.
+    """
+    if count <= limit:
+        return frozenset(range(max(0, count)))
+    step = (count - 1) / (limit - 1)
+    return frozenset(round(i * step) for i in range(limit))
+
+
 def _user_fields(version) -> tuple[str, str]:
     """Return ``(display name, stable id)`` for whoever saved *version*.
 
-    ``lastUpdatedBy`` is preferred over ``createdBy`` because that is the
-    property Fusion populates for a version DataFile; the fallback covers a
-    version where it did not resolve. Both may be absent, in which case the
-    track is drawn as an unknown author rather than dropped.
+    ``createdBy`` first, deliberately. Each version is its own DataFile, created
+    at the moment of that save, so its creator is the person who saved it.
+    ``lastUpdatedBy`` answers a different question - who last touched this - and
+    reading it first made every version of a 27-version design report the same
+    person, collapsing a multi-author history into one track. It stays only as
+    the fallback for a version whose ``createdBy`` does not resolve.
+
+    Under DEBUG the gather logs the distinct names each property yields, so the
+    next history that looks wrong says which property lied.
     """
-    for attr in ("lastUpdatedBy", "createdBy"):
-        try:
-            user = getattr(version, attr, None)
-        except Exception:
-            user = None
-        if user is None:
-            continue
-        try:
-            name = user.displayName or user.userName or ""
-            user_id = user.userId or ""
-        except Exception:
-            continue
+    for attr in _AUTHOR_ATTRS:
+        name, user_id = _read_user(version, attr)
         if name or user_id:
             return name, user_id
     return "", ""
@@ -466,6 +560,46 @@ def _version_record(version, labels: dict, shared_version: int) -> dict | None:
     }
 
 
+def _model_id(doc) -> str:
+    """The design's timeless MFGDM model id, or "" if there is not one.
+
+    Safe here and only here: this runs from the deferred load event, never from
+    ``commandCreated``, where reading it destabilised Fusion (234b043).
+    """
+    try:
+        design = adsk.fusion.Design.cast(
+            doc.products.itemByProductType("DesignProductType")
+        )
+        if design is None:
+            return ""
+        return design.rootDataComponent.mfgdmModelId or ""
+    except Exception:
+        return ""
+
+
+def _decorate_cloud_records(records: list, data_file) -> None:
+    """Add what MFGDM's version list does not carry, in place.
+
+    Milestones, releases and the public share are each one collection or
+    property read for the whole file, so they stay on the desktop API rather
+    than costing another GraphQL round trip.
+
+    The thumbnail key is rewritten here too. MFGDM gives no ``versionId``, so
+    the merge leaves a bare version number behind; scoping it to the file id
+    keeps two documents' version 3 from sharing a cached thumbnail.
+    """
+    labels = _milestone_labels(data_file)
+    shared_version = _shared_version(data_file)
+    file_id = getattr(data_file, "id", "") or ""
+    for record in records:
+        number = record["number"]
+        name = labels.get(number, "")
+        record["isMilestone"] = number in labels
+        record["revision"] = name if model.is_release_name(name) else ""
+        record["publicShare"] = bool(shared_version) and number == shared_version
+        record["versionId"] = f"{file_id}:v{number}"
+
+
 def _gather_history() -> dict:
     """Read the active document's versions and bucket them into day rows.
 
@@ -505,15 +639,43 @@ def _gather_history() -> dict:
         state["message"] = "This document is not stored in Fusion's cloud data."
         return state
 
-    # A long history is a slow read, and it now happens before the palette
-    # appears, so the busy indicator is the only thing on screen while it runs.
-    # One doEvents to get it painted - never a loop, and never from inside a
-    # palette's incomingFromHTML handler, where pumping events would invite a
-    # re-entrant page message (ce4e768, 76b9523).
     progress = ui.progressBar
     progress.showBusy(f"{PALETTE_NAME} - reading version history...")
-    adsk.doEvents()
     started = time.monotonic()
+
+    # The cloud read first: it is the only source that attributes versions to
+    # the people who made them, and it is fifteen times faster than the walk
+    # below. Any failure falls through rather than surfacing - a design outside
+    # a hub, an offline session or an MFGDM outage should still get a history,
+    # just one that cannot say who saved what.
+    try:
+        records = mfgdm_history.fetch_records(_model_id(doc))
+    except Exception as exc:
+        ptutil.log(f"{CMD_NAME}: MFGDM history unavailable ({exc}); using DataFile.")
+        records = None
+
+    if records is not None:
+        try:
+            _decorate_cloud_records(records, data_file)
+            state["status"] = "ok"
+            state["versionCount"] = len(records)
+            state["rows"] = model.bucket_by_day(records)
+            ptutil.log(
+                f"{CMD_NAME}: read {len(records)} versions from MFGDM in "
+                f"{time.monotonic() - started:.2f}s "
+                f"({len(state['rows'])} day rows)."
+            )
+            return state
+        except Exception:
+            ptutil.handle_error(CMD_NAME)
+        finally:
+            progress.hide()
+
+    # Fallback: walk the version DataFiles. Correct for dates and comments, but
+    # it reports one file-level name for every version (see _user_fields) and
+    # costs a cloud round trip per property - 21s for 27 versions.
+    progress.showBusy(f"{PALETTE_NAME} - reading version history...")
+    adsk.doEvents()
     try:
         labels = _milestone_labels(data_file)
         shared_version = _shared_version(data_file)
@@ -522,6 +684,16 @@ def _gather_history() -> dict:
 
         _version_files.clear()
         records = []
+        # Which names each author property yields, sampled only under DEBUG.
+        # One line in the log then settles "is this design really one person's,
+        # or is the property lying to us" without another code change.
+        #
+        # Sampled, not exhaustive: every property read here is a cloud round
+        # trip - 27 versions cost 21s, and probing both properties on all of
+        # them cost 41s. A handful spread across the history answers "does this
+        # vary at all" for a fixed price.
+        author_sources = {attr: set() for attr in _AUTHOR_ATTRS} if config.DEBUG else {}
+        probe_at = _probe_indexes(count) if author_sources else ()
         for i in range(count):
             try:
                 version = versions.item(i)
@@ -535,6 +707,9 @@ def _gather_history() -> dict:
             records.append(record)
             if record["versionId"]:
                 _version_files[record["versionId"]] = version
+            if i in probe_at:
+                for attr, names in author_sources.items():
+                    names.add(_read_user(version, attr)[0])
     except Exception as exc:
         state["message"] = f"Fusion could not read the version history: {exc}"
         ptutil.handle_error(CMD_NAME)
@@ -546,9 +721,17 @@ def _gather_history() -> dict:
     state["versionCount"] = len(records)
     state["rows"] = model.bucket_by_day(records)
     ptutil.log(
-        f"{CMD_NAME}: read {len(records)} versions in "
+        f"{CMD_NAME}: read {len(records)} versions from DataFile in "
         f"{time.monotonic() - started:.2f}s ({len(state['rows'])} day rows)."
     )
+    if author_sources:
+        ptutil.log(
+            f"{CMD_NAME}: distinct authors per property - "
+            + "; ".join(
+                f"{attr}={sorted(n for n in names if n)}"
+                for attr, names in author_sources.items()
+            )
+        )
     return state
 
 
@@ -668,13 +851,47 @@ def _future_state(future) -> int:
         return _FUTURE_FINISHED + 1  # anything not Processing/Finished = failed
 
 
+def _resolve_version_file(key: str):
+    """Find the version DataFile behind a ``<fileId>:v<number>`` thumbnail key.
+
+    The MFGDM path never walks the version DataFiles - that walk is the 21
+    seconds it exists to avoid - so the one the pointer is resting on is looked
+    up here instead, and only then.
+
+    ``DataFile.versions`` runs newest first, so the index is normally
+    ``latest - number``. That is checked rather than trusted, with a scan
+    behind it: a guess that silently landed on the neighbouring version would
+    put the wrong picture on the card.
+    """
+    if ":v" not in key:
+        return None
+    try:
+        number = int(key.rsplit(":v", 1)[1])
+        data_file = app.activeDocument.dataFile
+        versions = data_file.versions
+        count = versions.count
+        guess = int(data_file.latestVersionNumber) - number
+        for index in (guess, *range(count)):
+            if not 0 <= index < count:
+                continue
+            version = versions.item(index)
+            if version is not None and int(version.versionNumber) == number:
+                _version_files[key] = version
+                return version
+    except Exception:
+        return None
+    return None
+
+
 def _start_thumb_download(version_id: str):
     """Start *version_id*'s thumbnail download, returning its future or None.
 
-    The version's DataFile was captured while the history was read, so there is
-    no lookup round-trip here; reading ``.thumbnail`` only starts the download.
+    On the DataFile path the version was captured while the history was read.
+    On the MFGDM path nothing was captured, so it is resolved now - once, and
+    cached for the rest of the session. Reading ``.thumbnail`` only starts the
+    download either way.
     """
-    version = _version_files.get(version_id)
+    version = _version_files.get(version_id) or _resolve_version_file(version_id)
     if version is None:
         return None
     try:

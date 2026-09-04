@@ -71,7 +71,9 @@ The clock view is the default because it is the one that never scrolls sideways 
 
 ## Notes
 
+- The palette takes a moment to open while it reads the history from Fusion's cloud; Fusion shows a busy indicator in the status bar meanwhile.
 - The palette shows a snapshot taken when it was opened. Select **History** again to re-read the history after saving.
+- Authorship comes from Fusion's cloud data. If the design is not in a hub, or you are offline, the palette still draws the history but every save is attributed to the document's creator, because that is all the desktop API can tell it.
 - The history is read from the cloud, so a document with hundreds of versions takes a moment to open. Fusion shows a busy indicator while it reads.
 - Fusion exposes a public share link on the document rather than on a specific version, so the public-share ring marks the current version.
 - Where Fusion could not resolve who saved a version, the track is drawn as an unknown author rather than dropped, and a version with no usable date collects in a trailing **Date unknown** row.

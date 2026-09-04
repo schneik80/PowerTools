@@ -300,3 +300,115 @@ def test_parse_day_rejects_a_malformed_day_instead_of_raising():
 )
 def test_is_release_name_tells_a_typed_revision_from_an_auto_milestone(name, expected):
     assert model.is_release_name(name) is expected
+
+
+# ---------------------------------------------------------------------------
+# Merging MFGDM's two views of a history
+# ---------------------------------------------------------------------------
+
+
+def dv(number: int, iso: str, first: str = "", last: str = "", uid: str = "") -> dict:
+    """Build a DesignItemVersion row the way MFGDM returns one."""
+    return {
+        "versionNumber": number,
+        "createdOn": iso,
+        "createdBy": {"id": uid, "firstName": first, "lastName": last},
+    }
+
+
+def mw(iso: str, description: str) -> dict:
+    """Build a ModelWrittenHistoryChange row."""
+    return {"timestamp": iso, "description": description}
+
+
+def test_person_name_prefers_the_full_name_then_the_account_name():
+    assert model.person_name({"firstName": "Ada", "lastName": "Lovelace"}) == (
+        "Ada Lovelace"
+    )
+    assert model.person_name({"firstName": "Ada"}) == "Ada"
+    assert model.person_name({"userName": "ada.l"}) == "ada.l"
+    assert model.person_name({}) == ""
+    assert model.person_name(None) == ""
+
+
+def test_iso_to_epoch_ms_reads_the_trailing_z_as_utc():
+    # 1970-01-01T00:00:01Z is one second after the epoch, wherever we run.
+    assert model.iso_to_epoch_ms("1970-01-01T00:00:01.000Z") == 1000
+    assert model.iso_to_epoch_ms("1970-01-01T00:00:01+00:00") == 1000
+    # A naive stamp is read as UTC rather than as local time, so a history does
+    # not shift by the reader's offset.
+    assert model.iso_to_epoch_ms("1970-01-01T00:00:01") == 1000
+
+
+def test_iso_to_epoch_ms_returns_none_for_junk_rather_than_raising():
+    assert model.iso_to_epoch_ms("") is None
+    assert model.iso_to_epoch_ms(None) is None
+    assert model.iso_to_epoch_ms("not a date") is None
+
+
+def test_merge_carries_the_per_version_author_that_the_desktop_api_could_not():
+    versions = [
+        dv(2, "2026-08-12T09:00:00.000Z", "Grace", "Hopper", "u-grace"),
+        dv(1, "2026-08-11T08:00:00.000Z", "Ada", "Lovelace", "u-ada"),
+    ]
+    records = model.merge_cloud_history(versions, [])
+    assert [r["number"] for r in records] == [2, 1]
+    assert [r["createdBy"] for r in records] == ["Grace Hopper", "Ada Lovelace"]
+    assert [r["createdById"] for r in records] == ["u-grace", "u-ada"]
+
+
+def test_merge_takes_comments_by_position_when_the_counts_agree():
+    versions = [
+        dv(2, "2026-08-12T09:00:00.000Z", "Grace", "Hopper"),
+        dv(1, "2026-08-11T08:00:00.000Z", "Ada", "Lovelace"),
+    ]
+    # Deliberately NOT the same instants as the versions: MFGDM stamps the same
+    # save up to 35 seconds apart in its two views, which is why the join is by
+    # position and a timestamp join would be wrong.
+    writes = [
+        mw("2026-08-12T09:00:34.000Z", "Reworked the bracket"),
+        mw("2026-08-11T08:00:03.000Z", "Imported from a step file"),
+    ]
+    records = model.merge_cloud_history(versions, writes)
+    assert [r["comment"] for r in records] == [
+        "Reworked the bracket",
+        "Imported from a step file",
+    ]
+
+
+def test_merge_drops_every_comment_when_the_two_lists_disagree_in_length():
+    """A save wearing the wrong person's comment is worse than a bare save."""
+    versions = [
+        dv(3, "2026-08-13T09:00:00.000Z", "Ada", "Lovelace"),
+        dv(2, "2026-08-12T09:00:00.000Z", "Grace", "Hopper"),
+        dv(1, "2026-08-11T08:00:00.000Z", "Ada", "Lovelace"),
+    ]
+    records = model.merge_cloud_history(versions, [mw("2026-08-13T09:00:01.000Z", "x")])
+    assert [r["comment"] for r in records] == ["", "", ""]
+    # The authorship still survives — only the comments are withheld.
+    assert [r["createdBy"] for r in records] == [
+        "Ada Lovelace",
+        "Grace Hopper",
+        "Ada Lovelace",
+    ]
+
+
+def test_merge_skips_a_row_with_no_version_number():
+    versions = [
+        dv(1, "2026-08-11T08:00:00.000Z", "Ada", "Lovelace"),
+        {"createdOn": "x"},
+    ]
+    assert [r["number"] for r in model.merge_cloud_history(versions, [])] == [1]
+
+
+def test_merged_records_bucket_into_day_rows_by_author():
+    versions = [
+        dv(3, "2026-08-12T09:00:00.000Z", "Grace", "Hopper", "u-grace"),
+        dv(2, "2026-08-12T08:00:00.000Z", "Ada", "Lovelace", "u-ada"),
+        dv(1, "2026-08-11T08:00:00.000Z", "Ada", "Lovelace", "u-ada"),
+    ]
+    rows = model.bucket_by_day(model.merge_cloud_history(versions, []))
+    # Two authors on the newest day means two tracks — the whole point of the
+    # cloud read.
+    assert len(rows[0]["tracks"]) == 2
+    assert {t["key"] for t in rows[0]["tracks"]} == {"u-ada", "u-grace"}

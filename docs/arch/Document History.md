@@ -17,7 +17,8 @@ It replaces the original behaviour, which selected the root component and ran Fu
 | File | Holds |
 |---|---|
 | `entry.py` | Fusion contact only: lifecycle, reading the versions, serving the page, the thumbnail pump. |
-| `history_model.py` | The bucketing — day rows, author tracks, gaps, the calendar arithmetic behind the elapsed-time labels. `adsk`-free and unit-tested. |
+| `history_model.py` | The bucketing — day rows, author tracks, gaps, the calendar arithmetic — plus the merge of MFGDM's two version views. `adsk`-free and unit-tested. |
+| `mfgdm_history.py` | The GraphQL read: one paginated request over `mfgdm://v3`, through the transport `partnumber_shared/mfgdm_props.gql` already owns. |
 | `resources/html/{index.html,style.css,app.js}` | The drawing, plus the width-dependent geometry. |
 | `tests/test_dochistory_history_model.py` | A port of the vitest suite covering the same bucketing in the web app, so the two presentations cannot drift apart in what they claim about a history. |
 
@@ -33,20 +34,40 @@ Constants therefore live on exactly one side: `TRACKS_PER_DAY_CAP` with the buck
 
 1. `start()` registers the command definition and inserts the button before the QAT **Save** control, then registers the custom event that drives the thumbnail pump.
 2. `command_created` opens the palette directly. Not from `execute`: this command has no `CommandInputs`, and `execute` only fires when Fusion runs a command through its document-scoped pipeline, so with no document open the button would be live and nothing would happen (f18b911, 11cfc51). It bails out on no document and on an unsaved one (`ptutil.isSaved`).
-3. `_gather_history()` reads the versions behind `ui.progressBar.showBusy` and returns the whole page state. This happens **before** the palette is created, and the result is written into `init.js` (generated, git-ignored), so the first paint already has the history.
-4. `_show_palette()` pushes fresh history to an already-open palette instead of rebuilding it, so the thread toggle and scroll position survive a re-click. A closed palette is deleted by `_palette_closed`, so an `itemById` miss really means "not open" and never the torn-down husk that makes `isVisible` a silent no-op.
-5. The page sends `htmlReady` once loaded, which pushes `setHistory` from `_last_state` — the read that has just happened, not a new one. That exists only to defeat Fusion's embedded browser caching `init.js` by URL across palette recreations on Windows, the trap the Assembly Palette already hit.
-6. The page requests a thumbnail only for the version the pointer rests on, and the pump answers it.
+3. `command_created` opens nothing. It validates and calls `_schedule_load()` — a `threading.Timer` → `app.fireCustomEvent` hop.
+4. `_LoadHistoryHandler` runs on the next main-loop turn: `_gather_history()` reads the history behind `ui.progressBar.showBusy`, then `_open_palette(state)` writes that state into `init.js` and creates the palette from it.
+5. The page requests a thumbnail only for the version the pointer rests on, and the pump answers it.
 
-### Why the page never waits on Python
+### init.js is the only channel to this page
 
-This palette first shipped with the read behind the handshake: `init.js` carried only the theme, the page painted a "Reading version history…" banner and asked for the data, and the answer never arrived. The DEBUG log identified it by what was absent — `History Command Created Event` present, no gather line, no traceback — which means the page's message never reached `_palette_incoming` at all.
+The page must be able to paint from `init.js` alone, because nothing else has been shown to work.
 
-The fix is the pattern the other three palettes already use, and the reason they were never exposed to it: they seed themselves entirely from `init.js` and treat the handshake as a repaint. `_palette_incoming` now logs every action the page sends, so a future silence says which side went quiet.
+Two builds proved it. The first opened the palette with a "Reading version history…" banner and waited for the page to ask for the data over `adsk.fusionSendData`; the palette sat on the banner forever. The second read the history on a deferred event and pushed it with `sendInfoToHTML` to an already-open palette; the palette came up empty even though the log recorded a successful 27-version read.
+
+The DEBUG log explains both. `_palette_incoming` logs every action the page sends, and the count of `htmlReady` across every session to date is **zero** — the handshake the page fires at parse time never arrives. `requestThumbs`, sent later from a hover, does. So the page→Python channel only works after the page has been up a while, and the Python→page direction has never been independently demonstrated at all: every time this palette has shown a history, the data came from `init.js`.
+
+Hence the order: read first, write `init.js`, then create the palette. An already-open palette is torn down and rebuilt rather than refreshed, because a live page cannot be made to re-read `init.js`; that costs the thread toggle and scroll position on a re-click. The `htmlReady` → `setHistory` path is still wired and answers from `_last_state` rather than re-reading, so it costs nothing if the handshake ever does start arriving.
 
 ### Reading the history
 
-`app.activeDocument.dataFile.versions`, walked once. Per version: `versionNumber`, `dateCreated` (falling back to `dateModified`, which only moves for the few edits that do not create a version), `description`, `isMilestone`, `versionId`, and `lastUpdatedBy` / `createdBy` for the author's display name and Autodesk user id.
+The history comes from **MFGDM over GraphQL**, with the desktop Data API as a fallback. `mfgdm_history.py` owns the query; the merge is pure and tested in `history_model.merge_cloud_history`.
+
+**Why not the desktop API.** It cannot attribute versions. `DataFile` exposes exactly two `User` properties and there is no per-version type; on a 27-version design saved by nine people, `createdBy` returned "Jeremy Lambert" for all 27 and `lastUpdatedBy` returned "Myron Oakley" for all 27 — one file-level name each, and different names from each other. Fusion's own history panel shows all nine. Swapping one property for the other only trades one wrong constant for another, so the source had to change.
+
+**Where the data actually is.** Two halves of one request:
+
+| Field | Carries |
+|---|---|
+| `model.designItem.versions` → `DesignItemVersion` | `versionNumber`, `createdOn`, `createdBy` — the only per-version author Fusion exposes |
+| `model.history` → `ModelWrittenHistoryChange` | the `description` typed at save time; `DesignItemVersion.description` comes back empty |
+
+`ModelWrittenHistoryChange` is the save event — a 27-version design produced exactly 27 of them. (`VersionCreatedHistoryChange` is a *milestone*: its id decodes to `…~milestone`.) The two lists are joined **by position, not timestamp**: MFGDM stamps the same save up to 35 seconds apart in its two views. Position is trusted only when the lengths match; otherwise every version keeps its author and date and loses its comment, because a save wearing someone else's comment is worse than a bare one.
+
+**Cost.** One request, 1.4s, against 21s for the walk it replaces — that walk was ~160 cloud round trips, because every `DataFile` property read is one. Thumbnails stay off the query deliberately: `DesignItemVersion.thumbnail.signedUrl` costs ~1.4s per row, five rows took 8.3s and thirty aborted the transport at 30s.
+
+**Timing.** `rootDataComponent.mfgdmModelId` must not be read from `commandCreated` — doing so and then showing a modal crashed Fusion (234b043). The read runs from a timer-fired custom event instead, which also means the palette appears immediately and fills in, rather than freezing Fusion before it is on screen.
+
+**Still on the desktop API**, because each is one read for the whole file rather than one per version: milestones (`DataFile.milestones`), the public share (`DataFile.sharedLink`), and the version `DataFile` behind a hover thumbnail — resolved lazily by version number, index guess verified rather than trusted.
 
 Two things are read once for the whole file rather than per version, because both are cloud calls:
 

@@ -37,7 +37,7 @@ on their own clock, not the UTC day it lands in east of Greenwich.
 from __future__ import annotations
 
 import calendar
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 # Above this many authors in one day, the tail merges into a single overflow
 # track. Nothing is hidden - every dot still renders and still carries its own
@@ -49,6 +49,110 @@ TRACKS_PER_DAY_CAP = 6
 # A milestone named anything else is a revision the user typed - what the
 # History view draws as a release. Same rule as commands/versiondiff.
 AUTO_MILESTONE_PREFIXES = ("Milestone ", "Item Update")
+
+
+# ---------------------------------------------------------------------------
+# Merging the two halves of a cloud history
+# ---------------------------------------------------------------------------
+
+
+def person_name(user: dict | None) -> str:
+    """Render an MFGDM ``User`` as a display name.
+
+    Args:
+        user: The GraphQL ``User`` object, or None.
+
+    Returns:
+        "First Last" where both are present, else whichever exists, else the
+        account name, else "".
+    """
+    if not user:
+        return ""
+    full = " ".join(
+        part for part in (user.get("firstName"), user.get("lastName")) if part
+    ).strip()
+    return full or user.get("userName") or ""
+
+
+def merge_cloud_history(versions: list[dict], writes: list[dict]) -> list[dict]:
+    """Combine MFGDM's two views of a history into version records.
+
+    The authorship lives in one place and the save comment in another:
+
+    * ``DesignItemVersion`` carries ``versionNumber``, ``createdOn`` and
+      ``createdBy`` - the identity of each version, and the only per-version
+      author Fusion exposes anywhere.
+    * ``ModelWrittenHistoryChange`` carries the ``description`` the author
+      typed at save time. ``DesignItemVersion.description`` exists but comes
+      back empty.
+
+    The two lists are matched **by position**, newest first, not by timestamp:
+    the same save is stamped up to 35 seconds apart in the two views, so a
+    timestamp join would mismatch. Position is only trusted when the two lists
+    are the same length. When they are not, every version keeps its author and
+    date and simply has no comment - a save wearing the wrong person's comment
+    is worse than a save with none.
+
+    Args:
+        versions: ``DesignItemVersion`` rows, newest first.
+        writes: ``ModelWrittenHistoryChange`` rows, newest first.
+
+    Returns:
+        Version records in the shape :func:`bucket_by_day` consumes.
+    """
+    comments: list[str] = []
+    if len(writes) == len(versions):
+        comments = [(write.get("description") or "") for write in writes]
+
+    records = []
+    for index, row in enumerate(versions):
+        number = row.get("versionNumber")
+        if number is None:
+            continue
+        user = row.get("createdBy") or {}
+        records.append(
+            {
+                "number": int(number),
+                "createdOnMs": iso_to_epoch_ms(row.get("createdOn")),
+                "createdBy": person_name(user),
+                "createdById": user.get("id") or "",
+                "comment": comments[index] if index < len(comments) else "",
+                "isMilestone": False,
+                "revision": "",
+                "publicShare": False,
+                "versionId": str(int(number)),
+            }
+        )
+    return records
+
+
+def iso_to_epoch_ms(stamp: str | None) -> int | None:
+    """Parse an RFC 3339 / ISO 8601 UTC timestamp into epoch milliseconds.
+
+    MFGDM returns "2025-07-28T21:13:34.000Z". Python's ``fromisoformat`` did
+    not accept a trailing "Z" before 3.11 and this add-in has to keep working
+    if Fusion's bundled interpreter is ever older than the one it ships today,
+    so the suffix is normalised rather than assumed.
+
+    Args:
+        stamp: The timestamp string, or None.
+
+    Returns:
+        Epoch milliseconds, or None when there is nothing usable to parse -
+        which puts the version in the undated bucket rather than dropping it.
+    """
+    if not stamp:
+        return None
+    text = stamp.strip()
+    if text.endswith(("Z", "z")):
+        text = text[:-1] + "+00:00"
+    try:
+        moment = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return int(moment.timestamp() * 1000)
 
 
 # ---------------------------------------------------------------------------
