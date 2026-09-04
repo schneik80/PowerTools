@@ -180,9 +180,16 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                 date_str = datetime.fromtimestamp(data_file.dateModified).strftime(
                     "%Y-%m-%d %H:%M:%S"
                 )
+            # File-level, both of them: whoever created the file and whoever
+            # last edited it. Read once here and reused by the summary below -
+            # they are the same answer for every version in the collection.
             updated_by = ""
             if data_file.lastUpdatedBy:
                 updated_by = data_file.lastUpdatedBy.displayName
+            last_updated_by = updated_by
+            created_by = ""
+            if data_file.createdBy:
+                created_by = data_file.createdBy.displayName
             description = data_file.description or "(no description)"
 
             progress.message = "Version Diff — Reading current version info..."
@@ -202,9 +209,12 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                 1,
                 True,
             )
+            # Labelled "Last Saved By", not "Saved By": the value is the
+            # file's last editor, which is only the open version's author when
+            # the open version is the tip.
             group_inputs.addTextBoxCommandInput(
                 "info_user",
-                "Saved By",
+                "Last Saved By",
                 updated_by,
                 1,
                 True,
@@ -229,28 +239,35 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
             sg = summary_group.children
 
-            # Walk all versions to gather stats
+            # Walk all versions to gather stats.
+            #
+            # Deliberately NOT per-version authorship. The Data API cannot
+            # attribute a version: DataFile.createdBy returns the file's
+            # creator and DataFile.lastUpdatedBy its last editor, and every
+            # version in the collection answers with those same two names. This
+            # loop used to build a set of ver.lastUpdatedBy and report its size
+            # as "Contributors", which therefore said "1 user" for a design
+            # nine people had saved. See docs/arch/Document History.md - the
+            # real per-version author is only reachable over MFGDM GraphQL, and
+            # not from here, because reading mfgdmModelId inside
+            # command_created destabilises Fusion (234b043).
+            #
+            # Dropping the read also takes a cloud round trip per version off
+            # the dialog, which is the bulk of what made it slow to open.
             total_versions = versions.count
-            unique_users = set()
             earliest_date = None
             latest_date = None
-            latest_user = ""
             milestone_count = 0
             latest_is_milestone = False
 
             for i in range(total_versions):
                 ver = versions.item(i)
-                if ver.lastUpdatedBy:
-                    unique_users.add(ver.lastUpdatedBy.displayName)
                 if ver.dateModified:
                     d = ver.dateModified
                     if earliest_date is None or d < earliest_date:
                         earliest_date = d
                     if latest_date is None or d > latest_date:
                         latest_date = d
-                        latest_user = (
-                            ver.lastUpdatedBy.displayName if ver.lastUpdatedBy else ""
-                        )
                 try:
                     if ver.isMilestone:
                         milestone_count += 1
@@ -324,21 +341,29 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                     1,
                     True,
                 )
-            if latest_user:
+            # The two names the Data API can actually vouch for, in place of
+            # the contributor count that used to sit here. That count was the
+            # size of a set of per-version lastUpdatedBy values, which is
+            # always one because the property is file-level - it read "1 user"
+            # on a design nine people had saved. Two true names beat one false
+            # number; the per-person breakdown lives in Document History, which
+            # gets it from MFGDM.
+            if created_by:
                 sg.addTextBoxCommandInput(
-                    "sum_last_user",
-                    "Last Saved By",
-                    latest_user,
+                    "sum_created_by",
+                    "Created By",
+                    created_by,
                     1,
                     True,
                 )
-            sg.addTextBoxCommandInput(
-                "sum_users",
-                "Contributors",
-                f"{len(unique_users)} user{'s' if len(unique_users) != 1 else ''}",
-                1,
-                True,
-            )
+            if last_updated_by:
+                sg.addTextBoxCommandInput(
+                    "sum_last_user",
+                    "Last Saved By",
+                    last_updated_by,
+                    1,
+                    True,
+                )
             sg.addTextBoxCommandInput(
                 "sum_milestones",
                 "Milestones",
@@ -411,11 +436,12 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                     ver_date = datetime.fromtimestamp(ver.dateModified).strftime(
                         "%Y-%m-%d %H:%M"
                     )
-                ver_user = ""
-                if ver.lastUpdatedBy:
-                    ver_user = ver.lastUpdatedBy.displayName
-
-                label = f"V{ver.versionNumber} - {ver_date} - {ver_user}"
+                # No author on the label. It used to read
+                # "V5 - date - Jeremy Lambert", with the SAME name on every
+                # entry, because DataFile.lastUpdatedBy is file-level - so it
+                # told the reader nothing and implied something false. It also
+                # cost a cloud round trip per row.
+                label = f"V{ver.versionNumber} - {ver_date}"
                 dropdown.listItems.add(label, is_first)
                 _version_map[label] = ver
                 is_first = False

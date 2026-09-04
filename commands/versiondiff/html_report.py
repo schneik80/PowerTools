@@ -518,7 +518,7 @@ def _build_version_card(info, label: str, css_class: str) -> str:
         <div class="card-details">
             <div class="version-number">Version {info.version_number}</div>
             <div class="detail"><b>Date Saved:</b> {_escape_html(info.date_modified)}</div>
-            <div class="detail"><b>Saved By:</b> {_escape_html(info.last_updated_by)}</div>
+            <div class="detail"><b>Last Saved By:</b> {_escape_html(info.last_updated_by)}</div>
             <div class="detail"><b>Description:</b> {desc}</div>
         </div>
     </div>

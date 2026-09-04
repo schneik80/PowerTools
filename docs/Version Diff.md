@@ -31,7 +31,7 @@ The **Version Diff** command is located on the **Tools** tab, in the **PowerTool
 2. Run **Version Diff** from the **PowerTools** panel.
 3. The command dialog opens and displays:
    - **Current Version** — version number, date modified, saved by, and description.
-   - **Version Summary** (expandable) — total versions, creation date, last saved date, contributors, milestones, revisions, and public share link status.
+   - **Version Summary** (expandable) — total versions, creation date, last saved date, who created the file, who last saved it, milestones, revisions, and public share link status.
    - **Compare With Version** dropdown — all other versions listed newest first with date and user.
 4. Select a comparison version from the dropdown.
 5. Click **OK** to start the comparison.
@@ -42,7 +42,9 @@ The **Version Diff** command is located on the **Tools** tab, in the **PowerTool
 
 ### Version cards
 
-The report header shows two version cards side by side with thumbnails (when available), version number, date, user, and description.
+The report header shows two version cards side by side with thumbnails (when available), version number, date, who last saved the file, and description.
+
+> **Note:** Fusion's desktop API reports the person who last edited the *file*, not the author of each individual version — it answers the same for every version. Both cards therefore show the same name. For per-version authorship, use [Document History](./Document%20History.md), which reads it from Fusion's cloud data.
 
 ### Visual timeline
 

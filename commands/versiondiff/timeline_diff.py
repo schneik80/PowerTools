@@ -135,6 +135,12 @@ def get_version_info(data_file: adsk.core.DataFile) -> VersionInfo:
             "%Y-%m-%d %H:%M:%S"
         )
 
+    # File-level, not per-version: DataFile.lastUpdatedBy is the file's last
+    # editor and answers the same for every version, so both cards in the
+    # report carry the same name. It is labelled "Last Saved By" for that
+    # reason. Fusion exposes no per-version author here; Document History gets
+    # one over MFGDM GraphQL, which is not reachable from a command dialog
+    # (234b043).
     updated_by = ""
     if data_file.lastUpdatedBy:
         updated_by = data_file.lastUpdatedBy.displayName
