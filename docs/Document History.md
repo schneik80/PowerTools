@@ -43,9 +43,9 @@ Saves closer together than the dots are wide are nudged apart so a burst does no
 
 | Marker | Meaning |
 |---|---|
-| Plain dot | An ordinary save. |
-| Dot with a halo | A milestone. |
-| Darker dot with a halo | A release &mdash; a milestone you gave a revision name, such as "A" or "Rev B". Milestones Fusion names for itself ("Milestone V7", "Item Update") are shown as milestones, not releases. |
+| Plain grey dot | An ordinary save. |
+| Grey dot with a blue ring | A milestone. |
+| Blue dot with a blue ring | A release &mdash; a milestone you gave a revision name, such as "A" or "Rev B". Milestones Fusion names for itself ("Milestone V7", "Item Update") are shown as milestones, not releases. |
 | Outer ring | The version a public share link points at. |
 
 The legend below the view lists only the markers that occur in this document's history.

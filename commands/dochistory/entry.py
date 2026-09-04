@@ -59,11 +59,12 @@ PALETTE_ID = config.document_history_palette_id
 PALETTE_NAME = "Document History"
 PALETTE_DOCKING = adsk.core.PaletteDockingStates.PaletteDockStateRight
 
-# Docked width. Narrow enough that the day view's clock axis runs on 240 px of
-# plot, which is the width hourTicks() thins for: every sixth hour ruled, only
-# noon labelled. The layout was built to narrow this far - it is the width the
-# web view it came from lives at.
-PALETTE_WIDTH = 300
+# Docked width. Leaves the day view about 310 px of plot, which is over
+# hourTicks()'s 260 px threshold: three-hourly gridlines with midnight, noon
+# and midnight labelled, rather than the six-hourly noon-only axis a narrower
+# dock falls back to. The layout degrades further on its own if the dock is
+# dragged in.
+PALETTE_WIDTH = 400
 PALETTE_HEIGHT = 720
 
 # Resource location for command icons, here we assume a sub folder in this directory named "resources".

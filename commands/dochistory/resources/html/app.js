@@ -139,7 +139,6 @@
             secondary: get("--text-secondary"),
             muted: get("--text-muted"),
             accent: get("--accent"),
-            accentDeep: get("--accent-deep"),
             share: get("--share"),
             divider: get("--border-color"),
             paper: get("--bg-panel")
@@ -521,8 +520,12 @@
     // Milestones and releases decorate the dot in place; vertical space belongs
     // to days and people, so they get no lane of their own.
     function dotNode(v, cx, cy) {
-        var fill = v.revision ? C.accentDeep : v.isMilestone ? C.accent : C.secondary;
-        var halo = v.revision ? C.accentDeep : C.accent;
+        // A milestone keeps a save's grey dot and gains the accent ring; a
+        // release fills that same ring in. So the ring means "marked" and the
+        // fill means "released", which is one step rather than two hues to
+        // learn, and a release still reads as the heavier of the two.
+        var fill = v.revision ? C.accent : C.secondary;
+        var halo = C.accent;
         var kids = [svgEl("circle", { class: "hit", cx: cx, cy: cy, r: HIT_R, fill: "transparent" })];
 
         if (v.publicShare) {
@@ -719,6 +722,9 @@
     // markers differ by shape (halo, outer ring) as well as hue. Only the
     // markers that occur in this history are listed.
     function legendItem(color, label, halo, ring) {
+        // halo and ring are colours, not flags: a milestone's ring is the
+        // accent while its dot stays grey, so the two cannot be derived from
+        // one another.
         var size = (NODE_R + RING_W + 3) * 2;
         var c = size / 2;
         var kids = [];
@@ -731,7 +737,7 @@
         if (halo) {
             kids.push(svgEl("circle", {
                 cx: c, cy: c, r: NODE_R + RING_W + 1.5, fill: "none",
-                stroke: fade(color, 0.8), "stroke-width": RING_W
+                stroke: fade(halo, 0.8), "stroke-width": RING_W
             }));
         }
         kids.push(svgEl("circle", { cx: c, cy: c, r: NODE_R - 1, fill: color }));
@@ -811,15 +817,15 @@
                 t.dots.forEach(function (d) { versions.push(d.v); });
             });
         });
-        legend.appendChild(legendItem(C.secondary, "Saves", false, null));
+        legend.appendChild(legendItem(C.secondary, "Saves", null, null));
         if (versions.some(function (v) { return v.isMilestone; })) {
-            legend.appendChild(legendItem(C.accent, "Milestones", true, null));
+            legend.appendChild(legendItem(C.secondary, "Milestones", C.accent, null));
         }
         if (versions.some(function (v) { return !!v.revision; })) {
-            legend.appendChild(legendItem(C.accentDeep, "Releases", true, null));
+            legend.appendChild(legendItem(C.accent, "Releases", C.accent, null));
         }
         if (versions.some(function (v) { return v.publicShare; })) {
-            legend.appendChild(legendItem(C.secondary, "Public shares", false, C.share));
+            legend.appendChild(legendItem(C.secondary, "Public shares", null, C.share));
         }
     }
 

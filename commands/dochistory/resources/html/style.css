@@ -20,10 +20,6 @@
     --text-muted: #718096;
     --accent: #0696d7;
     --accent-hover: #0aa3e8;
-    /* Releases are milestones the user named, so they take the accent a shade
-       deeper rather than a hue of their own — the same relationship the web
-       view draws with darken(primary, 0.25). */
-    --accent-deep: #05719f;
     /* The public-share ring. Deliberately the one warm colour in the chart:
        it says "visible outside the hub", which nothing else here does. */
     --share: #d69e2e;
@@ -43,7 +39,6 @@ html.light {
     --text-muted: #888888;
     --accent: #0696d7;
     --accent-hover: #0580b8;
-    --accent-deep: #04597c;
     --share: #b7791f;
     --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.18);
     --band: rgba(0, 0, 0, 0.04);
