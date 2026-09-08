@@ -33,7 +33,14 @@
 
     var GUTTER_W = 46;   // avatar column, LEFT of the plot - never eats axis space
     var PAD_R = 14;
-    var TRACK_H = 30;    // one author track
+    // One author track. Two heights: the index labels rise about 25px out of a
+    // dot, so at the tight height most of a label sat in the band of the track
+    // ABOVE it and got read against the wrong author - on a five-track day that
+    // is misattribution, not clutter. The roomy height keeps a label inside its
+    // own band. trackHeight() is the single reader; rowHeight, trackY and
+    // threadOverlay all go through it, so they cannot disagree within a render.
+    var TRACK_H = 30;
+    var TRACK_H_INDEXED = 44;
     // Where the rail sits inside its track, as a fraction of the track height.
     // Low rather than centred: the angled index labels rise from the dots, and
     // this is the room they rise into. The avatar disc offsets by the same
@@ -77,15 +84,19 @@
     // pass pushes them apart.
     var MIN_DOT_GAP = NODE_R * 2 + 2;
 
-    // The index label. Its room comes from RAIL_FRAC and ROW_PAD_Y, which are
-    // fixed, so switching the toggle on never changes a row's height - rowHeight,
-    // layoutStack and threadOverlay agree on that arithmetic and have to move
-    // together or the thread polyline drifts off its dots.
+    // The index label. Its room comes from RAIL_FRAC, ROW_PAD_Y and the taller
+    // of the two track heights, so switching the toggle on DOES change a row's
+    // height - rows are tight when no numbers are asked for and open up when
+    // they are. Everything that depends on that arithmetic (rowHeight,
+    // layoutStack, trackY, threadOverlay) reads it through trackHeight() inside
+    // one render, or the thread polyline drifts off its dots.
     var INDEX_FONT_SIZE = 9;
-    // Far enough above the dot's centre to clear HALO_R, the ring a milestone
-    // and a release wear - at NODE_R + 2 the last character landed inside it,
-    // on exactly the two marks whose numbers matter most.
-    var INDEX_DY = HALO_R + 2.5;
+    // Clearance between a marker's outer edge and the character nearest it.
+    // Added to that marker's OWN radius rather than to the widest one any dot
+    // draws: sizing every label off HALO_R floated the common cases - a plain
+    // save, and a change ring at little more than half the radius - six to
+    // eight pixels further out than they needed, for a ring they do not wear.
+    var INDEX_CLEAR = 2.5;
     // Angled, which is what lets every event carry one. Drawn flat, a label
     // needed its full width of clear axis - around 30px - and day view only
     // guarantees MIN_DOT_GAP, so most of a busy day's labels had to be dropped.
@@ -101,7 +112,12 @@
     // dot. Flip both of these together to change your mind.
     var INDEX_ANGLE = 45;
     var INDEX_ANCHOR = "end";
-    var INDEX_MIN_GAP = 14;
+    // Perpendicular clearance between two parallel labels is their horizontal
+    // separation times sin(angle), so at a ~11px line box the separation has to
+    // be 11/sin(45) ~ 16px. At 14 the dense runs overlapped by a pixel or two.
+    // That it lands on MIN_DOT_GAP is the useful part: any dot declutter managed
+    // to separate keeps its label, and only a genuinely unseparable pile loses one.
+    var INDEX_MIN_GAP = MIN_DOT_GAP;
 
     var DAY_ROWS_CAP = 60; // a render cap, not a data cap - see the "show all" row
     var DAY_MS = 86400000;
@@ -338,10 +354,22 @@
     function threadWidth(count) { return Math.max(COL_GAP, count * COL_GAP) + PAD_R; }
 
     function rowHeight(trackCount, withAxis) {
-        return ROW_PAD_Y * 2 + Math.max(1, trackCount) * TRACK_H + (withAxis ? AXIS_H : 0);
+        return ROW_PAD_Y * 2 + Math.max(1, trackCount) * trackHeight() + (withAxis ? AXIS_H : 0);
     }
 
-    function trackY(i) { return ROW_PAD_Y + i * TRACK_H + TRACK_H * RAIL_FRAC; }
+    /**
+     * trackHeight is the pitch between two author rails, and the only reader of
+     * the two TRACK_H constants. Everything that places anything vertically goes
+     * through it - rowHeight, trackY, the avatar cells - so one render cannot mix
+     * the indexed height into arithmetic the unindexed height produced, which
+     * would drift the thread overlay off its dots.
+     */
+    function trackHeight() { return showIndex ? TRACK_H_INDEXED : TRACK_H; }
+
+    function trackY(i) {
+        var th = trackHeight();
+        return ROW_PAD_Y + i * th + th * RAIL_FRAC;
+    }
 
     function gapHeight(tier) {
         return tier === "nextDay" ? GAP_H_TIGHT : tier === "days" ? GAP_H : GAP_H_WIDE;
@@ -608,12 +636,11 @@
      * all - declutter spaces a run evenly when there are more dots than the
      * width can hold, and past that point the labels would pile up unreadably.
      *
-     * Each label takes its dot's own colour, so a release's number reads as
-     * accent like the dot it names and a change's takes its author's rail
-     * colour. That pairing is the whole point of putting the number beside the
-     * mark rather than only on the hover card.
+     * Each label sits its own marker's radius clear of it, so it reads as
+     * belonging to that mark rather than floating at a fixed height above the
+     * rail.
      */
-    function indexLabelNodes(dots, xs, y, railColor) {
+    function indexLabelNodes(dots, xs, y) {
         var nodes = [];
         var lastX = -Infinity;
         dots.forEach(function (d, i) {
@@ -621,26 +648,38 @@
             if (!label) return;
             if (xs[i] - lastX < INDEX_MIN_GAP) return;
             lastX = xs[i];
-            var ly = y - INDEX_DY;
+            var ly = y - markerRadius(d.v) - INDEX_CLEAR;
             nodes.push(svgEl("text", {
                 x: xs[i], y: ly, "text-anchor": INDEX_ANCHOR,
                 transform: "rotate(" + INDEX_ANGLE + " " + xs[i] + " " + ly + ")",
-                "font-size": INDEX_FONT_SIZE, fill: indexLabelColor(d.v, railColor),
+                "font-size": INDEX_FONT_SIZE, fill: indexLabelColor(d.v),
                 text: label
             }));
         });
         return nodes;
     }
 
+    /** The outer edge of whatever dotNode or changeNode actually drew for `v`. */
+    function markerRadius(v) {
+        if (v.kind === "change") return CHANGE_R;
+        if (v.publicShare) return SHARE_R;
+        if (v.isMilestone || v.revision) return HALO_R;
+        return NODE_R;
+    }
+
     /**
-     * indexLabelColor matches a label to the mark it names, following the same
-     * rule dotNode and changeNode fill with: accent for a release, the author's
-     * rail colour for a change that made no version, and the secondary text
-     * colour for an ordinary save or a milestone - whose dot is that colour too,
-     * with the ring rather than the fill saying it was marked.
+     * indexLabelColor keeps a label to two colours: accent for a release,
+     * secondary for everything else.
+     *
+     * It used to take the author's rail colour for a change, to pair the number
+     * with its mark. That read badly and had to go: the author hues are chosen
+     * to tell PEOPLE apart across a whole hub, not to be legible as 9px text,
+     * and the label lands beside a rail drawn in the same hue, so it competed
+     * with the line instead of pointing at the dot. Which author a number
+     * belongs to is already said by which track it sits on. A release keeps the
+     * accent because it is the number worth hunting for in a long history.
      */
-    function indexLabelColor(v, railColor) {
-        if (v.kind === "change") return railColor;
+    function indexLabelColor(v) {
         return v.revision ? C.accent : C.secondary;
     }
 
@@ -715,7 +754,7 @@
 
         var gutter = el("div", {
             class: "gutter" + (band ? " band" : "") + (thread ? " ruled" : ""),
-            // Each avatar cell is TRACK_H tall, so one ROW_PAD_Y of lead-in
+            // Each avatar cell is one track tall, so one ROW_PAD_Y of lead-in
             // puts the cells over the tracks; the disc is then nudged to
             // RAIL_FRAC inside its own cell to meet the rail.
             style: { width: GUTTER_W + "px", height: h + "px", paddingTop: ROW_PAD_Y + "px" }
@@ -724,13 +763,14 @@
                 ? plural(track.authorCount, "more person", "more people")
                 : track.name ? "Saved by " + track.name : "Unknown author";
             // translate, not padding: it shifts the disc onto the rail without
-            // changing the cell's height, so the cells keep their TRACK_H pitch
+            // changing the cell's height, so the cells keep their track pitch
             // and no cell pushes the next one down.
+            var cellH = trackHeight();
             var cell = el("div", {
                 class: "avatar-cell",
                 style: {
-                    height: TRACK_H + "px",
-                    transform: "translateY(" + (TRACK_H * (RAIL_FRAC - 0.5)) + "px)"
+                    height: cellH + "px",
+                    transform: "translateY(" + (cellH * (RAIL_FRAC - 0.5)) + "px)"
                 }
             }, [
                 avatarNode(track.key, track.name, 22, track.overflow ? "+" + track.authorCount : null)
@@ -776,8 +816,9 @@
                 }));
             });
 
-            // One colour for this track's identity: the ring a change is drawn
-            // with, and the label that names it.
+            // This track's identity colour, worn by the rail and by the ring a
+            // change is drawn with. Deliberately not by the index labels - see
+            // indexLabelColor.
             var trackColor = track.overflow ? C.secondary : userColor(track.key);
             track.dots.forEach(function (d, i) {
                 group.push(
@@ -788,7 +829,7 @@
             });
 
             if (showIndex) {
-                indexLabelNodes(track.dots, xs, y, trackColor).forEach(function (label) {
+                indexLabelNodes(track.dots, xs, y).forEach(function (label) {
                     group.push(label);
                 });
             }

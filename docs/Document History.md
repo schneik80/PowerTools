@@ -77,7 +77,7 @@ Because a save restarts the third figure, turning **Show other changes** on and 
 
 The numbers lean at an angle above their dots, each ending at the mark it names. That is what lets every event carry one: printed flat, a number needs as much clear width as it is wide, and a busy day does not have it. Only where a day holds more saves than the row can separate at all do some numbers drop out, and the hover card still carries them.
 
-Each number takes its own mark's colour &mdash; a release's reads in the accent its dot is filled with, a change's in its author's track colour &mdash; so a number and the event it belongs to pair up without having to be traced.
+A release's number is drawn in the accent its dot is filled with, so the releases stand out when scanning a long history; every other number is plain text. Turning the numbers on opens the day rows up a little, so each number stays inside its own author's track rather than drifting over the one above.
 
 ### The elapsed-time labels
 
