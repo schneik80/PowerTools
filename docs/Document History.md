@@ -75,7 +75,7 @@ milestone   1.2.0
 
 Because a save restarts the third figure, turning **Show other changes** on and off never renumbers a save &mdash; the other changes fill in around them and the saves keep the numbers they had.
 
-In the clock view a run of saves closer together than a number is wide has some numbers left off, since two of them would print on top of each other. The hover card always carries the number, and **Show thread across days** spaces every event far enough apart to print all of them.
+The numbers sit at an angle above their dots. That is what lets every event carry one: printed flat, a number needs as much clear width as it is wide, and a busy day does not have it. Only where a day holds more saves than the row can separate at all do some numbers drop out, and the hover card still carries them.
 
 ### The elapsed-time labels
 

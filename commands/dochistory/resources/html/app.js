@@ -34,8 +34,17 @@
     var GUTTER_W = 46;   // avatar column, LEFT of the plot - never eats axis space
     var PAD_R = 14;
     var TRACK_H = 30;    // one author track
+    // Where the rail sits inside its track, as a fraction of the track height.
+    // Low rather than centred: the angled index labels rise from the dots, and
+    // this is the room they rise into. The avatar disc offsets by the same
+    // fraction so the gutter still lines up with the rail it labels.
+    var RAIL_FRAC = 0.8;
     var AXIS_H = 20;     // hour labels under the last track (day view only)
-    var ROW_PAD_Y = 8;
+    // Lead-in above the first track and below the last. It is the headroom the
+    // angled index labels rise into on the top track: at 45 degrees the longest
+    // label this draws rises about 25px from its baseline, and anything less
+    // than this clipped its tip against the top of the plot.
+    var ROW_PAD_Y = 12;
     var HEADER_H = 22;   // the day's date line above its tracks
 
     // Gap bands between two day rows. Fixed heights per tier, so the whole
@@ -66,16 +75,20 @@
     // pass pushes them apart.
     var MIN_DOT_GAP = NODE_R * 2 + 2;
 
-    // The index label. Drawn above the dot, inside the track it belongs to, so
-    // switching it on never changes a row's height - rowHeight, layoutStack and
-    // threadOverlay agree on that arithmetic and have to move together or the
-    // thread polyline drifts off its dots.
+    // The index label. Its room comes from RAIL_FRAC and ROW_PAD_Y, which are
+    // fixed, so switching the toggle on never changes a row's height - rowHeight,
+    // layoutStack and threadOverlay agree on that arithmetic and have to move
+    // together or the thread polyline drifts off its dots.
     var INDEX_FONT_SIZE = 8;
-    var INDEX_DY = NODE_R + 4; // baseline offset above the dot's centre
-    // Widest label this is asked to draw is "10.10.10" at ~34px; below that two
-    // labels would touch, so the run is thinned rather than overlapped. Thread
-    // view's COL_GAP clears it, so there every label survives.
-    var INDEX_LABEL_GAP = 34;
+    var INDEX_DY = NODE_R + 2; // baseline offset above the dot's centre
+    // Angled, which is what lets every event carry one. Drawn flat, a ~30px wide
+    // label needed 30px of clear axis and day view only guarantees MIN_DOT_GAP,
+    // so most of a busy day's labels had to be dropped. Rotated, two neighbours
+    // slide past each other diagonally: the clearance they need is their line
+    // height over sin(angle), around 12px at 45 degrees, which fits inside
+    // MIN_DOT_GAP. The room it rises into is what RAIL_FRAC freed up.
+    var INDEX_ANGLE = -45;
+    var INDEX_MIN_GAP = 12;
 
     var DAY_ROWS_CAP = 60; // a render cap, not a data cap - see the "show all" row
     var DAY_MS = 86400000;
@@ -315,7 +328,7 @@
         return ROW_PAD_Y * 2 + Math.max(1, trackCount) * TRACK_H + (withAxis ? AXIS_H : 0);
     }
 
-    function trackY(i) { return ROW_PAD_Y + i * TRACK_H + TRACK_H / 2; }
+    function trackY(i) { return ROW_PAD_Y + i * TRACK_H + TRACK_H * RAIL_FRAC; }
 
     function gapHeight(tier) {
         return tier === "nextDay" ? GAP_H_TIGHT : tier === "days" ? GAP_H : GAP_H_WIDE;
@@ -390,21 +403,24 @@
     }
 
     /**
-     * hourTicks picks the hour gridlines for a plot of the given width, thinning
-     * them as the palette narrows so the labels never collide. `label` marks the
-     * ticks that get a printed hour.
+     * hourTicks picks the hour gridlines for a plot of the given width.
+     *
+     * Every tick carries its hour. The earlier version also drew unlabelled
+     * gridlines between the labelled ones - up to one an hour - which ruled the
+     * plot far more heavily than a reader asking "roughly when in the day" needs,
+     * and competed with the dots for attention. Six-hourly, all named, is the
+     * quarter-day reading the axis is actually for.
+     *
+     * Narrowing drops whole ticks rather than reintroducing anonymous ones, so
+     * the rule stays true at every width: nothing is drawn that cannot say what
+     * hour it is.
      */
     function hourTicks(plotW) {
         if (plotW < 200) return [];
-        var every = plotW >= 420 ? 1 : plotW >= 260 ? 3 : 6;
-        var labelEvery = plotW >= 420 ? 6 : plotW >= 260 ? 12 : 24;
+        var every = plotW >= 260 ? 6 : 12;
         var ticks = [];
         for (var h = 0; h <= 24; h += every) {
-            ticks.push({ hour: h, label: h % labelEvery === 0 });
-        }
-        // Below 260 px only noon is labelled - the edges are implied by the row.
-        if (plotW < 260) {
-            return ticks.map(function (t) { return { hour: t.hour, label: t.hour === 12 }; });
+            ticks.push({ hour: h });
         }
         return ticks;
     }
@@ -564,20 +580,20 @@
     }
 
     /**
-     * indexLabelNodes draws one track's index labels above its dots, thinning
-     * the run so two labels never overlap.
+     * indexLabelNodes draws one track's index labels, rising at INDEX_ANGLE from
+     * just above each dot.
      *
      * The numbering itself is not decided here - `indexLabel` is stamped in
      * tested Python (history_model.stamp_index_labels), because a version number
      * that is quietly wrong is worse than one that is missing. All this owns is
-     * whether a given label has the width to be drawn, which needs the panel
-     * width the browser measured.
+     * where the label goes, which needs the panel width the browser measured.
      *
-     * Thinning is greedy from the left and keeps the first of any run that
-     * collides, so which labels survive does not shift as the panel is resized
-     * past a dot. Day view is where this bites: dots are only guaranteed
-     * MIN_DOT_GAP apart there, well under a label's width. Thread view's
-     * COL_GAP clears INDEX_LABEL_GAP, so every label is drawn.
+     * The angle is what makes "label every event" possible: rotated labels need
+     * only their line height of horizontal clearance rather than their full
+     * width, so a day view run at MIN_DOT_GAP can carry one on every dot. The
+     * INDEX_MIN_GAP guard is left for the one case the axis cannot separate at
+     * all - declutter spaces a run evenly when there are more dots than the
+     * width can hold, and past that point the labels would pile up unreadably.
      */
     function indexLabelNodes(dots, xs, y) {
         var nodes = [];
@@ -585,10 +601,14 @@
         dots.forEach(function (d, i) {
             var label = d.v.indexLabel;
             if (!label) return;
-            if (xs[i] - lastX < INDEX_LABEL_GAP) return;
+            if (xs[i] - lastX < INDEX_MIN_GAP) return;
             lastX = xs[i];
+            var ly = y - INDEX_DY;
+            // Anchored at the start so the label begins over its own dot and
+            // rises to the right, rather than leaning back over the dot before.
             nodes.push(svgEl("text", {
-                x: xs[i], y: y - INDEX_DY, "text-anchor": "middle",
+                x: xs[i], y: ly, "text-anchor": "start",
+                transform: "rotate(" + INDEX_ANGLE + " " + xs[i] + " " + ly + ")",
                 "font-size": INDEX_FONT_SIZE, fill: C.secondary, text: label
             }));
         });
@@ -666,14 +686,24 @@
 
         var gutter = el("div", {
             class: "gutter" + (band ? " band" : "") + (thread ? " ruled" : ""),
-            // Each avatar cell is TRACK_H tall and centres its disc, so one
-            // ROW_PAD_Y of lead-in lines them up with trackY().
+            // Each avatar cell is TRACK_H tall, so one ROW_PAD_Y of lead-in
+            // puts the cells over the tracks; the disc is then nudged to
+            // RAIL_FRAC inside its own cell to meet the rail.
             style: { width: GUTTER_W + "px", height: h + "px", paddingTop: ROW_PAD_Y + "px" }
         }, row.tracks.map(function (track) {
             var label = track.overflow
                 ? plural(track.authorCount, "more person", "more people")
                 : track.name ? "Saved by " + track.name : "Unknown author";
-            var cell = el("div", { class: "avatar-cell", style: { height: TRACK_H + "px" } }, [
+            // translate, not padding: it shifts the disc onto the rail without
+            // changing the cell's height, so the cells keep their TRACK_H pitch
+            // and no cell pushes the next one down.
+            var cell = el("div", {
+                class: "avatar-cell",
+                style: {
+                    height: TRACK_H + "px",
+                    transform: "translateY(" + (TRACK_H * (RAIL_FRAC - 0.5)) + "px)"
+                }
+            }, [
                 avatarNode(track.key, track.name, 22, track.overflow ? "+" + track.authorCount : null)
             ]);
             cell.addEventListener("mouseenter", function () { showTip(cell, label); });
@@ -684,11 +714,13 @@
         var kids = [];
 
         // Hour grid - day view only; in thread view x is sequence, not clock.
+        // One weight, because every tick is now a named quarter-day; the lighter
+        // second weight existed to demote the anonymous hourly lines in between.
         ticks.forEach(function (tick) {
             var x = xOfMs(tick.hour * 3600000, viewW);
             kids.push(svgEl("line", {
                 x1: x, y1: 4, x2: x, y2: h - AXIS_H,
-                stroke: C.divider, "stroke-opacity": tick.hour % 6 === 0 ? 0.7 : 0.35
+                stroke: C.divider, "stroke-opacity": 0.7
             }));
         });
 
@@ -731,8 +763,9 @@
             kids.push(svgEl("g", {}, group));
         });
 
-        // Hour labels under the last track.
-        ticks.filter(function (t) { return t.label; }).forEach(function (tick) {
+        // Hour labels under the last track - one per tick, since every tick has
+        // an hour to print.
+        ticks.forEach(function (tick) {
             var x = xOfMs(tick.hour * 3600000, viewW);
             kids.push(svgEl("text", {
                 x: x, y: h - 6,
