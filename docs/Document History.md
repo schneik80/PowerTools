@@ -51,6 +51,32 @@ Saves closer together than the dots are wide are nudged apart so a burst does no
 
 The legend below the view lists only the markers that occur in this document's history.
 
+### The index
+
+With **Index** on, every dot carries a small three-part number above it, counted from the oldest event forward.
+
+| Event | What it counts up |
+|---|---|
+| A release | The first figure. The second and third restart at zero. |
+| A save or a milestone | The second figure. The third restarts at zero. |
+| Any other change | The third figure. |
+
+Counting starts at `0.0.0`, so a document's first save reads `0.1.0` and the first release someone names reads `1.0.0`:
+
+```
+save        0.1.0
+save        0.2.0
+property    0.2.1
+property    0.2.2
+release A   1.0.0
+save        1.1.0
+milestone   1.2.0
+```
+
+Because a save restarts the third figure, turning **Show other changes** on and off never renumbers a save &mdash; the other changes fill in around them and the saves keep the numbers they had.
+
+In the clock view a run of saves closer together than a number is wide has some numbers left off, since two of them would print on top of each other. The hover card always carries the number, and **Show thread across days** spaces every event far enough apart to print all of them.
+
 ### The elapsed-time labels
 
 Between two day rows, a rule and a phrase say how long the design was untouched. The weight of the rule scales with the gap &mdash; a hairline for the next day, a dashed rule for a week or more &mdash; so a long silence is felt before it is read.
@@ -69,6 +95,7 @@ The thumbnail is fetched from the cloud only for the version you actually rest o
 |---|---|
 | **Show other changes** | Adds the edits that did not produce a version &mdash; property changes, part numbers, markers &mdash; each as a small open ring on its author's track. This can add people: someone who edited a property but never saved does not appear at all with this off. Creating a milestone or a release is left out, because the save it was made against already carries it; the consequence is that someone who only named a release, and never saved, is credited on neither. Hidden entirely for a document whose history could not be read from the cloud, since those edits are not visible there. |
 | **Show thread across days** | Switches the horizontal axis from the clock to the version's position in the history: every save is one column apart, and a line threads them in order across the day rows. Empty time then costs no width, so a long history scrolls sideways inside the box, with a dashed seam wherever the axis crosses from one day into the next. |
+| **Index** | Numbers every event with a version of its own &mdash; see [The index](#the-index) below. |
 | **Show all N days** | Appears when a history runs past 60 days. The view renders the most recent 60 by default; this draws the rest. |
 
 The clock view is the default because it is the one that never scrolls sideways and keeps every row on the same scale. Turn the thread on when the question is "what order did these happen in", rather than "when in the day".

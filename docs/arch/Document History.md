@@ -17,7 +17,7 @@ It replaces the original behaviour, which selected the root component and ran Fu
 | File | Holds |
 |---|---|
 | `entry.py` | Fusion contact only: lifecycle, reading the versions, serving the page, the thumbnail pump. |
-| `history_model.py` | The bucketing — day rows, author tracks, gaps, the calendar arithmetic — plus the merge of MFGDM's two version views. `adsk`-free and unit-tested. |
+| `history_model.py` | The bucketing — day rows, author tracks, gaps, the calendar arithmetic — plus the merge of MFGDM's two version views and the index numbering. `adsk`-free and unit-tested. |
 | `mfgdm_history.py` | The GraphQL read: one paginated request over `mfgdm://v3`, through the transport `partnumber_shared/mfgdm_props.gql` already owns. |
 | `resources/html/{index.html,style.css,app.js}` | The drawing, plus the width-dependent geometry. |
 | `tests/test_dochistory_history_model.py` | A port of the vitest suite covering the same bucketing in the web app, so the two presentations cannot drift apart in what they claim about a history. |
@@ -29,6 +29,12 @@ The bucketing is in Python because it is where a plausible wrong number would co
 The geometry is in `app.js` because all of it depends on the panel width the browser measures (`ResizeObserver` on the scroll container). Sending a width to Python and a layout back would put a round trip in the middle of a drag. Its port was verified locally against the same vitest cases; CI cannot run it, because CI installs nothing but ruff and pytest.
 
 Constants therefore live on exactly one side: `TRACKS_PER_DAY_CAP` with the bucketing, `DAY_ROWS_CAP` and every pixel value with the drawing.
+
+The **Index** toggle splits on the same line. `history_model.stamp_index_labels` decides the numbers — a release counts up major, a save or milestone minor, any other change patch, each resetting what sits below it — because a version number that is quietly wrong is worse than one that is missing. `app.js` owns only whether a given label has room to be drawn, which needs the measured width: `indexLabelNodes` thins a colliding run greedily from the left, and thread view's `COL_GAP` clears `INDEX_LABEL_GAP` so nothing is thinned there.
+
+Both share one ordering. `_ordered_oldest_first` is the history's canonical sequence; `bucket_by_day` numbers a dot's thread-axis `index` from it and `stamp_index_labels` counts along it, so a label can never disagree with a position. It was inlined in `bucket_by_day` before the numbering needed it too.
+
+The numbering runs once, over the saves and the changes together, before either `bucket_by_day` call — the labels ride on record dicts both stacks share by reference. Resetting patch on a save is what makes that safe: a save's label depends only on the releases and saves before it, so the two stacks agree about every save and `showChanges` adds patch labels without renumbering a dot.
 
 ### Execution flow
 
@@ -116,5 +122,5 @@ C4Component
     Rel(cmd, model, "bucket_by_day(records)")
     Rel(cmd, page, "sendInfoToHTML: setHistory, setThumbs")
     Rel(page, cmd, "incomingFromHTML: ready, requestThumbs")
-    Rel(user, page, "Toggles the thread view, hovers a save")
+    Rel(user, page, "Toggles the thread, the other changes and the index; hovers a save")
 ```

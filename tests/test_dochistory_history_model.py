@@ -303,6 +303,175 @@ def test_is_release_name_tells_a_typed_revision_from_an_auto_milestone(name, exp
 
 
 # ---------------------------------------------------------------------------
+# The index label
+# ---------------------------------------------------------------------------
+
+
+def save(local: str, revision: str = "", milestone: bool = False) -> dict:
+    """A save record, optionally carrying a milestone or a release name.
+
+    Mirrors what ``entry._decorate_cloud_records`` writes: a release is a
+    milestone the user gave a name, so it arrives with *both* ``isMilestone``
+    set and ``revision`` filled.
+    """
+    record = v(1, local, ADA)
+    record["revision"] = revision
+    record["isMilestone"] = milestone or bool(revision)
+    return record
+
+
+def change(local: str) -> dict:
+    """An edit that made no version, in the shape ``change_records`` produces."""
+    record = v(0, local, ADA)
+    record.update({"kind": "change", "number": None, "revision": ""})
+    return record
+
+
+def labels_of(records: list[dict]) -> list[str]:
+    """The index labels, in the order the records were handed over."""
+    return [record["indexLabel"] for record in records]
+
+
+def test_index_labels_follow_the_release_save_change_rules():
+    """The worked sequence: major on a release, minor on a save, patch on a change."""
+    # Arrange
+    records = [
+        save("2026-08-10 09:00"),
+        save("2026-08-10 10:00"),
+        change("2026-08-10 11:00"),
+        change("2026-08-10 12:00"),
+        save("2026-08-10 13:00", revision="A"),
+        save("2026-08-10 14:00"),
+        save("2026-08-10 15:00", milestone=True),
+    ]
+
+    # Act
+    model.stamp_index_labels(records)
+
+    # Assert: each bump resets what sits below it, so counting starts at 0.0.0
+    # and a first release lands on 1.0.0.
+    assert labels_of(records) == [
+        "0.1.0",
+        "0.2.0",
+        "0.2.1",
+        "0.2.2",
+        "1.0.0",
+        "1.1.0",
+        "1.2.0",
+    ]
+
+
+def test_a_release_bumps_major_even_though_fusion_also_marks_it_a_milestone():
+    """The release test has to come first: every release is also a milestone."""
+    # Arrange
+    records = [save("2026-08-10 09:00", revision="Rev B")]
+    assert records[0]["isMilestone"] is True
+
+    # Act
+    model.stamp_index_labels(records)
+
+    # Assert
+    assert records[0]["indexLabel"] == "1.0.0"
+
+
+def test_a_milestone_counts_as_a_save_not_a_release():
+    """An auto-named milestone is a save someone marked, not a step of its own."""
+    # Arrange
+    records = [save("2026-08-10 09:00"), save("2026-08-10 10:00", milestone=True)]
+
+    # Act
+    model.stamp_index_labels(records)
+
+    # Assert
+    assert labels_of(records) == ["0.1.0", "0.2.0"]
+
+
+def test_save_labels_do_not_move_when_the_changes_are_included():
+    """The invariant the toggle rests on.
+
+    ``entry`` buckets twice - once with the no-version edits and once without -
+    and both stacks share these record dicts. Because a save resets patch, its
+    label depends only on the releases and saves before it, so ticking "Show
+    other changes" adds patch labels without renumbering a single save dot.
+    """
+
+    # Arrange: the same saves, built twice so each run stamps its own copies.
+    def saves():
+        return [
+            save("2026-08-10 09:00"),
+            save("2026-08-10 13:00", revision="A"),
+            save("2026-08-10 15:00"),
+        ]
+
+    saves_only = saves()
+    with_changes = saves()
+    changes = [change("2026-08-10 10:00"), change("2026-08-10 14:00")]
+
+    # Act
+    model.stamp_index_labels(saves_only)
+    model.stamp_index_labels(with_changes + changes)
+
+    # Assert: the saves read the same either way; the changes fill in around them.
+    assert labels_of(saves_only) == labels_of(with_changes)
+    assert labels_of(saves_only) == ["0.1.0", "1.0.0", "1.1.0"]
+    assert labels_of(changes) == ["0.1.1", "1.0.1"]
+
+
+def test_numbering_runs_oldest_first_whatever_order_it_arrives_in():
+    """Both the cloud read and the DataFile walk deliver newest first."""
+    # Arrange
+    oldest = save("2026-08-10 09:00")
+    middle = save("2026-08-11 09:00", revision="A")
+    newest = save("2026-08-12 09:00")
+
+    # Act
+    model.stamp_index_labels([newest, middle, oldest])
+
+    # Assert
+    assert [oldest["indexLabel"], middle["indexLabel"], newest["indexLabel"]] == [
+        "0.1.0",
+        "1.0.0",
+        "1.1.0",
+    ]
+
+
+def test_undated_records_are_numbered_last():
+    """Consistent with the undated bucket trailing the day rows."""
+    # Arrange
+    dated = save("2026-08-10 09:00")
+    undated = save("")
+
+    # Act
+    model.stamp_index_labels([undated, dated])
+
+    # Assert
+    assert dated["indexLabel"] == "0.1.0"
+    assert undated["indexLabel"] == "0.2.0"
+
+
+def test_stamping_nothing_is_a_no_op():
+    assert model.stamp_index_labels([]) is None
+
+
+def test_labels_line_up_with_the_thread_axis_index():
+    """A label and a dot position must never disagree - one shared ordering."""
+    # Arrange
+    records = [
+        save("2026-08-12 09:00"),
+        save("2026-08-10 09:00"),
+        save("2026-08-11 09:00"),
+    ]
+
+    # Act
+    model.stamp_index_labels(records)
+    rows = model.bucket_by_day(records)
+
+    # Assert: ascending index means ascending minor.
+    dots = sorted(dots_of(rows), key=lambda dot: dot["index"])
+    assert [dot["v"]["indexLabel"] for dot in dots] == ["0.1.0", "0.2.0", "0.3.0"]
+
+
+# ---------------------------------------------------------------------------
 # Merging MFGDM's two views of a history
 # ---------------------------------------------------------------------------
 

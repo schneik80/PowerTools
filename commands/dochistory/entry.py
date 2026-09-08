@@ -663,6 +663,11 @@ def _gather_history() -> dict:
     if records is not None:
         try:
             _decorate_cloud_records(records, data_file)
+            # Numbered over both lists at once, and before either bucketing:
+            # the labels ride on these record dicts, which both stacks below
+            # share by reference, so one pass leaves the two agreeing. It has to
+            # follow _decorate_cloud_records, which is what sets `revision`.
+            model.stamp_index_labels(records + changes)
             state["status"] = "ok"
             state["versionCount"] = len(records)
             state["changeCount"] = len(changes)
@@ -733,6 +738,10 @@ def _gather_history() -> dict:
 
     state["status"] = "ok"
     state["versionCount"] = len(records)
+    # No changes on this path - this walk cannot see them - so the numbering is
+    # over the saves alone. Patch stays at 0 throughout, which is the truth: no
+    # no-version edit is known about here.
+    model.stamp_index_labels(records)
     state["rows"] = model.bucket_by_day(records)
     state["rowsWithChanges"] = state["rows"]
     ptutil.log(

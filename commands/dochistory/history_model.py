@@ -271,6 +271,44 @@ def is_release_name(name: str) -> bool:
     return not any(name.startswith(prefix) for prefix in AUTO_MILESTONE_PREFIXES)
 
 
+def stamp_index_labels(versions: list[dict]) -> None:
+    """Write an ``indexLabel`` semantic version onto every record, in place.
+
+    A release bumps major, a save or a milestone bumps minor, and an edit that
+    made no version bumps patch - each resetting what sits below it, as a
+    version number should. Counting starts at 0.0.0, so a document's first save
+    is 0.1.0 and the first release someone names is 1.0.0.
+
+    The resetting is what makes the label survive the "Show other changes"
+    toggle. A save's label depends only on the releases and the saves before it,
+    never on how many no-version edits were interleaved, so ticking that box adds
+    patch labels beside the rings without renumbering a single save dot. That
+    matters because ``entry`` buckets twice, once with the changes and once
+    without, and both stacks share these record dicts - see
+    ``test_save_labels_do_not_move_when_the_changes_are_included``.
+
+    Args:
+        versions: Save and change records in any order. Mutated in place: each
+            gains ``indexLabel``. Ordering is :func:`_ordered_oldest_first`, the
+            same order that gives a dot its thread-axis ``index``, so a label and
+            a position can never disagree.
+    """
+    major = minor = patch = 0
+    for record in _ordered_oldest_first(versions):
+        if record.get("kind") == "change":
+            patch += 1
+        elif record.get("revision"):
+            # A user-typed revision name is what this view draws as a release.
+            major += 1
+            minor = patch = 0
+        else:
+            # Saves and milestones alike: a milestone is a save someone marked,
+            # not a step of its own.
+            minor += 1
+            patch = 0
+        record["indexLabel"] = f"{major}.{minor}.{patch}"
+
+
 # ---------------------------------------------------------------------------
 # Calendar-day arithmetic
 # ---------------------------------------------------------------------------
@@ -399,6 +437,31 @@ def _local_stamp(version: dict) -> tuple[str, int] | None:
     return moment.strftime("%Y-%m-%d"), ms
 
 
+def _ordered_oldest_first(versions: list[dict]) -> list[dict]:
+    """Order records oldest to newest, undated last in their input order.
+
+    This is the history's one canonical order. :func:`bucket_by_day` numbers a
+    dot's thread-axis ``index`` from it and :func:`stamp_index_labels` counts
+    along it, so they are kept in one place: a label that disagreed with a
+    position would be a plausible wrong answer, which is the kind this module
+    exists to prevent.
+
+    Args:
+        versions: Records in any order. ``createdOnMs`` is epoch milliseconds;
+            a record without one is undated.
+
+    Returns:
+        A new list; the input is not reordered. The sort is stable, so undated
+        records keep the order they arrived in.
+    """
+    stamped = [(version, _local_stamp(version)) for version in versions]
+    ordered = sorted(
+        stamped,
+        key=lambda pair: (1, 0) if pair[1] is None else (0, pair[0]["createdOnMs"]),
+    )
+    return [version for version, _ in ordered]
+
+
 def tracks_for_day(dots: list[dict]) -> list[dict]:
     """Split one day's dots into per-author tracks, ordered by who saved first.
 
@@ -464,16 +527,11 @@ def bucket_by_day(versions: list[dict]) -> list[dict]:
         it, or None for the top row and either side of the undated bucket.
         Undated versions collect in one trailing bucket rather than vanishing.
     """
-    # Oldest to newest, so `index` is the position on the thread axis. Undated
-    # versions sort last and keep their input order (the sort is stable).
-    stamped = [(version, _local_stamp(version)) for version in versions]
-    ordered = sorted(
-        stamped,
-        key=lambda pair: (1, 0) if pair[1] is None else (0, pair[0]["createdOnMs"]),
-    )
-
+    # `index` is the position on the thread axis, so it counts along the one
+    # canonical order - the same one stamp_index_labels counts along.
     by_day: dict[str, list[dict]] = {}
-    for index, (version, stamp) in enumerate(ordered):
+    for index, version in enumerate(_ordered_oldest_first(versions)):
+        stamp = _local_stamp(version)
         day, ms = stamp if stamp else ("", 0)
         by_day.setdefault(day, []).append({"v": version, "index": index, "ms": ms})
 

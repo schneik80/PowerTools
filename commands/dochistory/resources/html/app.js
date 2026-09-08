@@ -66,6 +66,17 @@
     // pass pushes them apart.
     var MIN_DOT_GAP = NODE_R * 2 + 2;
 
+    // The index label. Drawn above the dot, inside the track it belongs to, so
+    // switching it on never changes a row's height - rowHeight, layoutStack and
+    // threadOverlay agree on that arithmetic and have to move together or the
+    // thread polyline drifts off its dots.
+    var INDEX_FONT_SIZE = 8;
+    var INDEX_DY = NODE_R + 4; // baseline offset above the dot's centre
+    // Widest label this is asked to draw is "10.10.10" at ~34px; below that two
+    // labels would touch, so the run is thinned rather than overlapped. Thread
+    // view's COL_GAP clears it, so there every label survives.
+    var INDEX_LABEL_GAP = 34;
+
     var DAY_ROWS_CAP = 60; // a render cap, not a data cap - see the "show all" row
     var DAY_MS = 86400000;
     var HOVER_DELAY_MS = 400;
@@ -75,6 +86,7 @@
     var S = window.__ptInit || { theme: "dark", docName: "", status: "loading" };
     var thread = false;
     var showChanges = false;
+    var showIndex = false;
     var showAll = false;
     var viewW = 720;         // measured; seeded so the first paint is not a flash
     var thumbs = {};         // versionId -> data: URL, or "" for "none available"
@@ -462,6 +474,9 @@
             if (v.isMilestone) marks += " · Milestone";
             if (v.revision) marks += " · Release " + v.revision;
         }
+        // Carried on the card too, so a label the declutter pass dropped in day
+        // view is still readable without switching to the thread.
+        if (showIndex && v.indexLabel) marks += " · " + v.indexLabel;
         cardEl.appendChild(el("div", { class: "title", text: marks }));
         if (v.publicShare) {
             cardEl.appendChild(el("div", { class: "share", text: "Public share" }));
@@ -546,6 +561,38 @@
         });
         g.addEventListener("mouseleave", hideCard);
         return g;
+    }
+
+    /**
+     * indexLabelNodes draws one track's index labels above its dots, thinning
+     * the run so two labels never overlap.
+     *
+     * The numbering itself is not decided here - `indexLabel` is stamped in
+     * tested Python (history_model.stamp_index_labels), because a version number
+     * that is quietly wrong is worse than one that is missing. All this owns is
+     * whether a given label has the width to be drawn, which needs the panel
+     * width the browser measured.
+     *
+     * Thinning is greedy from the left and keeps the first of any run that
+     * collides, so which labels survive does not shift as the panel is resized
+     * past a dot. Day view is where this bites: dots are only guaranteed
+     * MIN_DOT_GAP apart there, well under a label's width. Thread view's
+     * COL_GAP clears INDEX_LABEL_GAP, so every label is drawn.
+     */
+    function indexLabelNodes(dots, xs, y) {
+        var nodes = [];
+        var lastX = -Infinity;
+        dots.forEach(function (d, i) {
+            var label = d.v.indexLabel;
+            if (!label) return;
+            if (xs[i] - lastX < INDEX_LABEL_GAP) return;
+            lastX = xs[i];
+            nodes.push(svgEl("text", {
+                x: xs[i], y: y - INDEX_DY, "text-anchor": "middle",
+                "font-size": INDEX_FONT_SIZE, fill: C.secondary, text: label
+            }));
+        });
+        return nodes;
     }
 
     function dotNode(v, cx, cy) {
@@ -675,6 +722,12 @@
                         : dotNode(d.v, xs[i], y)
                 );
             });
+
+            if (showIndex) {
+                indexLabelNodes(track.dots, xs, y).forEach(function (label) {
+                    group.push(label);
+                });
+            }
             kids.push(svgEl("g", {}, group));
         });
 
@@ -822,7 +875,13 @@
         var more = document.getElementById("more");
         var legend = document.getElementById("legend");
         var countEl = document.getElementById("version-count");
-        var toggle = document.getElementById("thread-toggle");
+        // The two toggles that are always applicable, hidden together when
+        // there is no history to apply them to. "Show other changes" is not one
+        // of them - it hides on its own count, below.
+        var viewToggles = [
+            document.getElementById("thread-toggle"),
+            document.getElementById("index-toggle")
+        ];
         clear(stackEl);
         clear(more);
         clear(legend);
@@ -833,14 +892,14 @@
                 ? "Reading version history..."
                 : (S.message || "The version history is not available.");
             countEl.textContent = "";
-            toggle.style.visibility = "hidden";
+            viewToggles.forEach(function (t) { t.style.visibility = "hidden"; });
             scroller.classList.remove("wide");
             return;
         }
 
         banner.textContent = "";
         banner.className = "banner";
-        toggle.style.visibility = "visible";
+        viewToggles.forEach(function (t) { t.style.visibility = "visible"; });
 
         var changeCount = S.changeCount || 0;
         var changeToggle = document.getElementById("change-toggle");
@@ -850,6 +909,7 @@
         changeToggle.hidden = changeCount === 0;
         if (changeCount === 0) showChanges = false;
         document.getElementById("change-check").checked = showChanges;
+        document.getElementById("index-check").checked = showIndex;
 
         var allRows = (showChanges ? S.rowsWithChanges : S.rows) || S.rows || [];
         var capped = !showAll && allRows.length > DAY_ROWS_CAP;
@@ -921,10 +981,24 @@
     changeToggleEl.addEventListener("mouseenter", function () {
         showTip(
             changeToggleEl,
-            "Include edits that made no new version - property changes, milestones, part numbers - and the people who made them"
+            "Include edits that made no new version - property changes, part numbers, markers - and the people who made them"
         );
     });
     changeToggleEl.addEventListener("mouseleave", hideCard);
+
+    var indexCheck = document.getElementById("index-check");
+    indexCheck.addEventListener("change", function () {
+        showIndex = indexCheck.checked;
+        render();
+    });
+    var indexToggleEl = document.getElementById("index-toggle");
+    indexToggleEl.addEventListener("mouseenter", function () {
+        showTip(
+            indexToggleEl,
+            "Number every event: a release counts up the first figure, a save or milestone the second, any other change the third"
+        );
+    });
+    indexToggleEl.addEventListener("mouseleave", hideCard);
 
     var toggleEl = document.getElementById("thread-toggle");
     toggleEl.addEventListener("mouseenter", function () {
