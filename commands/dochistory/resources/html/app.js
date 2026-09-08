@@ -33,12 +33,15 @@
 
     var GUTTER_W = 46;   // avatar column, LEFT of the plot - never eats axis space
     var PAD_R = 14;
-    // One author track. Two heights: the index labels rise about 25px out of a
-    // dot, so at the tight height most of a label sat in the band of the track
-    // ABOVE it and got read against the wrong author - on a five-track day that
-    // is misattribution, not clutter. The roomy height keeps a label inside its
-    // own band. trackHeight() is the single reader; rowHeight, trackY and
-    // threadOverlay all go through it, so they cannot disagree within a render.
+    // One author track. Two heights: an index label rises about 25px out of a
+    // dot, so at the tight pitch most of a label sits in the band of the track
+    // ABOVE it and gets read against the wrong author - on a five-track day that
+    // is misattribution, not clutter. The roomy pitch keeps a label inside its
+    // own band, and is only paid for when every number is being shown at once;
+    // the hover reveal stays at the tight pitch and masks instead, because it
+    // shows one track at a time and has nothing to be confused with.
+    // trackHeight() is the single reader; rowHeight, trackY and threadOverlay
+    // all go through it, so they cannot disagree within a render.
     var TRACK_H = 30;
     var TRACK_H_INDEXED = 44;
     // Where the rail sits inside its track, as a fraction of the track height.
@@ -112,6 +115,19 @@
     // dot. Flip both of these together to change your mind.
     var INDEX_ANGLE = 45;
     var INDEX_ANCHOR = "end";
+
+    // The mask each label paints behind itself. With the toggle off the numbers
+    // are revealed a track at a time under the cursor, at the tight pitch, so
+    // reading one author's history costs no vertical space at all - and at that
+    // pitch a label crosses the rail above it, which the mask is what makes
+    // survivable. The character set is ten digits and a dot, which is the whole
+    // reason the mask can be sized from an estimate rather than a getBBox
+    // measurement in a second pass after insertion.
+    var INDEX_CHAR_W = 5;      // digit advance at INDEX_FONT_SIZE
+    var INDEX_DOT_W = 2.6;     // '.' advance - a label is a third dots by count
+    var INDEX_PAD_X = 2;       // mask padding either side of the text
+    var INDEX_MASK_UP = 8;     // mask top above the baseline
+    var INDEX_MASK_H = 11;     // line box at INDEX_FONT_SIZE
     // Perpendicular clearance between two parallel labels is their horizontal
     // separation times sin(angle), so at a ~11px line box the separation has to
     // be 11/sin(45) ~ 16px. At 14 the dense runs overlapped by a pixel or two.
@@ -197,7 +213,11 @@
             accent: get("--accent"),
             share: get("--share"),
             divider: get("--border-color"),
-            paper: get("--bg-panel")
+            paper: get("--bg-panel"),
+            // Translucent, so a mask has to paint paper and then this over it -
+            // it cannot be flattened to one fill here. Same two-layer trick
+            // .gutter.band uses in the stylesheet.
+            band: get("--band")
         };
     }
 
@@ -638,9 +658,11 @@
      *
      * Each label sits its own marker's radius clear of it, so it reads as
      * belonging to that mark rather than floating at a fixed height above the
-     * rail.
+     * rail, and each carries a mask so it stays readable where it crosses the
+     * rail or the dots of the track above - which is what lets the hover reveal
+     * work at the tight pitch instead of opening every row.
      */
-    function indexLabelNodes(dots, xs, y) {
+    function indexLabelNodes(dots, xs, y, band) {
         var nodes = [];
         var lastX = -Infinity;
         dots.forEach(function (d, i) {
@@ -649,14 +671,48 @@
             if (xs[i] - lastX < INDEX_MIN_GAP) return;
             lastX = xs[i];
             var ly = y - markerRadius(d.v) - INDEX_CLEAR;
-            nodes.push(svgEl("text", {
+            // Anchored at its end, so the text runs back from the dot and the
+            // mask runs back with it.
+            var w = indexLabelWidth(label);
+            var bx = xs[i] - w - INDEX_PAD_X;
+            var by = ly - INDEX_MASK_UP;
+            var bw = w + INDEX_PAD_X * 2;
+            var kids = [
+                svgEl("rect", { x: bx, y: by, width: bw, height: INDEX_MASK_H, fill: C.paper })
+            ];
+            if (band) {
+                kids.push(svgEl("rect", {
+                    x: bx, y: by, width: bw, height: INDEX_MASK_H, fill: C.band
+                }));
+            }
+            kids.push(svgEl("text", {
                 x: xs[i], y: ly, "text-anchor": INDEX_ANCHOR,
-                transform: "rotate(" + INDEX_ANGLE + " " + xs[i] + " " + ly + ")",
-                "font-size": INDEX_FONT_SIZE, fill: indexLabelColor(d.v),
-                text: label
+                "font-size": INDEX_FONT_SIZE, fill: indexLabelColor(d.v), text: label
             }));
+            // One rotation for the mask and its text together, so they cannot
+            // come apart.
+            nodes.push(svgEl("g", {
+                transform: "rotate(" + INDEX_ANGLE + " " + xs[i] + " " + ly + ")"
+            }, kids));
         });
         return nodes;
+    }
+
+    /**
+     * indexLabelWidth estimates a label's rendered width.
+     *
+     * Estimated rather than measured because the alphabet is exactly ten digits
+     * and a dot: their advances are known, so this is accurate to a pixel or so
+     * without having to insert the text, read getBBox and size the mask in a
+     * second pass. Dots are counted separately because they are barely half a
+     * digit wide and a label is a third dots by character count.
+     */
+    function indexLabelWidth(label) {
+        var dots = 0;
+        for (var i = 0; i < label.length; i++) {
+            if (label.charAt(i) === ".") dots++;
+        }
+        return (label.length - dots) * INDEX_CHAR_W + dots * INDEX_DOT_W;
     }
 
     /** The outer edge of whatever dotNode or changeNode actually drew for `v`. */
@@ -801,10 +857,23 @@
             var xs = thread ? raw : declutter(raw, 0, plotWidth(viewW));
             var rail = track.overflow ? fade(C.secondary, RAIL_ALPHA)
                 : userColorAlpha(track.key, RAIL_ALPHA);
-            var group = [svgEl("line", {
+            var group = [];
+
+            // With the toggle off the numbers come up under the cursor, so the
+            // whole band has to be hoverable and not just the 3px rail. The rect
+            // goes in first, under everything: the dots keep their own hover
+            // cards, and this only answers for the space between them.
+            if (!showIndex) {
+                group.push(svgEl("rect", {
+                    class: "hit", x: 0, y: ROW_PAD_Y + ti * trackHeight(),
+                    width: plotW, height: trackHeight(), fill: "transparent"
+                }));
+            }
+
+            group.push(svgEl("line", {
                 x1: 0, y1: y, x2: plotW, y2: y,
                 stroke: rail, "stroke-width": RAIL_W, "stroke-linecap": "round"
-            })];
+            }));
 
             // Where a dot had to be nudged to stay legible, a hairline marks the
             // time it actually happened.
@@ -828,12 +897,27 @@
                 );
             });
 
-            if (showIndex) {
-                indexLabelNodes(track.dots, xs, y).forEach(function (label) {
-                    group.push(label);
+            // Always built, shown either always or on hover. Kept in their own
+            // group so revealing them is one attribute rather than a re-render,
+            // which would drop the very hover that asked for them.
+            var labelGroup = svgEl("g", {}, indexLabelNodes(track.dots, xs, y, band));
+            group.push(labelGroup);
+
+            var trackGroup = svgEl("g", {}, group);
+            if (!showIndex) {
+                labelGroup.setAttribute("display", "none");
+                // Bound to the track group rather than the rect beneath it: the
+                // dots are siblings of that rect, so moving onto one would count
+                // as leaving it and blink the numbers off at the moment a reader
+                // reached for one. The group contains them all.
+                trackGroup.addEventListener("mouseenter", function () {
+                    labelGroup.setAttribute("display", "inline");
+                });
+                trackGroup.addEventListener("mouseleave", function () {
+                    labelGroup.setAttribute("display", "none");
                 });
             }
-            kids.push(svgEl("g", {}, group));
+            kids.push(trackGroup);
         });
 
         // Hour labels under the last track - one per tick, since every tick has
@@ -1101,7 +1185,7 @@
     indexToggleEl.addEventListener("mouseenter", function () {
         showTip(
             indexToggleEl,
-            "Number every event: a release counts up the first figure, a save or milestone the second, any other change the third"
+            "Number every event and open the rows up to fit them: a release counts up the first figure, a save or milestone the second, any other change the third. Leave it off and hover a track to read just that person's numbers."
         );
     });
     indexToggleEl.addEventListener("mouseleave", hideCard);

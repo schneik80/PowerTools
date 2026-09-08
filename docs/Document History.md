@@ -53,7 +53,10 @@ The legend below the view lists only the markers that occur in this document's h
 
 ### The index
 
-With **Index** on, every dot carries a small three-part number above it, counted from the oldest event forward.
+Every dot can carry a small three-part number above it, counted from the oldest event forward. There are two ways to see them:
+
+- **Rest the pointer on a track.** That person's numbers appear for as long as the pointer is in their row, and nothing else moves. Each number is drawn on a small patch of the row's own background, so it stays readable where it crosses the track above.
+- **Turn on Index** to show all of them at once. The day rows open up while it is on, so that every number sits inside its own author's track rather than drifting over the one above, and close again when it is off. On a day with several people that is the difference between reading the numbers and guessing whose they are &mdash; but it does make the view taller, which is why it is not the default.
 
 | Event | What it counts up |
 |---|---|
@@ -77,7 +80,7 @@ Because a save restarts the third figure, turning **Show other changes** on and 
 
 The numbers lean at an angle above their dots, each ending at the mark it names. That is what lets every event carry one: printed flat, a number needs as much clear width as it is wide, and a busy day does not have it. Only where a day holds more saves than the row can separate at all do some numbers drop out, and the hover card still carries them.
 
-A release's number is drawn in the accent its dot is filled with, so the releases stand out when scanning a long history; every other number is plain text. Turning the numbers on opens the day rows up a little, so each number stays inside its own author's track rather than drifting over the one above.
+A release's number is drawn in the accent its dot is filled with, so the releases stand out when scanning a long history; every other number is plain text.
 
 ### The elapsed-time labels
 
@@ -97,7 +100,7 @@ The thumbnail is fetched from the cloud only for the version you actually rest o
 |---|---|
 | **Show other changes** | Adds the edits that did not produce a version &mdash; property changes, part numbers, markers &mdash; each as a small open ring on its author's track. This can add people: someone who edited a property but never saved does not appear at all with this off. Creating a milestone or a release is left out, because the save it was made against already carries it; the consequence is that someone who only named a release, and never saved, is credited on neither. Hidden entirely for a document whose history could not be read from the cloud, since those edits are not visible there. |
 | **Show thread across days** | Switches the horizontal axis from the clock to the version's position in the history: every save is one column apart, and a line threads them in order across the day rows. Empty time then costs no width, so a long history scrolls sideways inside the box, with a dashed seam wherever the axis crosses from one day into the next. |
-| **Index** | Numbers every event with a version of its own &mdash; see [The index](#the-index) below. |
+| **Index** | Numbers every event with a version of its own, and opens the day rows up to fit them. Leave it off and rest the pointer on a track to read one person's numbers without the view growing. See [The index](#the-index) below. |
 | **Show all N days** | Appears when a history runs past 60 days. The view renders the most recent 60 by default; this draws the rest. |
 
 The clock view is the default because it is the one that never scrolls sideways and keeps every row on the same scale. Turn the thread on when the question is "what order did these happen in", rather than "when in the day".
