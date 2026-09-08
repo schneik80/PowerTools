@@ -75,7 +75,9 @@ milestone   1.2.0
 
 Because a save restarts the third figure, turning **Show other changes** on and off never renumbers a save &mdash; the other changes fill in around them and the saves keep the numbers they had.
 
-The numbers sit at an angle above their dots. That is what lets every event carry one: printed flat, a number needs as much clear width as it is wide, and a busy day does not have it. Only where a day holds more saves than the row can separate at all do some numbers drop out, and the hover card still carries them.
+The numbers lean at an angle above their dots, each ending at the mark it names. That is what lets every event carry one: printed flat, a number needs as much clear width as it is wide, and a busy day does not have it. Only where a day holds more saves than the row can separate at all do some numbers drop out, and the hover card still carries them.
+
+Each number takes its own mark's colour &mdash; a release's reads in the accent its dot is filled with, a change's in its author's track colour &mdash; so a number and the event it belongs to pair up without having to be traced.
 
 ### The elapsed-time labels
 

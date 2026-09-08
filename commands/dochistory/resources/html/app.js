@@ -39,12 +39,14 @@
     // this is the room they rise into. The avatar disc offsets by the same
     // fraction so the gutter still lines up with the rail it labels.
     var RAIL_FRAC = 0.8;
-    var AXIS_H = 20;     // hour labels under the last track (day view only)
-    // Lead-in above the first track and below the last. It is the headroom the
-    // angled index labels rise into on the top track: at 45 degrees the longest
-    // label this draws rises about 25px from its baseline, and anything less
-    // than this clipped its tip against the top of the plot.
-    var ROW_PAD_Y = 12;
+    var AXIS_H = 16;     // hour labels under the last track (day view only)
+    // Lead-in above the first track and below the last. It is the top track's
+    // share of the room the angled index labels rise into, so it cannot go to
+    // nothing - but the labels lean sideways rather than straight up, so it does
+    // not need their full rise either. Below the rail it has to clear SHARE_R,
+    // the widest ring a dot draws. With AXIS_H this puts a one-track day row
+    // back at the height it was before it carried any labels at all.
+    var ROW_PAD_Y = 10;
     var HEADER_H = 22;   // the day's date line above its tracks
 
     // Gap bands between two day rows. Fixed heights per tier, so the whole
@@ -79,16 +81,27 @@
     // fixed, so switching the toggle on never changes a row's height - rowHeight,
     // layoutStack and threadOverlay agree on that arithmetic and have to move
     // together or the thread polyline drifts off its dots.
-    var INDEX_FONT_SIZE = 8;
-    var INDEX_DY = NODE_R + 2; // baseline offset above the dot's centre
-    // Angled, which is what lets every event carry one. Drawn flat, a ~30px wide
-    // label needed 30px of clear axis and day view only guarantees MIN_DOT_GAP,
-    // so most of a busy day's labels had to be dropped. Rotated, two neighbours
-    // slide past each other diagonally: the clearance they need is their line
-    // height over sin(angle), around 12px at 45 degrees, which fits inside
-    // MIN_DOT_GAP. The room it rises into is what RAIL_FRAC freed up.
-    var INDEX_ANGLE = -45;
-    var INDEX_MIN_GAP = 12;
+    var INDEX_FONT_SIZE = 9;
+    // Far enough above the dot's centre to clear HALO_R, the ring a milestone
+    // and a release wear - at NODE_R + 2 the last character landed inside it,
+    // on exactly the two marks whose numbers matter most.
+    var INDEX_DY = HALO_R + 2.5;
+    // Angled, which is what lets every event carry one. Drawn flat, a label
+    // needed its full width of clear axis - around 30px - and day view only
+    // guarantees MIN_DOT_GAP, so most of a busy day's labels had to be dropped.
+    // Rotated, two neighbours slide past each other diagonally: the clearance
+    // they need is their line height over sin(angle), about 15px at 45 degrees,
+    // which fits inside MIN_DOT_GAP. The room it rises into is what RAIL_FRAC
+    // and ROW_PAD_Y freed up.
+    //
+    // It rises to the LEFT, ending at its own dot, so the number reads into the
+    // event it belongs to. The cost is that a save near midnight has its label
+    // clipped by the left edge of the plot; rising right instead trades that for
+    // the same thing at the right edge, on a label that then reads away from its
+    // dot. Flip both of these together to change your mind.
+    var INDEX_ANGLE = 45;
+    var INDEX_ANCHOR = "end";
+    var INDEX_MIN_GAP = 14;
 
     var DAY_ROWS_CAP = 60; // a render cap, not a data cap - see the "show all" row
     var DAY_MS = 86400000;
@@ -594,8 +607,13 @@
      * INDEX_MIN_GAP guard is left for the one case the axis cannot separate at
      * all - declutter spaces a run evenly when there are more dots than the
      * width can hold, and past that point the labels would pile up unreadably.
+     *
+     * Each label takes its dot's own colour, so a release's number reads as
+     * accent like the dot it names and a change's takes its author's rail
+     * colour. That pairing is the whole point of putting the number beside the
+     * mark rather than only on the hover card.
      */
-    function indexLabelNodes(dots, xs, y) {
+    function indexLabelNodes(dots, xs, y, railColor) {
         var nodes = [];
         var lastX = -Infinity;
         dots.forEach(function (d, i) {
@@ -604,15 +622,26 @@
             if (xs[i] - lastX < INDEX_MIN_GAP) return;
             lastX = xs[i];
             var ly = y - INDEX_DY;
-            // Anchored at the start so the label begins over its own dot and
-            // rises to the right, rather than leaning back over the dot before.
             nodes.push(svgEl("text", {
-                x: xs[i], y: ly, "text-anchor": "start",
+                x: xs[i], y: ly, "text-anchor": INDEX_ANCHOR,
                 transform: "rotate(" + INDEX_ANGLE + " " + xs[i] + " " + ly + ")",
-                "font-size": INDEX_FONT_SIZE, fill: C.secondary, text: label
+                "font-size": INDEX_FONT_SIZE, fill: indexLabelColor(d.v, railColor),
+                text: label
             }));
         });
         return nodes;
+    }
+
+    /**
+     * indexLabelColor matches a label to the mark it names, following the same
+     * rule dotNode and changeNode fill with: accent for a release, the author's
+     * rail colour for a change that made no version, and the secondary text
+     * colour for an ordinary save or a milestone - whose dot is that colour too,
+     * with the ring rather than the fill saying it was marked.
+     */
+    function indexLabelColor(v, railColor) {
+        if (v.kind === "change") return railColor;
+        return v.revision ? C.accent : C.secondary;
     }
 
     function dotNode(v, cx, cy) {
@@ -747,16 +776,19 @@
                 }));
             });
 
+            // One colour for this track's identity: the ring a change is drawn
+            // with, and the label that names it.
+            var trackColor = track.overflow ? C.secondary : userColor(track.key);
             track.dots.forEach(function (d, i) {
                 group.push(
                     d.v.kind === "change"
-                        ? changeNode(d.v, xs[i], y, track.overflow ? C.secondary : userColor(track.key))
+                        ? changeNode(d.v, xs[i], y, trackColor)
                         : dotNode(d.v, xs[i], y)
                 );
             });
 
             if (showIndex) {
-                indexLabelNodes(track.dots, xs, y).forEach(function (label) {
+                indexLabelNodes(track.dots, xs, y, trackColor).forEach(function (label) {
                     group.push(label);
                 });
             }
