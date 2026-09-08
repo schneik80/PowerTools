@@ -692,16 +692,42 @@ def _is_top_level_doc(doc) -> bool:
         return False
 
 
+def _active_data_file_id() -> str:
+    """The active document's DataFile id, or "" when it has none.
+
+    Document identity has to be read from the DataFile, not from the Python
+    object: app.activeDocument and Documents.item() return separate wrappers
+    around the same native Document, so `id()`/`is` never match across the two
+    calls (see the parked auto-refresh note in docs/arch). Reading `.dataFile`
+    is also not safe bare — an unsaved document raises — hence the guard.
+    """
+    try:
+        df = getattr(app.activeDocument, "dataFile", None)
+        if df is None:
+            return ""
+        return getattr(df, "id", "") or ""
+    except Exception:
+        return ""
+
+
 def _list_open_docs() -> list[dict]:
     """Open Fusion design docs (part/hybrid/assembly) for the Open tab.
 
     By default only top-level (directly-opened) docs appear; when
     _show_children is set, reference-loaded children of open assemblies are
-    included too. Always excludes the active doc, unsaved docs (addByInsert
+    included too. Always excludes the active doc — matched by **DataFile id**,
+    because the enumerator hands back a different Python wrapper than
+    app.activeDocument for the same native document — unsaved docs (addByInsert
     needs a DataFile), and docs inserted earlier in this palette session."""
     out: list[dict] = []
-    active = app.activeDocument
-    active_key = id(active) if active else None
+
+    # Same `exclude`-set shape as _list_recent_docs: the docs already inserted
+    # this session, plus the document being assembled into, which can never
+    # contain itself.
+    exclude = set(_inserted_in_session)
+    active_id = _active_data_file_id()
+    if active_id:
+        exclude.add(active_id)
 
     # Dedup by DataFile id so a doc that's open in more than one document
     # wrapper (or otherwise enumerated twice) only yields a single card —
@@ -715,8 +741,6 @@ def _list_open_docs() -> list[dict]:
         except Exception:
             continue
         if doc is None:
-            continue
-        if id(doc) == active_key:
             continue
         if not doc.isSaved:
             continue
@@ -733,7 +757,7 @@ def _list_open_docs() -> list[dict]:
         if df is None:
             continue
         df_id = getattr(df, "id", "")
-        if df_id in _inserted_in_session:
+        if df_id in exclude:
             continue
         if df_id in seen:
             continue
@@ -1049,12 +1073,9 @@ def _list_recent_docs() -> list[dict]:
     ``_action_request_thumbs``).
     """
     exclude = set(_inserted_in_session)
-    try:
-        active_df = getattr(app.activeDocument, "dataFile", None)
-        if active_df is not None:
-            exclude.add(getattr(active_df, "id", ""))
-    except Exception:
-        pass
+    active_id = _active_data_file_id()
+    if active_id:
+        exclude.add(active_id)
 
     return [
         {
@@ -1308,6 +1329,17 @@ def _action_insert_doc(data: dict) -> str:
     design = _active_design_or_none()
     if design is None:
         return "No active Fusion design."
+
+    # The galleries repaint only on ↻, so a Fusion tab switch can leave a card
+    # on screen that is now the active document. _list_open_docs filters it out
+    # at build time; this catches the stale click. Without it addByInsert just
+    # returns None (6772f31) and the user gets the misleading "same project"
+    # message below.
+    if df_id and df_id == _active_data_file_id():
+        return (
+            "That is the document you are inserting into — a document cannot "
+            "contain itself.\n\nUse ↻ to refresh the galleries."
+        )
 
     data_file = _find_data_file_by_id(df_id)
     if data_file is None:

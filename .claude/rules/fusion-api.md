@@ -118,6 +118,11 @@ explains it. Full write-ups: `docs/dev/lessons.md`.
   candidates, log what was found under DEBUG. Animation is internally
   `Publisher3DEnvironment` (af05499, `fusion_recents._root_candidates`).
 - **`os.access` lies on Windows network shares** -- probe by writing (14f42ca).
+- **A `Document` cannot be identified with `id()`/`is` across two API calls** --
+  `app.activeDocument` and `Documents.item(i)` return different Python wrappers
+  around the same native document. Compare `dataFile.id` (guarded: an unsaved
+  document has none), and re-check at action time, not just when a list is
+  built (`assemblypalette/_active_data_file_id`, 6772f31).
 - **Fusion never backfills an empty `docstruct`** -- treat `""` as final.
 
 ## Logging and imports

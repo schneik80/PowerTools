@@ -275,6 +275,25 @@ never backfills -- treat `""` as final. -- `6772f31`
 when the DataFile lives in another project. It used to read as success and hid
 the document from both galleries. -- `6772f31`
 
+**Fusion hands back a fresh `Document` wrapper on every API call, so `id()` and
+`is` cannot identify a document across two calls -- compare `dataFile.id`.**
+`app.activeDocument` and `Documents.item(i)` wrap the *same* native document in
+*different* Python objects. Assembly Palette's Open gallery excluded the active
+document with `if id(doc) == id(app.activeDocument)`, which therefore never
+fired: the document being assembled into was offered as an insert target, and
+clicking it hit the `addByInsert` -> `None` path above and reported the wrong
+cause ("must be in the same project"). `_list_recent_docs` was the correct prior
+art -- it always excluded by `dataFile.id` -- and both enumerators now share
+`_active_data_file_id()` in `commands/assemblypalette/entry.py`. Note the two
+consequences: an unsaved document has no `DataFile` at all, so identity-free
+matching needs a `try/except` and an empty-id guard; and a filter applied when a
+list is *built* does not survive the user switching tabs, so the same check has
+to be repeated where the action is taken (`_action_insert_doc`). Object identity
+is only usable within a single call chain -- `_palette_was_open_for` compares
+with `is` for exactly that reason, and even that comment warns `id()` can
+collide once a wrapper is collected. -- `6772f31`,
+`docs/arch/Assembly Palette.md`
+
 **Two handlers writing one cache race on every tab switch; write atomically.**
 `ptutil.write_json_atomic` (temp file + fsync + `os.replace`) is the rule for
 all user-authored state. -- `6772f31`, `c557733`

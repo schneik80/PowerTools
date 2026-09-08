@@ -52,7 +52,7 @@ C4Component
     Component(trigger, "documentActivated gate", "Trigger", "Pops palette once per new empty Assembly-intent doc; _palette_was_open_for dedup")
     Component(launch, "Launch button", "Toolbar", "PTAT_assemblyPalette control in Assembly > Insert and Solid > Assemble; opens palette on demand")
     Component(state, "Palette state", "_gather_palette_state", "Theme, doc name, open docs, recent docs, target project")
-    Component(open, "Open enumerator", "_list_open_docs", "Top-level filter (documentReferences), dedup by id, excludes active/unsaved/inserted")
+    Component(open, "Open enumerator", "_list_open_docs", "Top-level filter (documentReferences), dedup by DataFile id, excludes the active doc by DataFile id + unsaved/inserted")
     Component(recent, "Recent enumerator", "_list_recent_docs", "Cache filtered to not-open + not-inserted; newest-first; dedup")
     Component(thumbs, "Thumbnail pump", "_pump_thumbs", "Disk cache / createThumbnail / DataFile.thumbnail future -> PNG cache -> data URL")
     Component(project, "Target-project resolver", "cache.resolve_target_folder", "Saved doc's folder -> activeProject.rootFolder; None -> no-project banner + Create disabled")
@@ -193,6 +193,9 @@ Fasteners has no public insert API — `FastenerOccurrenceDefinition` is a previ
 
 ### Why a per-session "inserted" filter?
 A document inserted from the palette is not "open in a tab," so the next refresh would re-list it under Recent and a second click would silently add a duplicate occurrence. Inserted DataFile ids are tracked for the current palette session and hidden from both galleries; the set is cleared each time the palette is opened so deliberate re-insertion is still possible in a fresh session.
+
+### Why is the active document matched by DataFile id and not object identity?
+Because two wrappers for the same document are different Python objects. `app.activeDocument` and `Documents.item(i)` each construct a **fresh** `adsk.core.Document` around the same native document, so `id()` and `is` cannot identify a document across two API calls — the original `if id(doc) == active_key: continue` in `_list_open_docs` therefore never fired, and the document being assembled into was listed in its own Open gallery. Clicking that card asks Fusion to insert a document into itself: `addByInsert` returns `None` rather than raising, which the error path reads as the far more common "different project" cause and reports the wrong message. `_list_recent_docs` already excluded by `dataFile.id`; both enumerators now share `_active_data_file_id()`, and it is the same rule the parked auto-refresh note below states for `documentClosing`. Because the galleries repaint only on ↻, the filter alone cannot cover a Fusion tab switch made while the palette is open — so `_action_insert_doc` re-checks the id at click time and refuses with an accurate message.
 
 ---
 
