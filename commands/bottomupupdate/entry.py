@@ -1198,16 +1198,24 @@ def command_execute(args: adsk.core.CommandEventArgs):
         progress_bar.isCancelButtonShown = True
         progress_bar.maximumValue = docCount
         progress_bar.minimumValue = 0
-        progress_bar.progressValue = resume_start_index
+        # show() takes (title, message, minimumValue, maximumValue, delay). The
+        # minimum is 0, not the resume index: a resume that has every document
+        # checkpointed already -- an interrupted run whose only remaining work
+        # is the root save -- passed index == docCount as both bounds and
+        # Fusion rejected it with "invalid argument minimumValue or
+        # maximumValue", making the command unlaunchable until the temp log was
+        # deleted. progressValue is what carries the resume point, and it is set
+        # after show() because show() reseats the range.
         progress_bar.show(
             "Bottom-up Update Progress",
             "Resuming from checkpoint..."
             if resume_info.get("should_resume")
             else "Preparing to update components...",
-            resume_start_index,
+            0,
             docCount,
             1,
         )
+        progress_bar.progressValue = resume_start_index
 
         # Counter for progress tracking
         processed_count = resume_start_index

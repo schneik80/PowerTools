@@ -194,6 +194,16 @@ reliably" was wrong (`commands/refrences` had used it successfully all along).
 
 ## Dialogs, selections, custom graphics
 
+**`ProgressDialog.show()` rejects `minimumValue == maximumValue`** with
+`RuntimeError: 3 : invalid argument minimumValue or maximumValue`, and its
+signature is `(title, message, minimumValue, maximumValue, delay)` -- not a
+start value. Bottom-Up Update passed its resume index as the minimum, so an
+interrupted run that had checkpointed every document (a crash during the root
+save) came back with index == count, and the command could not be launched at
+all until the temp log was deleted. The minimum is 0; `progressValue` carries
+the resume point, and it is set after `show()` because `show()` reseats the
+range. -- reported 2026-09-08, latent since `e62fd11`
+
 **Custom graphics are created only in `executePreview`.** Fusion aborts the
 preview transaction when the next preview fires, so graphics built from
 `inputChanged` or a mouse handler flash and vanish with no error. Do not "fix"

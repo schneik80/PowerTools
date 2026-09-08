@@ -91,6 +91,42 @@ def test_analyze_resume_state_resumes_after_last_saved_document(tmp_path):
     assert result["last_saved_index"] == 1
 
 
+def test_analyze_resume_state_resumes_past_the_last_document(tmp_path):
+    """Every document checkpointed but the run unfinished resumes at the end.
+
+    A crash during the root save leaves exactly this state, and it is a valid
+    resume: the loop has nothing left and only the root phase remains. It also
+    made the command unlaunchable once, because the progress dialog was handed
+    this index as both its minimum and its maximum.
+    """
+    # Arrange
+    log_path = _write_log(
+        tmp_path,
+        "\n".join(
+            [
+                "Fusion client version: 2.0.1",
+                "",
+                "Bottom-up order:",
+                "docA|A",
+                "docB|B",
+                "",
+                "Document save log:",
+                "CHECKPOINT|SAVE_UPLOAD_COMPLETE|doc_id=docA|component=A|saved_index=1|total=2",
+                "CHECKPOINT|SAVE_UPLOAD_COMPLETE|doc_id=docB|component=B|saved_index=2|total=2",
+            ]
+        ),
+    )
+    current_ids = ["docA", "docB"]
+
+    # Act
+    result = entry._analyze_resume_state(log_path, "2.0.1", current_ids)
+
+    # Assert
+    assert result["should_resume"] is True
+    assert result["resume_start_index"] == len(current_ids)
+    assert result["last_saved_index"] == 2
+
+
 def test_analyze_resume_state_full_run_when_doc_order_changed(tmp_path):
     """A changed document id list forces a full run, never a bad resume."""
     # Arrange: the logged order no longer matches the current graph.
