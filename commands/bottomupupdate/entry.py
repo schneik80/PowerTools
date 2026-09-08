@@ -50,6 +50,7 @@ resume_plan = {}
 _autosave_prior_state = None
 
 # Command input IDs
+UPDATE_CONTEXTS_ID = "update_contexts"  # Checkbox to update assembly contexts
 REBUILD_INPUT_ID = "rebuild_all"  # Checkbox to enable full rebuild of all components
 SKIP_STANDARD_ID = "skip_standard"  # Checkbox to skip standard library components
 SKIP_SAVED_ID = "skip_saved"  # Checkbox to skip components that are already saved
@@ -72,6 +73,15 @@ LOG_PATH_ID = "log_path"  # Text input for custom log file path
 LOG_BROWSE_ID = "browse_log"  # Button to browse for log file location
 LOG_OPEN_VIEW_ID = "open_log_view"  # Checkbox to auto-open a live log viewer
 RESUME_STATUS_ID = "resume_status"  # Read-only status for resume behavior
+
+# Fusion's UI command for updating out-of-date assembly contexts. There is no
+# API equivalent, and CommandDefinition.execute() on it is a silent no-op from
+# inside a running command, so it is started as a text command.
+CONTEXT_UPDATE_CMD_ID = "EIPContextsUpdateCmd"
+# UpdateEIPContext keeps doing cloud round-trips after the text command returns
+# and exposes no completion event, so the update is given a bounded pumped
+# settle to land before the save rather than racing it.
+_CONTEXT_UPDATE_SETTLE_SECONDS = 2.0
 
 
 # Executed when add-in is run.
@@ -165,6 +175,15 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     # Main tab
     main_tab = inputs.addTabCommandInput("mainTab", "Main")
     main_inputs = main_tab.children
+
+    update_contexts_input = main_inputs.addBoolValueInput(
+        UPDATE_CONTEXTS_ID, "Update Contexts", True, "", True
+    )
+    update_contexts_input.tooltip = (
+        "Updates out-of-date assembly contexts in each document before it is "
+        "rebuilt and saved.\n \nRuns Fusion's Update Contexts command; documents "
+        "with no out-of-date contexts are unaffected."
+    )
 
     rebuild_input = main_inputs.addBoolValueInput(
         REBUILD_INPUT_ID, "Rebuild all", True, "", True
@@ -804,6 +823,52 @@ def enable_timeline_in_document(document):
         return f"Error enabling the timeline: {str(e)}"
 
 
+def update_contexts_in_document(component_name):
+    """
+    Update out-of-date assembly contexts in the currently active document.
+
+    Fusion exposes no API for assembly contexts. Two things about this were
+    learned from the 2026-09-08 crash on ADSKMVG91G2F5W, and both are load
+    bearing:
+
+    * ``CommandDefinition.execute()`` on EIPContextsUpdateCmd is a **silent
+      no-op** from inside a running command -- that run logged four successful
+      context updates while the Fusion app log recorded no UpdateEIPContext
+      workflow at all. ``Commands.Start`` via ``executeTextCommand`` is the
+      route that actually starts it (verified in the same log at 07:15:16,
+      which produced a real UpdateEIPContext workflow and its cloud calls).
+    * ``ui.activeCommand`` **cannot** be used as a completion signal here.
+      Inside ``command_execute`` the active command is Bottom-Up Update itself,
+      so it never reads idle, and terminating it tore the command stack down
+      under a live handler: Fusion re-entered ``execute`` from
+      ``commitTransaction``, the root ``document.save()`` spawned a command, and
+      ``ConfigurationRulesController::commandCreated`` faulted on the destroyed
+      command. Never call ``ui.terminateActiveCommand()`` from a command event.
+
+    There is therefore no completion event to wait on; the caller gets a bounded
+    pumped settle instead, and must re-acquire its document/design handles
+    afterwards because that settle pumps.
+
+    :param component_name: Document label used in the returned log line
+    :return: A log string describing what happened; never raises
+    """
+    try:
+        result = app.executeTextCommand(f"Commands.Start {CONTEXT_UPDATE_CMD_ID}")
+    except Exception as exec_error:
+        return f"   Update contexts failed for {component_name}: {exec_error}"
+
+    # No completion event exists; pump so the command's cloud round-trips can
+    # land before the save rather than racing it.
+    ptutil.pump_events_for(_CONTEXT_UPDATE_SETTLE_SECONDS)
+
+    # Report what Fusion actually said. Starting the command is all this can
+    # honestly claim -- confirm a run against "Workflow start: UpdateEIPContext"
+    # in the Fusion app log rather than trusting this line.
+    detail = str(result).strip() if result else ""
+    started = f"   Update contexts started for {component_name}"
+    return f"{started}: {detail}" if detail else started
+
+
 def execute_command_with_timeout(
     command_definition,
     command_label,
@@ -1030,6 +1095,12 @@ def command_execute(args: adsk.core.CommandEventArgs):
             if skip_configs_input
             else True
         )
+        update_contexts_input = inputs.itemById(UPDATE_CONTEXTS_ID)
+        update_contexts = (
+            adsk.core.BoolValueCommandInput.cast(update_contexts_input).value
+            if update_contexts_input
+            else True
+        )
         rebuild_all = adsk.core.BoolValueCommandInput.cast(
             inputs.itemById(REBUILD_INPUT_ID)
         ).value
@@ -1164,6 +1235,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
                     fh.write(f"Active Document Parent Project: {parent_project_name}\n")
                     fh.write(f"Active Document ID: {doc_id}\n")
                     fh.write("Command Options:\n")
+                    fh.write(f"  Update contexts: {update_contexts}\n")
                     fh.write(f"  Rebuild all: {rebuild_all}\n")
                     fh.write(f"  Enable timeline: {enable_timeline}\n")
                     fh.write(f"  Create log file: {create_log}\n")
@@ -1509,8 +1581,17 @@ def command_execute(args: adsk.core.CommandEventArgs):
                         f"   Failed to apply {intent_label} intent to {component_name}: {intent_error}"
                     )
 
+            # Update out-of-date assembly contexts if option is enabled
+            if update_contexts:
+                contexts_log = update_contexts_in_document(component_name)
+                ptutil.log(contexts_log)
+                write_log_entry(contexts_log)
+                # The helper pumps events, so the pre-update handle is stale;
+                # drop it rather than reuse it for the rebuild below.
+                des = adsk.fusion.Design.cast(app.activeProduct)
+
             # Rebuild the component if rebuild option is enabled
-            if rebuild_all:
+            if rebuild_all and des:
                 ptutil.log(f"   Rebuilding component: {component_name}")
                 write_log_entry(f"   Rebuilding component: {component_name}")
                 while not des.computeAll():  # Force compute until complete
@@ -1518,6 +1599,11 @@ def command_execute(args: adsk.core.CommandEventArgs):
                     ptutil.pump_events_for(0.1)
                 ptutil.log(f"   Rebuild complete: {component_name}")
                 write_log_entry(f"   Rebuilt {component_name}")
+            elif rebuild_all:
+                write_log_entry(
+                    f"   Skipped rebuild for {component_name} "
+                    "(no active design after context update)"
+                )
 
             # Add and remove a temporary attribute to trigger change detection.
             # Re-acquire the design handle first: `des` may have been held across
@@ -1629,6 +1715,15 @@ def command_execute(args: adsk.core.CommandEventArgs):
         ptutil.log("Saving active document after updating references...")
         write_log_entry("Saving active document after updating references...")
         main_doc = app.activeDocument
+
+        # The root assembly is saved here rather than in the loop, so it gets
+        # the same context update the loop documents got.
+        if update_contexts:
+            main_contexts_log = update_contexts_in_document("main assembly")
+            ptutil.log(main_contexts_log)
+            write_log_entry(main_contexts_log)
+            # The helper pumps events; re-acquire before the save below.
+            main_doc = app.activeDocument
 
         # The root assembly is saved here rather than in the loop, so enable its
         # timeline too when the option is on.

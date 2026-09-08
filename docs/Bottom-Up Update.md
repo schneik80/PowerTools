@@ -7,6 +7,7 @@ The Bottom-Up Update command traverses the active assembly hierarchy, then opens
 ## What you can do
 
 - Automatically process all components in a complex assembly in correct dependency order.
+- Update out-of-date assembly contexts in every component before it is rebuilt and saved.
 - Force a complete rebuild of every component to verify they are up to date.
 - Apply design document intent (Part, Assembly, or Hybrid) to each component automatically based on its content.
 - Enable the timeline on direct-modeling documents by converting them to parametric.
@@ -46,6 +47,7 @@ The Bottom-Up Update dialog is organized into three tabs.
 | Option | Default | Description |
 |---|---|---|
 | **Run status** | Auto | Read-only. Reports whether this run will start fresh, resume from a checkpoint, or start fresh due to a changed component list or different Fusion client version. |
+| **Update Contexts** | Enabled | Updates out-of-date assembly contexts in each document before it is rebuilt and saved. Applies to the root assembly as well as the referenced documents. See [Update Contexts](#update-contexts) below. |
 | **Rebuild all** | Enabled | Forces a complete rebuild (`computeAll()`) of each component to ensure it is current. Disable only when you need to preserve the existing computed state. |
 | **Skip standard components** | Enabled | Skips Standard Components library documents (such as McMaster-Carr or Misumi parts) to avoid unnecessary processing. |
 | **Skip already saved documents** | Disabled | Skips components whose document version already matches the current Fusion client build string. |
@@ -93,12 +95,13 @@ When you select **OK**, the command performs the following steps:
    - Enables the timeline if **Enable Timeline** is enabled and the document is direct modeling.
    - Applies selected visibility options.
    - Applies design intent if enabled.
+   - Updates out-of-date assembly contexts if **Update Contexts** is enabled.
    - Calls `computeAll()` to rebuild if **Rebuild all** is enabled.
    - Saves the document with a timestamp comment.
    - Waits for the cloud upload to confirm completion before advancing.
    - Closes the component document (the starting root assembly is never closed).
    - Writes a `CHECKPOINT|SAVE_UPLOAD_COMPLETE` entry to the log.
-5. **Final assembly update** — Executes **Get All Latest** and **Update All From Parent** on the root assembly, then saves and confirms the root document upload.
+5. **Final assembly update** — Executes **Get All Latest** and **Update All From Parent** on the root assembly, updates the root's own contexts if **Update Contexts** is enabled, then saves and confirms the root document upload.
 6. **Completion report** — Displays a summary with the number of components processed and total elapsed time, and writes the final log entry.
 
 ## Resume behavior
@@ -144,6 +147,23 @@ The root assembly is saved at the end of the run rather than in the component lo
 
 The switch is one-way — this option never turns a timeline off, and the resulting base feature cannot be unwound by re-running the command. Because the conversion is saved as a new version of the document, run it on a small assembly first if you have not used it before.
 
+## Update Contexts
+
+An *assembly context* is the parent design a component was edited inside. When the parent changes, the context goes out of date and the component keeps showing the geometry it was edited against until the context is refreshed.
+
+Fusion exposes no API for assembly contexts, so **Update Contexts** starts Fusion's own **Update Contexts** command (`EIPContextsUpdateCmd`) against each document while it is open, after the design intent step and before the rebuild — so `computeAll()` and the save both capture the refreshed geometry. The root assembly gets the same treatment just before its final save.
+
+| Outcome | Log entry |
+|---|---|
+| The command was started | `Update contexts started for <name>` |
+| The command could not be started | `Update contexts failed for <name>: <error>` |
+
+The command reports no completion event, so Bottom-Up Update gives its cloud round-trips a short pause to land before saving rather than claiming the update finished. The log line means the update was **started**, not that it completed — confirm a run against `Workflow start: UpdateEIPContext` in Fusion's own application log if you need proof.
+
+A failure is logged and the run continues to the next document; it never aborts the run.
+
+This is separate from the **Update All From Parent** step in the final assembly update, which is unchanged and still runs on the root at the end of every run.
+
 ## Upload confirmation
 
 After each `document.save()` call the command waits for the cloud upload to complete before closing the document or moving to the next component. The mechanism adapts to the Fusion API build in use:
@@ -158,8 +178,8 @@ A 300-second timeout applies in both cases. If the timeout is reached the compon
 When logging is enabled, the log file records:
 
 - **Header**: Fusion client version, active document name/project/ID, all selected options, full bottom-up processing order.
-- **Per component**: open/close events, reference update confirmations, visibility changes, intent application details, rebuild status, save result, upload confirmation result, and a `CHECKPOINT|SAVE_UPLOAD_COMPLETE` line on success.
-- **Final assembly**: `GetAllLatestCmd` and `ContextUpdateAllFromParentCmd` results, root assembly save and upload confirmation, final `CHECKPOINT|SAVE_UPLOAD_COMPLETE` line.
+- **Per component**: open/close events, reference update confirmations, visibility changes, intent application details, context update result, rebuild status, save result, upload confirmation result, and a `CHECKPOINT|SAVE_UPLOAD_COMPLETE` line on success.
+- **Final assembly**: `GetAllLatestCmd` and `ContextUpdateAllFromParentCmd` results, the root assembly's own context update result, root assembly save and upload confirmation, final `CHECKPOINT|SAVE_UPLOAD_COMPLETE` line.
 - **Summary**: total components saved, total elapsed time, completion status.
 
 Default log location is the OS temp folder: `/tmp` (macOS) or `%TEMP%` (Windows).

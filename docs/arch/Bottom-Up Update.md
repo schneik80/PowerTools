@@ -75,7 +75,9 @@ sequenceDiagram
   Order-->>Cmd: Ordered component list
   loop For each component (resume index onward)
     Cmd->>API: documents.open(component DataFile)
-    Cmd->>API: updateAllReferences / computeAll / visibility / design intent
+    Cmd->>API: updateAllReferences / visibility / design intent
+    Cmd->>API: Commands.Start EIPContextsUpdateCmd, then a pumped settle
+    Cmd->>API: computeAll()
     Cmd->>API: document.save("Bottom-up update …")
     Cmd->>Wait: Block until upload confirmed
     Wait->>Hub: Poll uploadState / version bump
@@ -84,6 +86,7 @@ sequenceDiagram
     Cmd->>API: Close component (root assembly stays open)
   end
   Cmd->>API: Get All Latest + Update All From Parent on root
+  Cmd->>API: Commands.Start EIPContextsUpdateCmd on root
   Cmd->>API: Save root assembly
   Cmd->>Wait: Confirm root upload
   Cmd-->>User: Summary message and final log entry

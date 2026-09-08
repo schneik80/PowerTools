@@ -126,6 +126,35 @@ the close drains before the next open; re-acquire the `Design` after a pumped
 `computeAll`. Property names were verified against the API reference, not
 guessed. -- `a1d22e1`
 
+**Never call `ui.terminateActiveCommand()` from inside a command event, and
+never treat `ui.activeCommand` as an idle signal there.** While `execute` runs,
+*your own command* is the active command, so an idle check written as
+`activeCommand in ("", "SelectCommand")` never passes. Bottom-Up Update's first
+"Update Contexts" attempt polled it for a fired `EIPContextsUpdateCmd`, read
+back `PTAT_bottomupupdate`, waited out its 30 s timeout and then terminated
+"the stuck command" -- which was itself. CER stack: `CommitCmd::onExecute` ->
+`CommandBase::destroy` -> `commitOrAbortTransactionOnCommandEnd` ->
+`commitTransaction` -> `applyStep` -> `fireOnExecute` re-entered our Python
+`execute`, which called `document.save()`; the save spawned a command whose
+`commandCreated` reached `Na::ConfigurationRulesController::commandCreated`,
+which faulted calling `onStackingBehavior()` on the command that had just been
+destroyed. The command stack is not yours to unwind from inside a handler. The
+`assemblypalette` pattern that *does* read `activeCommand` is safe only because
+it runs from a palette event, with no command of its own on the stack.
+-- 2026-09-08 CER `f2141711.../1788887375081`
+
+**`CommandDefinition.execute()` can silently do nothing, and a success line you
+wrote yourself is not evidence it ran.** In the same run, `execute()` on
+`EIPContextsUpdateCmd` returned without error for four documents and the helper
+logged four context updates -- while Fusion's application log recorded no
+`Workflow start: UpdateEIPContext` at all. The command had never started.
+`app.executeTextCommand("Commands.Start EIPContextsUpdateCmd")` is the route
+that does start it: the same log shows the workflow, its cloud round-trips and
+`syncContextInfo` when it was driven that way from a standalone script. When a
+command is fired for its side effects, find the line *Fusion* writes when it
+runs and check the run against that, not against your own log.
+-- 2026-09-08 CER `f2141711.../1788887375081`
+
 **Reading the document model from an application event can abort Fusion's
 background autosave thread.** Attempting to auto-refresh the Assembly Palette
 galleries on `documentActivated` / `Opened` / `Closing` / `Closed` / `Saved`

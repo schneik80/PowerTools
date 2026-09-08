@@ -80,6 +80,20 @@ explains it. Full write-ups: `docs/dev/lessons.md`.
   it failed. **`controlDefinition.isEnabled` is meaningless for marking-menu
   commands.** **`ui.activeCommand` does not update in the turn a command
   starts** -- pump first (c440ad3).
+- **Never `ui.terminateActiveCommand()` from inside a command event, and never
+  read `ui.activeCommand` as an idle signal there** -- while `execute` runs,
+  *your own* command is the active one, so an idle check never passes and the
+  "stuck command" you terminate is yourself. That tore the command stack down
+  under a live handler and faulted in
+  `Na::ConfigurationRulesController::commandCreated`
+  (`bottomupupdate.update_contexts_in_document`, 2026-09-08 CER).
+  `assemblypalette._active_command_id` is safe only because it runs from a
+  palette event with no command of its own on the stack.
+- **`CommandDefinition.execute()` on a UI command can silently no-op** from
+  inside a running command. `EIPContextsUpdateCmd` returned cleanly for four
+  documents while Fusion's app log recorded no `Workflow start:
+  UpdateEIPContext`. Use `app.executeTextCommand("Commands.Start <id>")` and
+  verify the run against the line *Fusion* logs, not your own success message.
 - **`adsk.core.Future` has no completion event.** Poll from a timer-fired
   custom event, few resolutions per tick, with a timeout and a negative cache
   (`assemblypalette` thumbnails, 14f42ca). Never poll inline in a palette.
