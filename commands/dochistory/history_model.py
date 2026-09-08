@@ -144,6 +144,15 @@ CHANGE_LABELS = {
     "BasicItemWrittenHistoryChange": "File saved",
 }
 
+# Releases and milestones arrive twice: once here, as the audit-trail entry for
+# the act of creating one, and once as the decoration DataFile.milestones puts on
+# the save it was created against (entry._decorate_cloud_records). The save dot
+# is the one that carries the version number, the ring and the revision name, so
+# these rows are dropped rather than drawn a second time as a bare change.
+DUPLICATE_CHANGE_TYPES = frozenset(
+    {"RevisionCreatedHistoryChange", "VersionCreatedHistoryChange"}
+)
+
 
 def change_label(typename: str) -> str:
     """Render a ``HistoryChange`` type name as something a reader can use.
@@ -187,10 +196,13 @@ def change_records(rows: list[dict]) -> list[dict]:
     Returns:
         Records in the shape :func:`bucket_by_day` consumes, marked
         ``kind == "change"`` so the page can draw them as the lighter thing
-        they are.
+        they are. Rows in :data:`DUPLICATE_CHANGE_TYPES` are dropped - the
+        release or milestone they record is already drawn on its save dot.
     """
     records = []
     for row in rows:
+        if (row.get("__typename") or "") in DUPLICATE_CHANGE_TYPES:
+            continue
         user = row.get("author") or {}
         records.append(
             {

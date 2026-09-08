@@ -491,6 +491,45 @@ def test_changes_surface_people_who_never_saved_a_version():
     assert {t["name"] for t in with_changes[0]["tracks"]} == {"Ada Lovelace", "Cyan"}
 
 
+def test_release_and_milestone_rows_are_dropped_as_duplicates():
+    """These arrive twice; the save dot they decorate is the one that shows.
+
+    MFGDM reports creating a release or a milestone as its own history entry,
+    while DataFile.milestones separately marks the save it was created against.
+    Drawing both put a release on screen twice - an accent dot and a bare ring
+    beside it.
+    """
+    # Arrange: two duplicates wrapped around a change that must survive.
+    rows = [
+        ch("RevisionCreatedHistoryChange", "2026-08-12T09:00:00Z", "Rev A", "Cyan"),
+        ch("PropertiesUpdatedHistoryChange", "2026-08-12T09:30:00Z", "Cost: 5", "Cyan"),
+        ch("VersionCreatedHistoryChange", "2026-08-12T10:00:00Z", "Milestone", "Cyan"),
+    ]
+
+    # Act
+    records = model.change_records(rows)
+
+    # Assert
+    assert [record["changeLabel"] for record in records] == ["Property change"]
+
+
+def test_dropping_duplicates_leaves_the_other_types_untouched():
+    """The filter is exactly two type names, not a general suppression."""
+    # Arrange
+    rows = [
+        ch("PropertiesUpdatedHistoryChange", "2026-08-12T09:00:00Z", "a", "Cyan"),
+        ch("ComponentPartNumberHistoryChange", "2026-08-12T09:05:00Z", "b", "Cyan"),
+        ch("MarkerHistoryChange", "2026-08-12T09:10:00Z", "c", "Cyan"),
+        ch("BomEditHistoryChange", "2026-08-12T09:15:00Z", "d", "Cyan"),
+    ]
+
+    # Act
+    records = model.change_records(rows)
+
+    # Assert: order preserved, nothing lost.
+    assert [record["comment"] for record in records] == ["a", "b", "c", "d"]
+
+
 def test_changes_bucket_onto_their_own_day_and_stay_in_order():
     changes = model.change_records(
         [

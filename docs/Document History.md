@@ -44,7 +44,7 @@ Saves closer together than the dots are wide are nudged apart so a burst does no
 | Marker | Meaning |
 |---|---|
 | Plain grey dot | An ordinary save. |
-| Small open ring | An edit that made no new version &mdash; only shown with **Show other changes** on. |
+| Small open ring | An edit that made no new version &mdash; a property change, a part number, a marker &mdash; only shown with **Show other changes** on. Creating a milestone or a release is not shown this way; it marks the save it was made against, on the dot. |
 | Grey dot with a blue ring | A milestone. |
 | Blue dot with a blue ring | A release &mdash; a milestone you gave a revision name, such as "A" or "Rev B". Milestones Fusion names for itself ("Milestone V7", "Item Update") are shown as milestones, not releases. |
 | Outer ring | The version a public share link points at. |
@@ -67,7 +67,7 @@ The thumbnail is fetched from the cloud only for the version you actually rest o
 
 | Option | What it does |
 |---|---|
-| **Show other changes** | Adds the edits that did not produce a version &mdash; property changes, milestones, part numbers &mdash; each as a small open ring on its author's track. This can add people: someone who edited a property but never saved does not appear at all with this off. Hidden entirely for a document whose history could not be read from the cloud, since those edits are not visible there. |
+| **Show other changes** | Adds the edits that did not produce a version &mdash; property changes, part numbers, markers &mdash; each as a small open ring on its author's track. This can add people: someone who edited a property but never saved does not appear at all with this off. Creating a milestone or a release is left out, because the save it was made against already carries it; the consequence is that someone who only named a release, and never saved, is credited on neither. Hidden entirely for a document whose history could not be read from the cloud, since those edits are not visible there. |
 | **Show thread across days** | Switches the horizontal axis from the clock to the version's position in the history: every save is one column apart, and a line threads them in order across the day rows. Empty time then costs no width, so a long history scrolls sideways inside the box, with a dashed seam wherever the axis crosses from one day into the next. |
 | **Show all N days** | Appears when a history runs past 60 days. The view renders the most recent 60 by default; this draws the rest. |
 
