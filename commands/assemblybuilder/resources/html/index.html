@@ -377,6 +377,7 @@
     <button class="secondary" onclick="editor.zoom_in()">+</button>
     <button onclick="fitToView()">Fit</button>
     <button onclick="arrangeLayout()">Arrange</button>
+    <button onclick="importSysml()" title="Build the hierarchy from a SysML v2 physical view">Import SysML</button>
     <button class="danger" onclick="clearAll()">Clear All</button>
     <button class="success" id="createBtn" onclick="createAssembly()">Create Assembly</button>
 </div>
@@ -918,6 +919,63 @@
         document.getElementById('statusInfo').textContent = count === 1 ? '1 node' : count + ' nodes';
     }
 
+    // --- SysML physical view import ---
+    // Fusion owns the file dialog, the parse and the confirmation, so this only
+    // reports whether there is work to lose and waits for applySysmlGraph.
+    window.importSysml = function() {
+        var data = editor.export();
+        var hasContent = Object.keys(data.drawflow.Home.data).length > 1;
+        try {
+            adsk.fusionSendData('importSysml', JSON.stringify({ hasContent: hasContent }));
+        } catch (e) {
+            console.log('Not running inside Fusion palette; import unavailable.', e);
+        }
+    };
+
+    function applySysmlGraph(payload) {
+        var spec = {};
+        try { spec = JSON.parse(payload) || {}; } catch (e) { return; }
+        var nodes = spec.nodes || [];
+        if (!nodes.length) return;
+
+        // Replace rather than merge. Fusion has already asked the user to
+        // confirm losing the current graph before sending this.
+        editor.clear();
+        rootNodeId = null;
+        addCounter = 0;
+        typeCounters = { assembly: 0, part: 0, hybrid: 0 };
+        createRoot();
+
+        // The root node stays named after the active document, because it *is*
+        // this document -- the imported root's name is not applied to it.
+        var idOf = {};
+        idOf[spec.rootKey] = rootNodeId;
+
+        var placed = 0;
+        nodes.forEach(function(n) {
+            if (n.isRoot) return;
+            var kind = nodeTypes[n.kind] ? n.kind : 'part';
+            idOf[n.key] = addNode(kind, 40 + (placed % 5) * 200,
+                                  170 + Math.floor(placed / 5) * 130, n.name);
+            placed++;
+        });
+
+        (spec.edges || []).forEach(function(e) {
+            var parent = idOf[e.parent];
+            var child = idOf[e.child];
+            if (parent === undefined || child === undefined) return;
+            try {
+                editor.addConnection(parent, child, 'output_1', 'input_1');
+            } catch (err) {
+                console.log('import connection failed:', e.parent, '->', e.child, err);
+            }
+        });
+
+        arrangeLayout();
+        updateStatus();
+        refreshShareGate();
+    }
+
     function escapeHtml(text) {
         var d = document.createElement('div');
         d.textContent = text;
@@ -951,6 +1009,9 @@
                     try { list = JSON.parse(data) || []; } catch (e) { list = []; }
                     buildParamDocButtons(list);
                     refreshShareGate();
+                } else if (action === 'applySysmlGraph') {
+                    // data is {rootKey, nodes:[{key,name,kind,isRoot}], edges:[{parent,child}]}
+                    applySysmlGraph(data);
                 } else if (action === 'setTargetProject') {
                     // data is {hasProject, name}
                     var st = {};

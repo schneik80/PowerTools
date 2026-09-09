@@ -50,7 +50,7 @@ the unit-testable cores.
 
 | Group | Module | Doc filename | Arch doc | adsk-free modules | Tests | Notes |
 |---|---|---|---|---|---|---|
-| assembly | `assemblybuilder` | `Assembly Builder.md` | ✓ | — | — | palette |
+| assembly | `assemblybuilder` | `Assembly Builder.md` | ✓ | `sysml_import.py` | `test_assemblybuilder_sysml_import.py` | palette; imports a SysML v2 physical view (inverse of `exportsysml`) |
 | assembly | `insertSTEP` | `Insert Step.md` | ✓ | — | — | must start before `assemblypalette` |
 | assembly | `assemblypalette` | `Assembly Palette.md` | ✓ | — | `test_assemblypalette_edit_initial_position.py`, `test_assemblypalette_fasteners.py`, `test_assemblypalette_thumbnails.py` | palette; was `assemblyintent` |
 | assembly | `assemblystats` | `Assembly Statistics.md` | ✓ | — | — | |

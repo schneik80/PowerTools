@@ -20,6 +20,7 @@ from ... import config
 from ...lib import ptAddInUtils as ptutil
 from ...lib.ptAddInUtils import cache_utils as cache
 from .. import _ui_bootstrap
+from . import sysml_import
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -387,6 +388,24 @@ def palette_incoming(html_args: adsk.core.HTMLEventArgs):
         html_args.returnData = "OK"
         return
 
+    if message_action == "importSysml":
+        try:
+            payload = json.loads(html_args.data) if html_args.data else {}
+            _import_sysml(bool(payload.get("hasContent")))
+        except Exception:
+            # An exception here would be swallowed silently by the palette
+            # event, so it is logged and reported rather than left to vanish.
+            ptutil.handle_error(CMD_NAME)
+            ui.messageBox(
+                "The SysML file could not be imported. See the Text Commands "
+                "log for details.",
+                CMD_NAME,
+                adsk.core.MessageBoxButtonTypes.OKButtonType,
+                adsk.core.MessageBoxIconTypes.CriticalIconType,
+            )
+        html_args.returnData = "OK"
+        return
+
     if message_action == "createAssembly":
         try:
             graph_data = json.loads(html_args.data)
@@ -420,6 +439,89 @@ def palette_incoming(html_args: adsk.core.HTMLEventArgs):
         adsk.core.LogLevels.InfoLogLevel,
     )
     html_args.returnData = "OK"
+
+
+# ---------------------------------------------------------------------------
+# SysML physical view import
+# ---------------------------------------------------------------------------
+
+
+def _read_sysml_text(path: str) -> str:
+    """Read a .sysml file as text.
+
+    UTF-8 first, because that is what the export command writes. A file saved
+    by another tool on Windows may be cp1252, so a decode failure falls back to
+    latin-1 rather than refusing the import: every byte maps, and a mangled
+    accent in a component name is a better outcome than no import at all.
+    """
+    with open(path, "rb") as handle:
+        raw = handle.read()
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        ptutil.log(f"{CMD_NAME}: {path} is not UTF-8; falling back to latin-1")
+        return raw.decode("latin-1")
+
+
+def _import_sysml(has_content: bool) -> None:
+    """Ask for a .sysml file and push its hierarchy into the palette.
+
+    The parse is handed to ``sysml_import``, which has no Fusion dependency, so
+    everything about how the file is read and turned into a graph is unit
+    tested. This function only does the parts that need Fusion: the dialogs, the
+    file read, and the message back to the page.
+    """
+    if has_content:
+        answer = ui.messageBox(
+            "Importing replaces everything in the editor.\n\n"
+            "Continue and discard the current graph?",
+            CMD_NAME,
+            adsk.core.MessageBoxButtonTypes.YesNoButtonType,
+            adsk.core.MessageBoxIconTypes.QuestionIconType,
+        )
+        if answer != adsk.core.DialogResults.DialogYes:
+            return
+
+    dialog = ui.createFileDialog()
+    dialog.title = "Import a SysML physical view"
+    dialog.filter = "SysML v2 models (*.sysml);;All Files (*.*)"
+    dialog.isMultiSelectEnabled = False
+    if dialog.showOpen() != adsk.core.DialogResults.DialogOK:
+        return
+
+    path = dialog.filename
+    ptutil.log(f"{CMD_NAME}: importing {path}")
+    text = _read_sysml_text(path)
+
+    graph = sysml_import.to_graph(sysml_import.parse(text))
+    summary = sysml_import.summarize(graph)
+
+    if graph.root_key:
+        palette = ui.palettes.itemById(PALETTE_ID)
+        if palette:
+            palette.sendInfoToHTML(
+                "applySysmlGraph",
+                json.dumps(
+                    {
+                        "rootKey": graph.root_key,
+                        "nodes": graph.nodes,
+                        "edges": graph.edges,
+                    }
+                ),
+            )
+        ptutil.log(
+            f"{CMD_NAME}: imported {len(graph.nodes)} component(s), "
+            f"{len(graph.edges)} link(s) from {os.path.basename(path)}"
+        )
+
+    ui.messageBox(
+        summary,
+        f"{CMD_NAME} - {os.path.basename(path)}",
+        adsk.core.MessageBoxButtonTypes.OKButtonType,
+        adsk.core.MessageBoxIconTypes.InformationIconType
+        if graph.root_key
+        else adsk.core.MessageBoxIconTypes.WarningIconType,
+    )
 
 
 # ---------------------------------------------------------------------------

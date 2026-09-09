@@ -34,10 +34,45 @@ C4Container
   System_Ext(fusion, "Fusion API", "adsk.core, adsk.fusion")
 
   Rel(user, palette, "Adds nodes, connects, renames")
-  Rel(palette, python, "fusionSendData('createAssembly', graph / 'recheckProject')")
-  Rel(python, palette, "sendInfoToHTML('setTheme', 'setDocumentName', 'setSaveState', 'setParamDocs', 'setTargetProject')")
+  Rel(palette, python, "fusionSendData('createAssembly', graph / 'recheckProject' / 'importSysml')")
+  Rel(python, palette, "sendInfoToHTML('setTheme', 'setDocumentName', 'setSaveState', 'setParamDocs', 'setTargetProject', 'applySysmlGraph')")
   Rel(python, fusion, "addNewExternalComponent, addByInsert, designIntent")
 ```
+
+### SysML physical view import
+
+`sysml_import.py` is the inverse of the Export SysML Architecture Document
+command: it reads `part def` blocks and their nested `part` usages back into the
+node graph. It imports no `adsk` — `entry.py` supplies the dialogs and the file
+read, and everything about parsing, kind inference, root selection and graph
+shape is decided in the pure module and unit tested
+(`tests/test_assemblybuilder_sysml_import.py`).
+
+```mermaid
+flowchart TD
+    A([User clicks Import SysML]) --> B[Palette sends importSysml\nwith hasContent]
+    B --> C{Canvas holds\nmore than the root?}
+    C -- Yes --> D{Discard it?}
+    D -- No --> Z([End])
+    C -- No --> E[Show file dialog]
+    D -- Yes --> E
+    E --> F{File chosen?}
+    F -- No --> Z
+    F -- Yes --> G[Read text: UTF-8, else latin-1]
+    G --> H[strip_comments]
+    H --> I[Split statements on ; and balanced braces,\nskipping quoted spans]
+    I --> J[Collect part defs, their usages,\nclassification and bodyCount]
+    J --> K[Choose the root from the\npackage-level part usage]
+    K --> L[Walk from the root: dedupe edges,\nbreak cycles, drop unreachable defs]
+    L --> M[sendInfoToHTML applySysmlGraph]
+    M --> N[Page clears, rebuilds nodes,\nadds connections, arranges]
+    L --> O[Summarise what could not\nbe represented]
+    O --> P[messageBox] --> Z
+```
+
+The round trip is pinned by a test that generates its fixture with the export
+renderer rather than transcribing one, so a change to either side that breaks
+the pair fails.
 
 ```mermaid
 C4Component
@@ -196,6 +231,35 @@ A `paramdoc` node's output connects to the input of each component that should d
 
 ### Why a generated `init.js` instead of a message handshake?
 Fusion's palette loads asynchronously, and `palettes.add()` rejects a query string on the URL. Writing `resources/html/init.js` (theme, document name, save state, parameter docs) **before** creating the palette lets the page read `window.__ptInit` synchronously and apply the theme before the first paint — deterministic, with no round-trip and no flicker. A reopened palette (page already loaded) is refreshed via `sendInfoToHTML` instead.
+
+### Why does the parser track an "owner" rather than just reading definitions?
+SysML v2 records composition in two places and real models use both. The export command puts children inside each `part def`, because it writes one definition per unique component. A hand-authored physical architecture instead nests usages under one top-level usage — `part rm500 : MowerProduct { part mower : MowerAssembly { part chassis : ChassisAssembly { … } } }` — so the definitions are empty declarations and every containment fact lives in the tree.
+
+The first version read only the definition form. Against a real 1312-line architecture it found 56 definitions, zero children, and imported a single node while reporting 55 components as "not contained by the root assembly". Tracking the enclosing component instead — from a `part def` header *or* from the type of an enclosing usage — reads both forms with one rule, and takes that same file to 52 components and 51 links.
+
+### Why is `item` excluded from composition?
+SysML uses items for things that flow and for material definitions. The sample architecture declares `item def Material` and `item pa6gf30 : Material`, and binds them with `ref item :>> primaryMaterial = pa6gf30`. Accepting `item` as a component would import glass-filled nylon and 6082-T6 aluminium as parts of the mower.
+
+### Why are variation points left out?
+`variation part guidance : PhysicalItem { variant part rtkMast : …; variant part wireReceiver : …; }` says the product carries *either* an RTK mast *or* a wire receiver. Importing both would overstate the assembly, and picking one would be a guess. Neither is imported and the summary names them, so the choice stays with the person who knows which configuration they are building.
+
+### Why prefer a top-level usage whose type has contents?
+The root is normally the single package-level `part` usage that names the design. But a stakeholders package legitimately declares `part chiefEngineer : Role;` and seven more like it, all at package level and all contentless. Taking the first would import one empty node and discard the assembly. Preferring a candidate with contents, then the largest subtree, picks the design in every file tested; each fallback carries a warning because getting the root wrong silently reparents everything.
+
+### Why does the import replace the graph instead of merging into it?
+A merge would have to decide what a name collision means — same component, or two components that happen to share a name — and either answer is wrong half the time. Replacing is predictable, and Fusion asks for confirmation first whenever there is anything to lose. The import is also a starting point rather than an end state: the graph is meant to be reviewed and adjusted before **Create Assembly** runs.
+
+### Why are quantities above one collapsed?
+Drawflow's `addConnection` explicitly refuses a duplicate parent-to-child link (it scans the output's existing connections for the same target and port and returns without adding), so `part shaft : 'Shaft'[2]` cannot be represented as two edges. The alternatives were worse: emitting two *nodes* would create two differently-named external components rather than two instances of one, and dropping the count silently would leave the user believing the built assembly matches the model. So the link is made once and every collapsed quantity is named in the summary dialog.
+
+### Why is reachability from the root the filter for what gets imported?
+`create_assembly_from_graph` only walks down from the root node, so a definition nothing contains would sit on the canvas looking imported and never be built. Reporting it as *not imported* is the honest outcome. The same reasoning covers a usage whose type has no definition in the file.
+
+### Why can the structure override the `classification` attribute?
+A `part` node has no output port, so if a definition claims `classification = "part"` while nesting usages, its children would have nothing to attach to and the import would produce a silently broken graph. Where the two disagree the structure wins, becoming Hybrid when the definition also reports bodies and Assembly otherwise.
+
+### Why does the imported root keep the document's name?
+The root node *is* the active document — the assembly is generated into it — and renaming the node would not rename the document. Applying the model's root name would therefore only mislead. The imported root's children attach to the existing root node instead.
 
 ### Why top-to-bottom node layout?
 Assembly hierarchies read naturally as trees flowing downward. Input ports at 12 o'clock (parent connection) and output ports at 6 o'clock (child connections) match this mental model.
