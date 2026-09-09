@@ -33,17 +33,16 @@
 
     var GUTTER_W = 46;   // avatar column, LEFT of the plot - never eats axis space
     var PAD_R = 14;
-    // One author track. Two heights: an index label rises about 25px out of a
-    // dot, so at the tight pitch most of a label sits in the band of the track
-    // ABOVE it and gets read against the wrong author - on a five-track day that
-    // is misattribution, not clutter. The roomy pitch keeps a label inside its
-    // own band, and is only paid for when every number is being shown at once;
-    // the hover reveal stays at the tight pitch and masks instead, because it
-    // shows one track at a time and has nothing to be confused with.
-    // trackHeight() is the single reader; rowHeight, trackY and threadOverlay
-    // all go through it, so they cannot disagree within a render.
+    // One author track. An index label rises out of its dot, so at this pitch
+    // most of a label sits in the band of the track ABOVE it and gets read
+    // against the wrong author - on a five-track day that is misattribution, not
+    // clutter. Showing every number at once therefore opens the pitch up, to
+    // whatever indexedTrackPitch works out this history needs; the hover reveal
+    // stays here and masks instead, because it shows one track at a time and has
+    // nothing to be confused with. trackHeight() is the single reader; rowHeight,
+    // trackY and threadOverlay all go through it, so they cannot disagree within
+    // a render.
     var TRACK_H = 30;
-    var TRACK_H_INDEXED = 44;
     // Where the rail sits inside its track, as a fraction of the track height.
     // Low rather than centred: the angled index labels rise from the dots, and
     // this is the room they rise into. The avatar disc offsets by the same
@@ -146,6 +145,9 @@
     var showChanges = false;
     var showIndex = false;
     var showAll = false;
+    // Track pitch while the index is on, worked out from the labels this history
+    // actually carries. Set once per render, before anything reads trackHeight().
+    var indexPitch = TRACK_H;
     var viewW = 720;         // measured; seeded so the first paint is not a flash
     var thumbs = {};         // versionId -> data: URL, or "" for "none available"
     var requested = {};      // versionId -> true once asked for
@@ -384,7 +386,7 @@
      * the indexed height into arithmetic the unindexed height produced, which
      * would drift the thread overlay off its dots.
      */
-    function trackHeight() { return showIndex ? TRACK_H_INDEXED : TRACK_H; }
+    function trackHeight() { return showIndex ? indexPitch : TRACK_H; }
 
     function trackY(i) {
         var th = trackHeight();
@@ -613,7 +615,7 @@
         }
         // Carried on the card too, so a label the declutter pass dropped in day
         // view is still readable without switching to the thread.
-        if (showIndex && v.indexLabel) marks += " · " + v.indexLabel;
+        if (showIndex && v.indexLabel) marks += " · " + indexLabelText(v);
         cardEl.appendChild(el("div", { class: "title", text: marks }));
         if (v.publicShare) {
             cardEl.appendChild(el("div", { class: "share", text: "Public share" }));
@@ -726,14 +728,14 @@
         var nodes = [];
         var lastX = -Infinity;
         dots.forEach(function (d, i) {
-            var label = d.v.indexLabel;
-            if (!label) return;
+            var text = indexLabelText(d.v);
+            if (!text) return;
             if (xs[i] - lastX < INDEX_MIN_GAP) return;
             lastX = xs[i];
             var ly = y - markerRadius(d.v) - INDEX_CLEAR;
             // Anchored at its end, so the text runs back from the dot and the
             // mask runs back with it.
-            var w = indexLabelWidth(label);
+            var w = indexLabelWidth(text);
             var bx = xs[i] - w - INDEX_PAD_X;
             var by = ly - INDEX_MASK_UP;
             var bw = w + INDEX_PAD_X * 2;
@@ -747,7 +749,7 @@
             }
             kids.push(svgEl("text", {
                 x: xs[i], y: ly, "text-anchor": INDEX_ANCHOR,
-                "font-size": INDEX_FONT_SIZE, fill: indexLabelColor(d.v), text: label
+                "font-size": INDEX_FONT_SIZE, fill: indexLabelColor(d.v), text: text
             }));
             // One rotation for the mask and its text together, so they cannot
             // come apart.
@@ -756,6 +758,55 @@
             }, kids));
         });
         return nodes;
+    }
+
+    /**
+     * indexLabelText is what a label actually prints.
+     *
+     * Before the first release the major is always 0, so printing it spends a
+     * third of every label - and, because the labels are angled, a third of the
+     * vertical room they need - on a digit that cannot vary. It appears the
+     * moment it starts meaning something, which is the moment someone names a
+     * release. A pre-release "1.0" and a released "1.0.0" therefore differ in
+     * length rather than in value, and the release also carries the accent.
+     */
+    function indexLabelText(v) {
+        var label = v.indexLabel || "";
+        return label.indexOf("0.") === 0 ? label.slice(2) : label;
+    }
+
+    /**
+     * indexedTrackPitch is the track height the index needs for the labels this
+     * history actually contains, rather than for the longest one it could.
+     *
+     * A history with no releases prints two-part labels, which rise about nine
+     * pixels less than three-part ones, and that is nine pixels off every track
+     * of every row. Deriving the pitch is what turns the shorter label into
+     * less scrolling instead of just more white space.
+     *
+     * The widest label and the deepest marker are taken across the whole
+     * rendered stack, because the pitch is uniform: one long label anywhere sets
+     * it for everywhere. NODE_R of tail clearance keeps a label off the dots of
+     * the track above it.
+     */
+    function indexedTrackPitch(rows) {
+        var widest = 0;
+        var deepest = NODE_R;
+        rows.forEach(function (row) {
+            row.tracks.forEach(function (track) {
+                track.dots.forEach(function (d) {
+                    var text = indexLabelText(d.v);
+                    if (!text) return;
+                    var w = indexLabelWidth(text);
+                    if (w > widest) widest = w;
+                    var r = markerRadius(d.v);
+                    if (r > deepest) deepest = r;
+                });
+            });
+        });
+        if (!widest) return TRACK_H;
+        var rise = widest * Math.sin(INDEX_ANGLE * Math.PI / 180);
+        return Math.max(TRACK_H, Math.ceil(deepest + INDEX_CLEAR + rise + NODE_R));
     }
 
     /**
@@ -1188,6 +1239,13 @@
         var rows = capped ? allRows.slice(0, DAY_ROWS_CAP) : allRows;
         var shown = rows.reduce(function (n, r) { return n + r.count; }, 0);
         var base = indexBase(rows);
+        // Before anything below asks trackHeight() what a row is worth: the
+        // pitch depends on the labels this history prints, so it has to be
+        // settled first or rowNode and threadOverlay would size to different
+        // answers and the polyline would leave its dots. Only worth walking the
+        // stack for when the labels are on - render() runs on every pixel of a
+        // resize drag.
+        if (showIndex) indexPitch = indexedTrackPitch(rows);
         var plotW = thread ? threadWidth(shown) : plotWidth(viewW);
         var stackW = thread ? GUTTER_W + threadWidth(shown) : viewW;
 

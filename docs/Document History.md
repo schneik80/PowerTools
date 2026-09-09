@@ -58,7 +58,7 @@ The legend below the view lists only the markers that occur in this document's h
 Every dot can carry a small three-part number above it, counted from the oldest event forward. There are two ways to see them:
 
 - **Rest the pointer on a track.** That person's numbers appear for as long as the pointer is in their row, and nothing else moves. Each number is drawn on a small patch of the row's own background, so it stays readable where it crosses the track above.
-- **Turn on Index** to show all of them at once. The day rows open up while it is on, so that every number sits inside its own author's track rather than drifting over the one above, and close again when it is off. On a day with several people that is the difference between reading the numbers and guessing whose they are &mdash; but it does make the view taller, which is why it is not the default.
+- **Turn on Index** to show all of them at once. The day rows open up while it is on, so that every number sits inside its own author's track rather than drifting over the one above, and close again when it is off. They open by only as much as the longest number in the history needs, so a document with no releases barely grows at all.
 
 | Event | What it counts up |
 |---|---|
@@ -66,17 +66,20 @@ Every dot can carry a small three-part number above it, counted from the oldest 
 | A save or a milestone | The second figure. The third restarts at zero. |
 | Any other change | The third figure. |
 
-Counting starts at `0.0.0`, so a document's first save reads `0.1.0` and the first release someone names reads `1.0.0`:
+Counting starts at `0.0.0`, and the first figure is left off until a release has actually been named &mdash; before that it is always zero, so printing it spends a third of every number on a digit that cannot change. A document with no releases therefore shows two-figure numbers throughout, and the rows stay tighter for it:
 
 ```
-save        0.1.0
-save        0.2.0
-property    0.2.1
-property    0.2.2
-release A   1.0.0
-save        1.1.0
-milestone   1.2.0
+             counted as   printed as
+save           0.1.0         1.0
+save           0.2.0         2.0
+property       0.2.1         2.1
+property       0.2.2         2.2
+release A      1.0.0         1.0.0
+save           1.1.0         1.1.0
+milestone      1.2.0         1.2.0
 ```
+
+So a two-figure number means "no release yet at this point" and a three-figure one carries its release count. The release itself is also the only number drawn in the accent colour, so the two never have to be told apart by counting figures.
 
 Because a save restarts the third figure, turning **Show other changes** on and off never renumbers a save &mdash; the other changes fill in around them and the saves keep the numbers they had.
 
