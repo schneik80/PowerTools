@@ -317,9 +317,27 @@ above came out of those runs. CI still stubs `adsk`, so a green suite proves the
 text renderers and the arithmetic and nothing about the collection pass. What
 those runs have not covered:
 
-- That the ends of `Component.joints` / `asBuiltJoints` resolve to the same
-  components the walk recorded, including for a joint inside a subassembly, a
-  joint anchored to root geometry, a suppressed joint and an as-built joint.
+- **A suppressed joint.** The concern for every joint variant is that the
+  identity key derived from `occurrenceOne`/`occurrenceTwo` matches the one the
+  walk recorded for that component. A mismatch either reports the joint as not
+  expressible — safe, because it is visible — or names the wrong component,
+  which is silent and is exactly what the `CVD Drive Pin` collision did. The
+  suffix is the fragile part: `documentReference` raises for an occurrence
+  nested inside a referenced subassembly, so a joint end and a walk step that
+  disagree about whether they can read it would key differently.
+
+  Current-code exports cover three of the four variants. An espresso machine
+  (52 joints) exercises joints owned by subassemblies and 29 as-built joints,
+  all resolved; a Center Slipper assembly (18 joints) exercises an end anchored
+  to geometry owned by no occurrence. Two joints across the 69 are reported as
+  not expressible, both with an honest reason. No design exported so far
+  contains a **suppressed** joint, so that path has never run against Fusion.
+
+  Two designs are also worth re-exporting: `Overall Assembly` (178 joints, 59
+  of them with a null end) and `Rear Hub ASSY R` were last exported before the
+  dotted-path work, when 157 of those 178 could not be expressed. Re-running
+  them would both confirm the improvement and give the null-end path a real
+  stress test.
 - That `Component.id` is non-empty in a Direct (non parametric) design, so the
   name fallback stays unused. Non-empty inside an xref is confirmed; *unique*
   inside an xref is confirmed false — see the identity section.
