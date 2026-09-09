@@ -333,11 +333,20 @@ those runs have not covered:
   not expressible, both with an honest reason. No design exported so far
   contains a **suppressed** joint, so that path has never run against Fusion.
 
-  Two designs are also worth re-exporting: `Overall Assembly` (178 joints, 59
-  of them with a null end) and `Rear Hub ASSY R` were last exported before the
-  dotted-path work, when 157 of those 178 could not be expressed. Re-running
-  them would both confirm the improvement and give the null-end path a real
-  stress test.
+  `Overall Assembly` is worth re-exporting: its last run predates the
+  dotted-path work, when 157 of its 178 joints could not be expressed, and its
+  59 null-end joints would stress that path far harder than the single one seen
+  so far.
+
+  `Rear Hub ASSY R` is a different case. Its most recent export already has
+  dotted paths and resolves 17 of 19 joints, the two exceptions both honest
+  null ends — but it predates the `id + name` key, so it is the *before*
+  artifact for the identity collision: 16 definitions for 17 components, no
+  `CVD Drive Pin` at all, the two pins merged into
+  `part cvdPivotPin : 'CVD Pivot Pin'[2]`, and `Rigid 5` emitted as a
+  connection to `cvdPivotPin` when the design joins the drive pin. Re-exporting
+  it should now give 17 definitions, both pins, no `[2]`, and `Rigid 5` naming
+  the drive pin.
 - That `Component.id` is non-empty in a Direct (non parametric) design, so the
   name fallback stays unused. Non-empty inside an xref is confirmed; *unique*
   inside an xref is confirmed false — see the identity section.
