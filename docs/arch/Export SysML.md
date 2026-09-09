@@ -326,12 +326,13 @@ those runs have not covered:
   nested inside a referenced subassembly, so a joint end and a walk step that
   disagree about whether they can read it would key differently.
 
-  Current-code exports cover three of the four variants. An espresso machine
+  Current-code exports now cover all four, and the fourth found a bug. An espresso machine
   (52 joints) exercises joints owned by subassemblies and 29 as-built joints,
   all resolved; a Center Slipper assembly (18 joints) exercises an end anchored
   to geometry owned by no occurrence. Two joints across the 69 are reported as
-  not expressible, both with an honest reason. No design exported so far
-  contains a **suppressed** joint, so that path has never run against Fusion.
+  not expressible, both with an honest reason. A Rear Hub export taken with a
+  joint suppressed showed the suppressed path was broken — see the suppression
+  section — and it is fixed but not yet re-confirmed against Fusion.
 
   `Overall Assembly` is worth re-exporting: its last run predates the
   dotted-path work, when 157 of its 178 joints could not be expressed, and its
@@ -495,6 +496,32 @@ Only occurrences whose document resolves to a name or an id are recorded now.
 The rest are counted into a single collection note rather than one note each,
 because inside a linked subassembly every part hits this and a note apiece
 would bury the appendix.
+
+### Suppression has two flags, and the joint's own one is not the whole story
+
+A `connect` statement asserts a physical interface, so a suppressed joint must
+never become one — it is a joint the design has switched off. The emitter
+checked `Joint.isSuppressed`.
+
+That is not what the browser's **Suppress** sets. A Rear Hub export taken with
+`Rigid 10` suppressed still emitted
+`connection 'Rigid 10' : RigidJoint connect iso7380M3X12 to c6MmBallNut`, and
+the only difference from the previous export was the joint's *origin* moving
+from `(12.68, -3.12, 21.5)` to `(3.69, 0, 3.69)` — the screw falling back to
+where it sits unjointed. The suppression was real and visible in the geometry;
+`isSuppressed` reported `False`.
+
+`TimelineObject.isSuppressed` is a separate property on the joint's timeline
+feature, and the collection now treats either flag as suppression, recording a
+note when it was the timeline that answered. Either signal is sufficient
+because asserting an interface the design denies is the worse error, and a
+joint suppressed by either route is equally not built.
+
+`PTJointSuppressProbe`, a throwaway script in Fusion's Scripts folder outside
+this repo, prints every suppression-adjacent property per joint so the flag
+that actually fires is identified rather than assumed. Until it has been run
+with a suppressed joint present, the timeline route is the best-supported
+explanation rather than a confirmed one.
 
 ### As-built joints carry no origin, and the document says so
 

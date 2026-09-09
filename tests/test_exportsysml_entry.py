@@ -377,3 +377,73 @@ def test_instances_of_one_document_aggregate_onto_a_single_row():
 
     assert list(scan.references) == ["urn:brg"]
     assert scan.references["urn:brg"]["keys"] == {"k1", "k2"}
+
+
+# ---------------------------------------------------------------------------
+# _is_suppressed
+#
+# A Rear Hub export emitted `connection 'Rigid 10' ... connect iso7380M3X12 to
+# c6MmBallNut` for a joint the design had suppressed -- asserting a physical
+# interface the design denies. Joint.isSuppressed read False; suppressing from
+# the browser sets the joint's timeline feature instead.
+
+
+class _Timeline:
+    def __init__(self, suppressed):
+        self.isSuppressed = suppressed
+
+
+class _Joint:
+    def __init__(self, own=False, timeline=None, name="Rigid 10"):
+        self.isSuppressed = own
+        self.name = name
+        if timeline is not None:
+            self.timelineObject = _Timeline(timeline)
+
+
+class _JointWithNoTimeline:
+    isSuppressed = False
+    name = "As-built 1"
+
+    @property
+    def timelineObject(self):
+        raise RuntimeError("no timeline object for this joint")
+
+
+def test_a_joint_suppressed_on_itself_is_suppressed():
+    scan = entry._Scan(None)
+
+    assert scan._is_suppressed(_Joint(own=True), "Rigid 10", "Owner") is True
+
+
+def test_a_joint_suppressed_only_in_the_timeline_is_suppressed():
+    """The signal the browser's Suppress actually sets.
+
+    Reading only Joint.isSuppressed published the joint as a live connection.
+    """
+    scan = entry._Scan(None)
+
+    assert scan._is_suppressed(_Joint(timeline=True), "Rigid 10", "Owner") is True
+    assert any("suppressed in the timeline" in n for n in scan.notes)
+
+
+def test_an_active_joint_is_not_suppressed_by_either_signal():
+    scan = entry._Scan(None)
+
+    assert scan._is_suppressed(_Joint(timeline=False), "Rigid 9", "Owner") is False
+    assert scan.notes == []
+
+
+def test_a_joint_with_no_timeline_object_is_not_suppressed():
+    """An as-built joint may have none; absence is not suppression."""
+    scan = entry._Scan(None)
+
+    assert scan._is_suppressed(_JointWithNoTimeline(), "As-built 1", "Owner") is False
+
+
+def test_the_timeline_route_is_only_consulted_when_the_joint_says_no():
+    """No note when the joint's own flag already answered."""
+    scan = entry._Scan(None)
+
+    assert scan._is_suppressed(_Joint(own=True, timeline=True), "J", "Owner") is True
+    assert scan.notes == []

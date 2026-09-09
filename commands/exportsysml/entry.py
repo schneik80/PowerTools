@@ -414,11 +414,40 @@ class _Scan:
             one_label=one_label,
             two_label=two_label,
             is_as_built=as_built,
-            is_suppressed=bool(_read(lambda: joint.isSuppressed, False)),
+            is_suppressed=self._is_suppressed(joint, name, label),
             origin_cm=self._joint_origin(joint, as_built),
             axis=self._joint_axis(motion, joint_type),
             axis_role=self._axis_role(joint_type),
         )
+
+    def _is_suppressed(self, joint, name, label) -> bool:
+        """True when *joint* is not part of the built configuration.
+
+        Two independent signals, because Fusion has two. ``Joint.isSuppressed``
+        is the joint's own flag, and ``TimelineObject.isSuppressed`` is the
+        feature's -- suppressing a joint from the browser sets the second and
+        leaves the first alone. Reading only the first published a suppressed
+        joint as a live connection: a Rear Hub export emitted
+        ``connection 'Rigid 10' ... connect iso7380M3X12 to c6MmBallNut`` for a
+        joint the design had switched off, and the only visible sign was that
+        the joint's origin had moved to where the screw sits unjointed.
+
+        Either signal is enough. Asserting an interface the design denies is
+        the worse error, and a joint suppressed by either route is equally not
+        built.
+        """
+        if bool(_read(lambda: joint.isSuppressed, False)):
+            return True
+        timeline_object = _read(lambda: joint.timelineObject)
+        if timeline_object is None:
+            return False
+        if bool(_read(lambda t=timeline_object: t.isSuppressed, False)):
+            self.note(
+                f"{label}: joint {name!r} is suppressed in the timeline though "
+                "the joint itself does not report it; treated as suppressed"
+            )
+            return True
+        return False
 
     def _joint_origin(self, joint, as_built):
         """Where the joint sits, in centimetres, or ``None``.
