@@ -72,6 +72,7 @@ GROUPS = [
         "commands": [
             _cmd("exportbomcsv", "Export BOM.md"),
             _cmd("exportmermaid", "Export Mermaid.md"),
+            _cmd("exportsysml", "Export SysML.md"),
         ],
     },
     {

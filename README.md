@@ -90,6 +90,7 @@ Most commands appear in **Design › Tools › Power Tools**. Some appear in oth
 | --- | --- | --- |
 | [Export BOM](./docs/Export%20BOM.md) | Design › Tools › Power Tools | Export the bill of materials to CSV. |
 | [Export Mermaid](./docs/Export%20Mermaid.md) | Design › Tools › Power Tools | Export the assembly structure as a Mermaid diagram. |
+| [Export SysML](./docs/Export%20SysML.md) | File | Export the assembly as a 4+1 architecture document with a SysML physical view. |
 
 ### Part Modeling
 

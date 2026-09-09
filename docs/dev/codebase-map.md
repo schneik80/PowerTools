@@ -81,6 +81,7 @@ the unit-testable cores.
 | document | `versiondiff` | `Version Diff.md` | ✓ | `timeline_model.py`, `feature_icons.py`, `html_report.py` | — | ships disabled |
 | exports | `exportbomcsv` | `Export BOM.md` | ✓ | — | `test_csv_injection.py` | |
 | exports | `exportmermaid` | `Export Mermaid.md` | ✓ | — | — | |
+| exports | `exportsysml` | `Export SysML.md` | ✓ | `model.py`, `render.py` | `test_exportsysml_model.py`, `test_exportsysml_render.py`, `test_exportsysml_entry.py` | QAT File; work in `commandCreated`; SysML v2 + 4+1 ADD; keys on `Component.id` + name (id is not unique) |
 | partmodeling | `sketchfix` | `SketchFix.md` | ✓ | — | — | |
 | partmodeling | `roundsketchdimensions` | `Round Sketch Dimensions.md` | ✓ | `rounding.py` | `test_roundsketchdimensions_rounding.py` | `executePreview` apply |
 | partmodeling | `sketchunderconstrained` | `SketchUnder.md` | ✓ | — | — | |

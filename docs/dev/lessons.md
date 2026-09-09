@@ -310,6 +310,21 @@ outranks a user-id match. Validate a candidate by an 8 KB head read of
 `qontextServer`. About 25 % of designs have an empty `docstruct` that Fusion
 never backfills -- treat `""` as final. -- `6772f31`
 
+**`Component.id` is not unique, even inside one design, and
+`Occurrence.documentReference` raises for anything nested inside a referenced
+subassembly.** A component copied from another inside a referenced document
+carries the original's `id`: a live `Rear Hub ASSY R` has `CVD Pivot Pin` and
+`CVD Drive Pin` sharing `012331ee-63d2-46b6-b607-e74d637af56e`, differing only
+in `revisionId` and `partNumber`. Disambiguating by source document and version
+does not help -- both come from the same document at the same version, and
+`documentReference` throws `RuntimeError: 3 : Cannot get allDocumentReferences
+of a non-top-level document` for exactly those nested occurrences, so a
+`_read`-guarded suffix is empty where it is most needed. Export SysML recorded
+16 nodes for 17 components and emitted a joint naming the wrong one. Key on
+`id + name` and report the collision; `revisionId` separates them too but
+changes on every edit, so it makes an unchanged design export differently each
+run. -- `commands/exportsysml/entry.py::key_for`, `arch/Export SysML.md`
+
 **`addByInsert` returns `None` on failure rather than raising** -- most often
 when the DataFile lives in another project. It used to read as success and hid
 the document from both galleries. -- `6772f31`
@@ -567,6 +582,28 @@ Do not regress these (`a06e049`, `266e2c2`):
 
 - **Verify API property names against the official reference, not memory**
   (`a1d22e1`, `0a228c8`, `20c0976` all say so explicitly).
+- **A green validator is necessary, not sufficient — open the file in the tool
+  it is for.** The SysML export bound its connector ends by name
+  (`connect occurrenceOne references a to occurrenceTwo references b`). That is
+  exactly the OMG grammar, a headless SysML v2 validator passed it, and five
+  hand-built variants of the same model all parsed and linked cleanly — yet a
+  SysML viewer stopped showing the joints as relationships at all. The
+  validator checks parse and link; it does not derive the interconnection view
+  a reader draws. **Prefer the canonical shorthand** (`connect a to b`) over a
+  more explicit form that says the same thing: the named ends carried no
+  information the argument order did not already carry, so the verbosity bought
+  nothing and cost compatibility. See `docs/arch/Export SysML.md`.
+- **Reading a grammar is not running a parser, in both directions.** The same
+  export's `end [1] part x : T;` looked *illegal* on a strict reading of the
+  OMG BNF (`OccurrenceUsagePrefix` starts from `BasicUsagePrefix`, which has no
+  `end`), and the parser accepted it. Working code was nearly "fixed" on the
+  strength of a grammar reading. Probe first.
+- **Two exports of the same document, before and after, are the cheapest real
+  regression test available.** A pair taken from one espresso machine caught
+  two defects no synthetic fixture had: a duplicate `part def 'Connector'` that
+  made the whole file invalid, and joint origins emitted as `5.68989e-15`
+  because a rule written for mass ("never flatten a tiny value to zero") is
+  wrong for a coordinate.
 - **Say what was not verified.** "Not yet exercised in Fusion" appears in the
   commits where it was true; pure-logic tests prove logic, not Fusion
   behaviour.

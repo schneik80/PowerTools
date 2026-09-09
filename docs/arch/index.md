@@ -57,6 +57,7 @@ matching end-user guide lives in [`../`](..).
 
 - [Export BOM](Export%20BOM.md)
 - [Export Mermaid](Export%20Mermaid.md)
+- [Export SysML](Export%20SysML.md)
 
 **Part Modeling**
 
