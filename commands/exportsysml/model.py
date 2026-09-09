@@ -489,6 +489,16 @@ def extents_cm(node: CompNode) -> tuple[float, float, float] | None:
 
     Returned largest-first so the three numbers read as length, width, height
     regardless of how the component happens to be oriented in its own space.
+
+    The box includes the component's children, verified against a live design:
+    components with no bodies of their own still report substantial boxes, and
+    a bodiless component has no geometry a box could come from otherwise. So a
+    subassembly's extents are the envelope of everything inside it, and the
+    root's are the envelope of the whole assembly.
+
+    A degenerate box -- all three sides zero -- is reported as absent. Fusion
+    returns one for a component that encloses nothing rather than returning no
+    box at all, and publishing ``0 x 0 x 0`` would read as a measurement.
     """
     if node.bbox_min_cm is None or node.bbox_max_cm is None:
         return None
@@ -497,6 +507,8 @@ def extents_cm(node: CompNode) -> tuple[float, float, float] | None:
             abs(node.bbox_max_cm[axis] - node.bbox_min_cm[axis]) for axis in range(3)
         ]
     except (IndexError, TypeError):
+        return None
+    if not any(side > 0.0 for side in sides):
         return None
     sides.sort(reverse=True)
     return (sides[0], sides[1], sides[2])

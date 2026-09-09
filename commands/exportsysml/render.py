@@ -1004,18 +1004,19 @@ def add_document(assembly, sysml_filename: str) -> str:
         out.append(f"- Root component surface area: {_md_number(root.area_cm2)} cm^2")
         extents = extents_mm(root)
         if extents is None:
-            out.append("- Root bounding box: —")
+            out.append("- Assembly envelope: —")
         else:
             sides = " x ".join(number(side) for side in extents)
-            out.append(f"- Root bounding box (L x W x H): {sides} mm")
+            out.append(f"- Assembly envelope (L x W x H): {sides} mm")
     out.append("")
     out.append(
-        "> These are the values Fusion reports for each component as it stands. "
-        "The Fusion API does not document whether a component's physical "
-        "properties and bounding box include its child components, so this "
-        "export reproduces what Fusion returns and deliberately computes no "
-        "roll-up total: a summed mass that double-counted subassemblies would be "
-        "a plausible wrong answer."
+        "> A bounding box includes the component's children, so a "
+        "subassembly's extents are the envelope of everything inside it and "
+        "the figure above is the envelope of the whole assembly. Mass, volume "
+        "and area are reported as Fusion returns them per component, and this "
+        "export deliberately computes no roll-up total: the API does not "
+        "document whether they include child components, and a summed mass "
+        "that double-counted subassemblies would be a plausible wrong answer."
     )
     out.append("")
 

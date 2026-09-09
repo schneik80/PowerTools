@@ -610,3 +610,49 @@ def test_joint_placement_defaults_to_absent():
     assert edge.origin_cm is None
     assert edge.axis is None
     assert edge.axis_role == ""
+
+
+# ---------------------------------------------------------------------------
+# Bounding boxes
+#
+# Verified against live designs: a component with no bodies of its own still
+# reports a substantial box, so the box includes children. A real export also
+# produced components whose box was 0 x 0 x 0 -- Fusion returns a degenerate box
+# for a component that encloses nothing rather than returning no box at all.
+
+
+def test_a_degenerate_bounding_box_is_reported_as_absent():
+    """`0 x 0 x 0` would read as a measurement of nothing.
+
+    Two components in a live "Overall Assembly" export came out that way. The
+    rule is the same one that omits an unevaluated mass: absent, never zero.
+    """
+    empty = node(
+        "n", bodies=0, bbox_min_cm=(1.0, 2.0, 3.0), bbox_max_cm=(1.0, 2.0, 3.0)
+    )
+
+    assert model.extents_cm(empty) is None
+
+
+def test_a_flat_component_keeps_its_two_real_sides():
+    """One zero dimension is a real measurement; three is an absence."""
+    shim = node("n", bodies=1, bbox_min_cm=(0.0, 0.0, 0.0), bbox_max_cm=(5.0, 3.0, 0.0))
+
+    assert model.extents_cm(shim) == (5.0, 3.0, 0.0)
+
+
+def test_a_bodiless_subassembly_still_reports_its_children_envelope():
+    """The box includes children, so a bodiless subassembly has extents.
+
+    Water Tank in a live espresso machine has no bodies and a 285 x 127 x 66 mm
+    box, which can only come from what is inside it.
+    """
+    tank = node(
+        "tank",
+        bodies=0,
+        children=(("child", 1),),
+        bbox_min_cm=(0.0, 0.0, 0.0),
+        bbox_max_cm=(28.579, 12.704, 6.607),
+    )
+
+    assert model.extents_cm(tank) == pytest.approx((28.579, 12.704, 6.607))

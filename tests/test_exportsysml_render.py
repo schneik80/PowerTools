@@ -1233,3 +1233,40 @@ def test_the_schema_states_the_coordinate_frame():
 
     assert "coordinate space of the component that owns it" in text
     assert "root component's coordinates" not in text
+
+
+def test_the_envelope_is_named_as_the_assembly_envelope():
+    """The box includes children, so the root's box is the whole assembly."""
+    assembly = model.AssemblyModel(
+        meta=model.DocMeta(document_name="D"),
+        root_key="r",
+        nodes={
+            "r": node(
+                "r",
+                name="R",
+                children=(("a", 1),),
+                bbox_min_cm=(0.0, 0.0, 0.0),
+                bbox_max_cm=(66.5, 41.6, 33.8),
+            ),
+            "a": node("a", name="A", bodies=1),
+        },
+    )
+
+    text = render.add_document(assembly, "m.sysml")
+
+    assert "Assembly envelope (L x W x H): 665 x 416 x 338 mm" in text
+    assert "Root bounding box" not in text
+
+
+def test_a_root_with_no_envelope_says_so_without_a_zero():
+    text = render.add_document(worked_example(), "m.sysml")
+
+    assert "Assembly envelope: —" in text
+
+
+def test_the_caveat_no_longer_hedges_on_the_bounding_box():
+    """Only mass, volume and area are still unknown for child inclusion."""
+    text = render.add_document(worked_example(), "m.sysml")
+
+    assert "A bounding box includes the component's children" in text
+    assert "physical properties and bounding box include its child" not in text

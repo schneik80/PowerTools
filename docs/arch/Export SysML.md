@@ -314,9 +314,10 @@ value too small to show at six decimal places, for the same reason.
 Not yet exercised in Fusion. CI stubs `adsk`, so a green suite proves the text
 renderers and the arithmetic and nothing about the collection pass. Outstanding:
 
-- Whether `Component.physicalProperties` and `Component.boundingBox` include
-  child components. The per-component figures and the envelope column depend on
-  it, and it decides whether a roll-up could ever be offered.
+- Whether `Component.physicalProperties` includes child components. It decides
+  whether a roll-up mass could ever be offered; until then the document reports
+  what Fusion returns per component and sums nothing. (`boundingBox` is
+  settled — see below.)
 - That the ends of `Component.joints` / `asBuiltJoints` resolve to the same
   components the walk recorded, including for a joint inside a subassembly, a
   joint anchored to root geometry, a suppressed joint and an as-built joint.
@@ -364,6 +365,27 @@ Constructs the OMG BNF made look doubtful, confirmed legal by the parser:
 - `end part occurrenceOne : FusionComponent;` — reading the BNF strictly
   suggests `end` cannot prefix a `part` usage, since `OccurrenceUsagePrefix`
   starts from `BasicUsagePrefix`. The parser accepts it. Trust the parser.
+
+### A bounding box includes the component's children
+
+Confirmed against live designs rather than the API reference, which does not
+say. Components with **no bodies of their own** still report substantial boxes:
+in one espresso machine, `Water Tank` (bodiless) reports 285 x 127 x 66 mm and
+`Bottom Assembly` 312 x 152 x 76 mm; 33 of that design's components are in the
+same position, and a bodiless component has no geometry a box could otherwise
+come from.
+
+So a subassembly's extents are the envelope of everything inside it, and the
+root's are the envelope of the whole assembly — which is what the document now
+calls it. The remaining hedge in the mass-and-envelope caveat is about mass,
+volume and area only.
+
+The same sweep turned up a second thing. Two components in an "Overall Assembly"
+export came out as `0 x 0 x 0 mm`: Fusion returns a *degenerate* box for a
+component that encloses nothing rather than returning no box, so the emitter was
+publishing a measurement of nothing. `extents_cm` now treats an all-zero box as
+absent, by the same rule that omits an unevaluated mass. A single zero dimension
+is kept — a shim really is flat.
 
 ### Joint origins are in the owning component's frame, and that is the right one
 
