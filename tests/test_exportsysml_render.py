@@ -1190,3 +1190,31 @@ def test_end_order_still_records_which_occurrence_fusion_listed_first():
 
     assert line.index("housing") < line.index("bearingBlock")
     assert "// Fusion occurrences: Housing:1 -> Bearing Block:1" in text
+
+
+def test_as_built_joints_are_explained_rather_than_left_as_em_dashes():
+    """29 of 52 joints in a real export had no origin, all of them as-built.
+
+    `AsBuiltJoint.geometry` is null because such a joint is defined by where
+    its components already sit. A column of em dashes reads as a failure to
+    collect unless the document says there was nothing to collect.
+    """
+    text = render.add_document(
+        worked_example(
+            joints=(
+                revolute(name="Picked", origin_cm=(1.0, 2.0, 3.0)),
+                revolute(name="AsBuilt 1", joint_type="Rigid", is_as_built=True),
+                revolute(name="AsBuilt 2", joint_type="Rigid", is_as_built=True),
+            )
+        ),
+        "m.sysml",
+    )
+
+    assert "2 of them are as-built joints, which record no origin" in text
+
+
+def test_a_design_with_no_as_built_joints_says_nothing_about_them():
+    """The explanation appears only when it is needed."""
+    text = render.add_document(worked_example(joints=(revolute(),)), "m.sysml")
+
+    assert "as-built joints, which record no origin" not in text

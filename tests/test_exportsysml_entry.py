@@ -249,3 +249,50 @@ def test_a_component_with_no_persistent_id_falls_back_to_its_name():
 
     assert key == "name:Nameless"
     assert "reported no persistent id" in scan.notes[0]
+
+
+# ---------------------------------------------------------------------------
+# Cross-platform writing
+#
+# Both sibling export commands call `open(path, "w")` with neither argument,
+# which raises UnicodeEncodeError on a non-ASCII component name under a cp1252
+# default and turns every line ending in a .sysml file into CRLF on Windows.
+# CI runs on Linux and the dev box is macOS, so nothing here would notice the
+# regression; this is a source-level guard instead.
+
+
+def _write_opens(tree):
+    """Every `open(...)` call in the module opened for writing."""
+    calls = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = getattr(node.func, "id", None)
+        if name != "open":
+            continue
+        mode = ""
+        if len(node.args) > 1 and isinstance(node.args[1], ast.Constant):
+            mode = str(node.args[1].value)
+        for keyword in node.keywords:
+            if keyword.arg == "mode" and isinstance(keyword.value, ast.Constant):
+                mode = str(keyword.value.value)
+        if "w" in mode or "a" in mode:
+            calls.append(node)
+    return calls
+
+
+def test_every_write_pins_its_encoding_and_line_ending():
+    """UTF-8 and LF, explicitly, on every file this command writes."""
+    tree = ast.parse(ENTRY_SOURCE.read_text(encoding="utf-8"))
+
+    writes = _write_opens(tree)
+
+    assert writes, "expected at least one file write in entry.py"
+    for call in writes:
+        keywords = {
+            k.arg: getattr(k.value, "value", None)
+            for k in call.keywords
+            if k.arg is not None
+        }
+        assert keywords.get("encoding") == "utf-8", ast.unparse(call)
+        assert keywords.get("newline") == "\n", ast.unparse(call)

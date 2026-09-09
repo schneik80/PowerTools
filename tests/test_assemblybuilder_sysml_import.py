@@ -1012,3 +1012,30 @@ def test_a_long_summary_is_capped_so_the_dialog_stays_readable():
 
     assert "... and 20 more" in summary
     assert summary.count("2 x Leaf") == sysml_import.SUMMARY_LIST_CAP
+
+
+def test_a_windows_crlf_file_parses_identically(tmp_path):
+    """A model authored on Windows arrives with CRLF line endings.
+
+    The reader decodes bytes rather than using text mode, so the carriage
+    returns survive into the parser. They must not change what it finds.
+    """
+    path = tmp_path / "crlf.sysml"
+    path.write_bytes(SIMPLE.replace("\n", "\r\n").encode("utf-8"))
+
+    crlf = sysml_import.to_graph(sysml_import.parse(entry._read_sysml_text(str(path))))
+    lf = parse_graph(SIMPLE)
+
+    assert crlf.root_key == lf.root_key
+    assert crlf.edges == lf.edges
+    assert [n["key"] for n in crlf.nodes] == [n["key"] for n in lf.nodes]
+    assert [n["kind"] for n in crlf.nodes] == [n["kind"] for n in lf.nodes]
+
+
+def test_a_crlf_comment_does_not_swallow_the_next_line():
+    """`//` must end at the CR, not run on to the next statement."""
+    text = "package P {\r\n part def A; // note\r\n part def B;\r\n}"
+
+    result = sysml_import.parse(text)
+
+    assert set(result.definitions) == {"A", "B"}

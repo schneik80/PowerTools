@@ -894,6 +894,19 @@ def add_document(assembly, sysml_filename: str) -> str:
             f"{len(joints)} joint(s) recorded; {len(movable)} permit relative "
             "motion in the built configuration."
         )
+        # An as-built joint is defined by where its components already sit
+        # rather than by picked geometry, so Fusion records no origin for it.
+        # Said here because a table of em dashes otherwise reads as a failure
+        # to collect rather than as nothing to collect.
+        as_built = [joint for joint in joints if joint.is_as_built]
+        if as_built:
+            out.append("")
+            out.append(
+                f"{len(as_built)} of them are as-built joints, which record no "
+                "origin: an as-built joint is defined by the position its "
+                "components were already in, not by geometry someone picked, so "
+                "there is no point for Fusion to report."
+            )
     else:
         out.append(
             "The design records no joints, so no motion is derivable. Author this "

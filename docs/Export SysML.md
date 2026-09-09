@@ -144,7 +144,9 @@ Each connection also records **where the joint is and which way it acts**, in th
 
 The axis read depends on the kind: a revolute or cylindrical joint reports its rotation axis, a slider its slide direction, a planar joint its normal, a ball joint its pitch direction. A rigid joint has no axis and reports none; nor does an inferred joint, whose motion its kind does not fix. A pin-slot and a planar joint each have a second axis, and only the primary one is exported — `axisRole` says which it is.
 
-Any of these may be absent. A joint whose geometry Fusion could not evaluate leaves the origin unset, and an unset attribute is not zero: writing zeros would place the joint at the model origin pointing nowhere, indistinguishable from a measurement.
+Any of these may be absent, and an unset attribute is not zero: writing zeros would place the joint at the model origin pointing nowhere, indistinguishable from a measurement.
+
+**As-built joints record no origin.** An as-built joint is defined by the position its components were already in rather than by geometry someone picked, so Fusion has no point to report and the Origin column shows an em dash. This is normal, and often accounts for most of the joints in an assembly — in one real export, 29 of 52. The Process View says how many when there are any.
 
 ```sysml
 connection 'Pivot' : RevoluteJoint connect housing to bearingBlock {

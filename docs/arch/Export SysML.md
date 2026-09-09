@@ -325,15 +325,39 @@ renderers and the arithmetic and nothing about the collection pass. Outstanding:
   inside an xref is confirmed false — see the identity section.
 - Progress-dialog repaint and `wasCancelled` on a large assembly with no
   `doEvents` in the scan loop.
-- The joint placement reads: that `geometryOrOriginOne` returns a
-  `JointGeometry` or a `JointOrigin` and not some third thing, that
-  `JointGeometry.origin` is in the root's coordinates rather than the owning
-  component's, and that each motion kind's axis vector is populated on a joint
-  built the ordinary way. The mapping and the normalising are unit tested; the
-  reads themselves are not, and an origin expressed in the wrong frame would be
-  a plausible wrong answer rather than an error.
-- On `g16win.local`: the folder dialog and both writes with a non-ASCII document
-  name, and `newline="\n"` producing LF rather than CRLF in the `.sysml`.
+- **Which frame `JointGeometry.origin` is expressed in.** The exporter reads
+  joints natively, per component, and writes the origin as an attribute on that
+  component's `part def` -- a definition shared by every instance. So the
+  coordinate is only meaningful in the *owning component's* frame. If Fusion is
+  returning a root/world coordinate instead, then for a component used more than
+  once the exported origin is right for one instance and wrong for the rest: a
+  plausible wrong answer, which is worse than none.
+
+  A real espresso-machine export cannot settle it, because components created in
+  place inherit the root origin, so the two frames coincide numerically. Its 22
+  origins do sit inside the 665 x 416 x 338 mm root envelope and sort the way the
+  machine is built (Bottom Assembly at z = -214, Top Lid at z = +78), which is
+  consistent with either reading. No origin-carrying component in that design is
+  multi-instance, so nothing is currently wrong there -- but 16 of its 117
+  components are used more than once, so the case is reachable.
+
+  `PTJointFrameProbe` (a throwaway script in Fusion's Scripts folder, outside
+  this repo) settles it by A/B: it reads the same joint natively and again as a
+  root-context proxy from `rootComponent.allJoints`. Differing origins mean the
+  native read is component-local and the export is already correct.
+- On `g16win.local`, the parts no test can reach. What *is* covered from here:
+  an AST guard asserts every write in `entry.py` pins `encoding="utf-8"` and
+  `newline="\n"`, and the importer is tested against CRLF input, since a model
+  authored on Windows arrives with carriage returns that survive the byte-level
+  read. What is left is runtime behaviour:
+  - that the written `.sysml` really lands with LF rather than CRLF;
+  - a non-ASCII document name surviving the folder dialog, the filename and the
+    file contents;
+  - a destination deep enough to push the path past 260 characters. The stem is
+    capped at 120 and the suffix adds 15, so the user's chosen folder decides
+    it, and a Windows without long-path support will fail the write;
+  - the Assembly Builder palette's Import button and file dialog under QT
+    WebEngine, which is a different browser build from macOS.
 
 ### Verified against a real SysML v2 parser
 
@@ -360,6 +384,20 @@ Constructs the OMG BNF made look doubtful, confirmed legal by the parser:
 - `end part occurrenceOne : FusionComponent;` — reading the BNF strictly
   suggests `end` cannot prefix a `part` usage, since `OccurrenceUsagePrefix`
   starts from `BasicUsagePrefix`. The parser accepts it. Trust the parser.
+
+### As-built joints carry no origin, and the document says so
+
+29 of the 52 joints in a real espresso-machine export had no origin, all of them
+rigid, which looked like a gap in the reads. Correlating the generated
+document's Origin and State columns settled it: all 29 are as-built, all 23 with
+an origin are ordinary joints, and there is no joint that lacks an origin
+without being as-built.
+
+That is correct behaviour rather than a gap. An as-built joint is defined by the
+position its components were already in, not by geometry someone picked, so
+`AsBuiltJoint.geometry` has nothing to return. The Process View now says this in
+prose when as-built joints are present, because a column of em dashes otherwise
+reads as a failure to collect rather than as nothing to collect.
 
 ### Parsing is not rendering: connector ends are positional
 
