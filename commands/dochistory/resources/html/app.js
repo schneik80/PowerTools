@@ -464,6 +464,59 @@
     }
 
     /**
+     * driftCrossesMarker reports whether declutter moved any dot to the far side
+     * of an hour marker from where it belongs.
+     *
+     * declutter trades clock accuracy for legibility, and in its worst branch -
+     * more dots than the axis can ever separate - it gives up clock position
+     * altogether and spaces the run evenly. The markers do not move with it, so
+     * a 9 AM save can end up drawn to the right of 12 PM, where the only honest
+     * reading of the picture is "afternoon". That is a plausible wrong answer of
+     * exactly the kind this view exists not to produce, so the axis gives up its
+     * precision rather than assert it: the quarter-day markers come off and the
+     * row keeps only its own two bounds, claiming order rather than time. The
+     * hover card still carries the timestamp.
+     *
+     * A crossing is the test, not a distance, because a crossing is the thing
+     * that actually misleads. A dot nudged from 09:00 to 10:30 still reads as
+     * morning and costs nothing; one nudged from 11:59 to 12:01 has changed
+     * which half of the day it appears to be in, on a fifth of the movement.
+     * Any distance threshold would have been a guess at where those two cases
+     * divide, and would have got both of them wrong.
+     *
+     * The crossing has to clear DRIFT_VISIBLE too. Below that the code already
+     * judges a nudge too small to be worth marking with a hairline, so it is too
+     * small to strip an axis over.
+     *
+     * Row-level, not per track: one axis stands behind all of them, so the worst
+     * dot in the row decides for the row.
+     */
+    function driftCrossesMarker(placements, candidateTicks) {
+        var lines = [];
+        candidateTicks.forEach(function (tick) {
+            // The day's own bounds cannot be crossed - nothing lies outside the
+            // day - so only the markers inside it can be got wrong.
+            if (tick.hour > 0 && tick.hour < 24) {
+                lines.push(xOfMs(tick.hour * 3600000, viewW));
+            }
+        });
+        if (!lines.length) return false;
+
+        var crossed = false;
+        placements.forEach(function (p) {
+            p.xs.forEach(function (cx, i) {
+                if (Math.abs(cx - p.raw[i]) <= DRIFT_VISIBLE) return;
+                var lo = Math.min(p.raw[i], cx);
+                var hi = Math.max(p.raw[i], cx);
+                lines.forEach(function (lx) {
+                    if (lo < lx && lx <= hi) crossed = true;
+                });
+            });
+        });
+        return crossed;
+    }
+
+    /**
      * hourTicks picks the hour gridlines for a plot of the given width.
      *
      * Every tick carries its hour. The earlier version also drew unlabelled
@@ -475,9 +528,16 @@
      * Narrowing drops whole ticks rather than reintroducing anonymous ones, so
      * the rule stays true at every width: nothing is drawn that cannot say what
      * hour it is.
+     *
+     * `endpointsOnly` drops the quarter-day markers and keeps just the day's two
+     * bounds - see driftCrossesMarker, which is what decides it.
      */
-    function hourTicks(plotW) {
+    function hourTicks(plotW, endpointsOnly) {
         if (plotW < 200) return [];
+        // The day's own bounds are true whatever declutter did to the dots - the
+        // row IS that midnight-to-midnight span - so they stay and frame it,
+        // while the quarter-day claims inside go.
+        if (endpointsOnly) return [{ hour: 0 }, { hour: 24 }];
         var every = plotW >= 260 ? 6 : 12;
         var ticks = [];
         for (var h = 0; h <= 24; h += every) {
@@ -797,7 +857,30 @@
 
     function rowNode(row, band, plotW, base) {
         var withAxis = !thread;
-        var ticks = withAxis ? hourTicks(plotW) : [];
+
+        // Place every track before drawing any of it. Whether the axis can carry
+        // its intermediate markers depends on how far declutter had to move the
+        // dots, and that is not known until they are all placed - so layout
+        // comes first and the drawing below reads the result rather than
+        // recomputing it.
+        var axisW = plotWidth(viewW);
+        var placements = row.tracks.map(function (track) {
+            var raw = track.dots.map(function (d) {
+                return thread ? xOfIndex(d.index - base) : xOfMs(d.ms, viewW);
+            });
+            return {
+                track: track,
+                raw: raw,
+                xs: thread ? raw : declutter(raw, 0, axisW)
+            };
+        });
+
+        // The markers this width would like to draw, and then whether the dots
+        // as placed can live with them.
+        var wanted = withAxis ? hourTicks(plotW, false) : [];
+        var ticks = driftCrossesMarker(placements, wanted)
+            ? hourTicks(plotW, true)
+            : wanted;
         var h = rowHeight(row.tracks.length, withAxis && ticks.length > 0);
 
         var header = el("div", {
@@ -849,12 +932,11 @@
             }));
         });
 
-        row.tracks.forEach(function (track, ti) {
+        placements.forEach(function (placement, ti) {
+            var track = placement.track;
+            var raw = placement.raw;
+            var xs = placement.xs;
             var y = trackY(ti);
-            var raw = track.dots.map(function (d) {
-                return thread ? xOfIndex(d.index - base) : xOfMs(d.ms, viewW);
-            });
-            var xs = thread ? raw : declutter(raw, 0, plotWidth(viewW));
             var rail = track.overflow ? fade(C.secondary, RAIL_ALPHA)
                 : userColorAlpha(track.key, RAIL_ALPHA);
             var group = [];

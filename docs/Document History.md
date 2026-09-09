@@ -39,6 +39,8 @@ By default a row is a 00:00 to 24:00 clock fitted to the palette width, so noon 
 
 Saves closer together than the dots are wide are nudged apart so a burst does not collapse into a blob. When a dot has been moved, a faint hairline marks the time it actually happened, and the hover card always carries the exact timestamp.
 
+Where a day is too crowded for that nudging to keep the dots on the right side of the hour markers &mdash; a morning save pushed past **12 PM** would read as an afternoon one &mdash; the row drops its interior markers and keeps only midnight at each end. It then says what order the day's events came in rather than what time they happened, which is all the drawing can honestly support. Narrowing the palette makes this more likely, since there is less width for the same day.
+
 ### The markers
 
 | Marker | Meaning |
