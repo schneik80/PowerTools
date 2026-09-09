@@ -134,13 +134,15 @@ A joint becomes a SysML connection when both of its ends sit somewhere below the
 
 Each joint kind is written as a connection definition carrying the degrees of freedom that kind permits, so a revolute joint is distinguishable from a ball joint without opening Fusion. A kind whose motion its name does not fix — an inferred joint — omits the counts rather than claiming zero. The connection definition names its two ends `occurrenceOne` and `occurrenceTwo`, and each connection gives them **in Fusion's order** — the first named component is `occurrenceOne`, the one that moves relative to the second. Each connection also carries a comment giving the occurrence names Fusion gave those ends. Those names are the only record of *which* of two identical parts a joint holds, because the model file declares one usage per component.
 
-Each connection also records **where the joint is and which way it acts**, in the root component's coordinates:
+Each connection also records **where the joint is and which way it acts**, in the coordinate space of the component that owns the joint:
 
 | Attribute | Meaning |
 |---|---|
 | `originXMm`, `originYMm`, `originZMm` | The joint's origin, in millimetres |
 | `axisX`, `axisY`, `axisZ` | A unit vector along the joint's primary axis |
 | `axisRole` | What that axis governs — `rotation`, `translation`, `normal` or `pitch` |
+
+The frame matters. Fusion reads these joints *natively*, and a native object carries no assembly context — a component can sit in many places, so there is no single world position to report. That is what makes the coordinate correct for every instance of a component used more than once, which is what a `part def` attribute needs. It also means two origins under different definitions cannot be compared directly: getting both into a common frame means composing the occurrence transforms between them.
 
 The axis read depends on the kind: a revolute or cylindrical joint reports its rotation axis, a slider its slide direction, a planar joint its normal, a ball joint its pitch direction. A rigid joint has no axis and reports none; nor does an inferred joint, whose motion its kind does not fix. A pin-slot and a planar joint each have a second axis, and only the primary one is exported — `axisRole` says which it is.
 

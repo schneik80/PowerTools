@@ -173,7 +173,11 @@ class JointEdge:
     two_label: str = ""
     is_as_built: bool = False
     is_suppressed: bool = False
-    # Where the joint is and which way it acts, in the root's coordinates:
+    # Where the joint is and which way it acts, in the coordinate space of the
+    # component that owns it -- Fusion reads joints natively, and a native object
+    # carries no assembly context to place it in. That is what makes the value
+    # correct for every instance of a repeated component, and what stops two
+    # origins under different owners being comparable.
     # ``origin_cm`` in centimetres, ``axis`` a unit vector, ``axis_role`` naming
     # what the axis governs ("rotation", "translation", "normal", "pitch").
     # All three are ``None``/empty when Fusion did not supply them -- a rigid

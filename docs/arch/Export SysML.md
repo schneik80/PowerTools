@@ -325,26 +325,6 @@ renderers and the arithmetic and nothing about the collection pass. Outstanding:
   inside an xref is confirmed false — see the identity section.
 - Progress-dialog repaint and `wasCancelled` on a large assembly with no
   `doEvents` in the scan loop.
-- **Which frame `JointGeometry.origin` is expressed in.** The exporter reads
-  joints natively, per component, and writes the origin as an attribute on that
-  component's `part def` -- a definition shared by every instance. So the
-  coordinate is only meaningful in the *owning component's* frame. If Fusion is
-  returning a root/world coordinate instead, then for a component used more than
-  once the exported origin is right for one instance and wrong for the rest: a
-  plausible wrong answer, which is worse than none.
-
-  A real espresso-machine export cannot settle it, because components created in
-  place inherit the root origin, so the two frames coincide numerically. Its 22
-  origins do sit inside the 665 x 416 x 338 mm root envelope and sort the way the
-  machine is built (Bottom Assembly at z = -214, Top Lid at z = +78), which is
-  consistent with either reading. No origin-carrying component in that design is
-  multi-instance, so nothing is currently wrong there -- but 16 of its 117
-  components are used more than once, so the case is reachable.
-
-  `PTJointFrameProbe` (a throwaway script in Fusion's Scripts folder, outside
-  this repo) settles it by A/B: it reads the same joint natively and again as a
-  root-context proxy from `rootComponent.allJoints`. Differing origins mean the
-  native read is component-local and the export is already correct.
 - On `g16win.local`, the parts no test can reach. What *is* covered from here:
   an AST guard asserts every write in `entry.py` pins `encoding="utf-8"` and
   `newline="\n"`, and the importer is tested against CRLF input, since a model
@@ -384,6 +364,46 @@ Constructs the OMG BNF made look doubtful, confirmed legal by the parser:
 - `end part occurrenceOne : FusionComponent;` — reading the BNF strictly
   suggests `end` cannot prefix a `part` usage, since `OccurrenceUsagePrefix`
   starts from `BasicUsagePrefix`. The parser accepts it. Trust the parser.
+
+### Joint origins are in the owning component's frame, and that is the right one
+
+The origin is written onto a `part def`, which every instance of that component
+shares, so the coordinate is only meaningful in the owning component's frame. A
+world coordinate would be right for one instance of a repeated component and
+wrong for the rest — a plausible wrong answer, which is worse than none.
+
+`PTJointFrameProbe` (a throwaway script in Fusion's Scripts folder, outside this
+repo) answered it against the espresso machine. The intended A/B — the same
+joint read natively and again as a root-context proxy — did not run, because
+`rootComponent.allJoints` raised on that design. The moved subassemblies settled
+it anyway:
+
+| Component | 1st occurrence translation (cm) | Joint origin (cm) |
+|---|---|---|
+| Controls | `(0, -11.78, 6.81)` | `(0.02, -1.90, 1.16)` |
+| Frother Mechanism | `(-5.52, -8.80, 1.36)` | `(10.92, 3.10, 4.38)` |
+
+Read as world, the Controls joint would sit roughly 100 mm in y away from the
+component that owns it. Read as component-local, it is 2 cm from that
+component's own origin — where a joint inside Controls belongs. Every other
+origin-carrying component in the design has an identity transform, so the two
+frames coincide there and only these two discriminate.
+
+The API's structure says the same thing independently: `component.joints`
+returns *native* objects, and a native object carries no assembly context,
+because its component can sit in many places. Having no world position to give
+is exactly why the proxy form exists.
+
+So the export was already correct and only its wording was wrong; `render.py`,
+`model.py` and the user doc now say "the coordinate space of the component that
+owns it". Two consequences worth stating where a reader will meet them: the
+value is correct for every instance of a repeated component, and two origins
+under different definitions are not comparable without composing the occurrence
+transforms between them.
+
+That `rootComponent.allJoints` raised is a second, smaller finding, and it
+reinforces the existing decision to read joints per component: the flattened
+collection is not dependable on a real design.
 
 ### As-built joints carry no origin, and the document says so
 

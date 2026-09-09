@@ -1218,3 +1218,18 @@ def test_a_design_with_no_as_built_joints_says_nothing_about_them():
     text = render.add_document(worked_example(joints=(revolute(),)), "m.sysml")
 
     assert "as-built joints, which record no origin" not in text
+
+
+def test_the_schema_states_the_coordinate_frame():
+    """The frame is the owning component's, not the root's.
+
+    Fusion reads joints natively and a native object carries no assembly
+    context, so there is no world position to report -- which is also what
+    makes the value correct for every instance of a repeated component. Saying
+    "root" would invite a reader to compare origins across definitions, which
+    is exactly what they cannot do without composing occurrence transforms.
+    """
+    text = render.sysml_document(worked_example(joints=(placed_revolute(),)))
+
+    assert "coordinate space of the component that owns it" in text
+    assert "root component's coordinates" not in text
