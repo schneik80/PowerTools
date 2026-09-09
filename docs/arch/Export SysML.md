@@ -338,15 +338,14 @@ those runs have not covered:
   59 null-end joints would stress that path far harder than the single one seen
   so far.
 
-  `Rear Hub ASSY R` is a different case. Its most recent export already has
-  dotted paths and resolves 17 of 19 joints, the two exceptions both honest
-  null ends — but it predates the `id + name` key, so it is the *before*
-  artifact for the identity collision: 16 definitions for 17 components, no
-  `CVD Drive Pin` at all, the two pins merged into
+  `Rear Hub ASSY R` has been re-exported and the identity fix holds. The
+  earlier run was the *before* artifact for the collision: 16 definitions for
+  17 components, no `CVD Drive Pin`, the two pins merged into
   `part cvdPivotPin : 'CVD Pivot Pin'[2]`, and `Rigid 5` emitted as a
-  connection to `cvdPivotPin` when the design joins the drive pin. Re-exporting
-  it should now give 17 definitions, both pins, no `[2]`, and `Rigid 5` naming
-  the drive pin.
+  connection to `cvdPivotPin` where the design joins the drive pin. The current
+  export gives 17 definitions, both pins as separate defs and separate usages,
+  no spurious `[2]`, and `connection 'Rigid 5' : RigidJoint connect cvdDrivePin
+  to dogBoneRear`.
 - That `Component.id` is non-empty in a Direct (non parametric) design, so the
   name fallback stays unused. Non-empty inside an xref is confirmed; *unique*
   inside an xref is confirmed false — see the identity section.
@@ -383,6 +382,15 @@ passing:
 | cycle | a component that contains itself |
 | geometry | all eight kinds carrying an origin and an axis, a rigid joint with an origin and no axis, an axis with no origin, and a joint with neither |
 | schema clash | components genuinely named `FusionComponent` and `FusionJoint` |
+
+A real export has since been checked the same way: `Rear Hub ASSY R`, 17
+components and 17 connections, validates clean and round-trips back through
+`sysml_import` to 17 nodes and 16 edges with nothing skipped and no warnings.
+It also gave the cleanest confirmation that mass includes children — its root
+is a pure subassembly with no bodies of its own, so its leaf parts sum to
+0.024365 kg against a root reporting 0.024365 kg, a ratio of exactly 1.0000.
+Summing every inventory row instead gives 0.060391 kg, 2.48 times the truth,
+which is what the non-additive note under the table exists to prevent.
 
 Constructs the OMG BNF made look doubtful, confirmed legal by the parser:
 
