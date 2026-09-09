@@ -929,11 +929,13 @@ def add_document(assembly, sysml_filename: str) -> str:
         as_built = [joint for joint in joints if joint.is_as_built]
         if as_built:
             out.append("")
+            count = len(as_built)
             out.append(
-                f"{len(as_built)} of them are as-built joints, which record no "
-                "origin: an as-built joint is defined by the position its "
-                "components were already in, not by geometry someone picked, so "
-                "there is no point for Fusion to report."
+                f"{count} of them {'is an' if count == 1 else 'are'} as-built "
+                f"joint{'' if count == 1 else 's'}, which record no origin: an "
+                "as-built joint is defined by the position its components were "
+                "already in, not by geometry someone picked, so there is no "
+                "point for Fusion to report."
             )
     else:
         out.append(

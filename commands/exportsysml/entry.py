@@ -218,6 +218,8 @@ class _Scan:
         self.references: dict = {}
         self.cancelled = False
         self._fallback_keys = 0
+        # Referenced occurrences whose document could not be named.
+        self._unidentified_refs: set = set()
         # Component ids seen, to the names carrying them. Fusion's persistent id
         # is not always unique (see key_for), and the collision is worth telling
         # the reader about rather than absorbing.
@@ -477,7 +479,18 @@ class _Scan:
         return mapping[1] if mapping else ""
 
     def _record_reference(self, occurrence, key) -> None:
-        """Note that *key* comes from a linked document, aggregating by document."""
+        """Note that *key* comes from a linked document, aggregating by document.
+
+        Only occurrences whose document actually resolves are recorded. Fusion
+        marks the *contents* of a referenced subassembly as referenced too, but
+        ``documentReference`` raises for them -- "Cannot get
+        allDocumentReferences of a non-top-level document" -- so all that is
+        left is the occurrence name. Listing those would present the eight parts
+        inside a linked assembly as eight more linked documents, when they are
+        the one document already in the table: a Rear Hub export showed 14 rows
+        for 8 real documents. The Development View is meant to be the module
+        structure, and a module nobody can name is not one.
+        """
         if not _read(lambda: occurrence.isReferencedComponent, False):
             return
         reference = _read(lambda: occurrence.documentReference)
@@ -492,8 +505,11 @@ class _Scan:
                 file_id = _read(lambda: data_file.id) or ""
             version = _read(lambda: reference.version)
             out_of_date = _read(lambda: reference.isOutOfDate)
-        if not label:
-            label = _read(lambda: occurrence.name) or "(unknown document)"
+        if not (label or file_id):
+            self._unidentified_refs.add(
+                _read(lambda: occurrence.name) or "(unnamed occurrence)"
+            )
+            return
         entry = self.references.setdefault(
             file_id or label,
             {
@@ -603,6 +619,18 @@ def _scan(design, root, document_name):
     if scan.cancelled:
         ptutil.log(f"{CMD_NAME}: cancelled during the scan; nothing was written")
         return None
+
+    # One note for the lot rather than one per occurrence: inside a linked
+    # subassembly every part hits this, and a note each would bury the appendix.
+    if scan._unidentified_refs:
+        names = sorted(scan._unidentified_refs)
+        shown = ", ".join(names[:6]) + (", ..." if len(names) > 6 else "")
+        scan.note(
+            f"{len(names)} occurrence(s) are linked from another document that "
+            "could not be named, so they are left out of the Development View; "
+            "Fusion refuses documentReference for anything nested inside a "
+            f"referenced subassembly. They are: {shown}"
+        )
 
     counts = model.total_counts(
         model.AssemblyModel(

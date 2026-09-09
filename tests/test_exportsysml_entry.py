@@ -296,3 +296,84 @@ def test_every_write_pins_its_encoding_and_line_ending():
         }
         assert keywords.get("encoding") == "utf-8", ast.unparse(call)
         assert keywords.get("newline") == "\n", ast.unparse(call)
+
+
+# ---------------------------------------------------------------------------
+# _record_reference
+#
+# Fusion marks the contents of a referenced subassembly as referenced too, but
+# refuses documentReference for them. A Rear Hub export listed the eight parts
+# inside a linked CVD assembly as eight more linked documents, labelled with
+# their occurrence names -- 14 rows for 8 real documents.
+
+
+class _NamedDataFile:
+    def __init__(self, name, file_id):
+        self.name = name
+        self.id = file_id
+
+
+class _Reference:
+    def __init__(self, name, file_id, version=2, out_of_date=False):
+        self.dataFile = _NamedDataFile(name, file_id)
+        self.version = version
+        self.isOutOfDate = out_of_date
+
+
+class _ResolvableOccurrence:
+    """A top-level referenced occurrence: its document can be named."""
+
+    isReferencedComponent = True
+
+    def __init__(self, name, file_id):
+        self.name = f"{name}:1"
+        self.documentReference = _Reference(name, file_id)
+
+
+class _LocalOccurrence:
+    isReferencedComponent = False
+    name = "Local:1"
+
+
+def test_a_resolvable_reference_is_recorded():
+    scan = entry._Scan(None)
+
+    scan._record_reference(_ResolvableOccurrence("CVD ASSY - Rear", "urn:cvd"), "k1")
+
+    assert list(scan.references) == ["urn:cvd"]
+    assert scan.references["urn:cvd"]["label"] == "CVD ASSY - Rear"
+    assert scan.references["urn:cvd"]["keys"] == {"k1"}
+
+
+def test_an_unnameable_reference_is_left_out_of_the_module_structure():
+    """A part inside a linked assembly is not itself a linked document.
+
+    Listing it would present the contents of one module as several, labelled
+    with occurrence names and carrying no version -- which is what the Rear Hub
+    export did.
+    """
+    scan = entry._Scan(None)
+
+    scan._record_reference(_FakeOccurrence(), "k1")
+
+    assert scan.references == {}
+    assert scan._unidentified_refs
+
+
+def test_a_local_component_is_not_a_reference_at_all():
+    scan = entry._Scan(None)
+
+    scan._record_reference(_LocalOccurrence(), "k1")
+
+    assert scan.references == {}
+    assert not scan._unidentified_refs
+
+
+def test_instances_of_one_document_aggregate_onto_a_single_row():
+    scan = entry._Scan(None)
+
+    scan._record_reference(_ResolvableOccurrence("Bearing", "urn:brg"), "k1")
+    scan._record_reference(_ResolvableOccurrence("Bearing", "urn:brg"), "k2")
+
+    assert list(scan.references) == ["urn:brg"]
+    assert scan.references["urn:brg"]["keys"] == {"k1", "k2"}

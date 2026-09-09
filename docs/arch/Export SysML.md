@@ -469,6 +469,25 @@ That `rootComponent.allJoints` raised is a second, smaller finding, and it
 reinforces the existing decision to read joints per component: the flattened
 collection is not dependable on a real design.
 
+### The Development View lists documents, not the contents of one
+
+Fusion marks the *contents* of a referenced subassembly as referenced too, and
+then refuses `Occurrence.documentReference` for them — the same
+"Cannot get allDocumentReferences of a non-top-level document" that defeats the
+identity suffix. All that is left is the occurrence name, and the first version
+of the collection fell back to it.
+
+A Rear Hub export showed the cost: 14 rows for 8 real documents, six of them
+being the parts inside a linked `CVD ASSY - Rear`, labelled `Axle Rear:1`,
+`CVD Barrel:1` and so on, with no version and no status. That over-reports the
+module structure by three quarters, and the one document those six actually
+belong to was already in the table.
+
+Only occurrences whose document resolves to a name or an id are recorded now.
+The rest are counted into a single collection note rather than one note each,
+because inside a linked subassembly every part hits this and a note apiece
+would bury the appendix.
+
 ### As-built joints carry no origin, and the document says so
 
 29 of the 52 joints in a real espresso-machine export had no origin, all of them

@@ -1311,3 +1311,20 @@ def test_the_warning_is_omitted_when_the_root_has_no_mass():
     )
 
     assert "does not sum" not in render.add_document(parts, "m.sysml")
+
+
+@pytest.mark.parametrize(
+    ("count", "expected"),
+    [(1, "1 of them is an as-built joint,"), (2, "2 of them are as-built joints,")],
+)
+def test_the_as_built_sentence_agrees_in_number(count, expected):
+    """A real Rear Hub export read "1 of them are as-built joints"."""
+    joints = [revolute(name="Picked", origin_cm=(1.0, 2.0, 3.0))]
+    joints += [
+        revolute(name=f"AsBuilt {i}", joint_type="Rigid", is_as_built=True)
+        for i in range(count)
+    ]
+
+    text = render.add_document(worked_example(joints=tuple(joints)), "m.sysml")
+
+    assert expected in text
