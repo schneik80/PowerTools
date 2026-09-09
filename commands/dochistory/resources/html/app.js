@@ -765,28 +765,31 @@
     }
 
     /**
-     * indexLabelText is what a label actually prints.
+     * indexLabelText is what a label actually prints: all three figures, always.
      *
-     * Before the first release the major is always 0, so printing it spends a
-     * third of every label - and, because the labels are angled, a third of the
-     * vertical room they need - on a digit that cannot vary. It appears the
-     * moment it starts meaning something, which is the moment someone names a
-     * release. A pre-release "1.0" and a released "1.0.0" therefore differ in
-     * length rather than in value, and the release also carries the accent.
+     * It abbreviated for one commit, dropping the major while it was still zero
+     * on the grounds that the digit could not vary and the angled labels would
+     * be shorter for it. Testing rejected it: a two-figure number sitting beside
+     * a three-figure one is ambiguous to read, whatever the arithmetic says
+     * about how much information the leading zero carries. A three-number
+     * presentation is worth more than the pixels an abbreviation saves.
+     *
+     * Kept as the one place that answers "what does a label print", because the
+     * drawing, the width measurement behind the track pitch, and the hover card
+     * all have to agree on it.
      */
     function indexLabelText(v) {
-        var label = v.indexLabel || "";
-        return label.indexOf("0.") === 0 ? label.slice(2) : label;
+        return v.indexLabel || "";
     }
 
     /**
      * indexedTrackPitch is the track height the index needs for the labels this
      * history actually contains, rather than for the longest one it could.
      *
-     * A history with no releases prints two-part labels, which rise about nine
-     * pixels less than three-part ones, and that is nine pixels off every track
-     * of every row. Deriving the pitch is what turns the shorter label into
-     * less scrolling instead of just more white space.
+     * The old flat constant was sized for the longest label the numbering can
+     * produce, which most histories never reach: a two-digit major needs nine
+     * pixels of rise that a single-digit one does not, and that was nine pixels
+     * off every track of every row for nothing.
      *
      * The widest label and the deepest marker are taken across the whole
      * rendered stack, because the pitch is uniform: one long label anywhere sets
