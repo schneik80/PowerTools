@@ -113,6 +113,7 @@ The clock view is the default because it is the one that never scrolls sideways 
 
 - The palette takes a moment to open while it reads the history from Fusion's cloud; Fusion shows a busy indicator in the status bar meanwhile.
 - The palette shows a snapshot taken when it was opened. Select **History** again to re-read the history after saving.
+- The palette closes when the active document changes &mdash; switching tabs, opening a document, or creating a new one. It was only ever a reading of the document that was active when it opened, and a history left on screen under a different document's name reads as that document's own. Select **History** again for the one you have moved to.
 - Authorship comes from Fusion's cloud data. If the design is not in a hub, or you are offline, the palette still draws the history but every save is attributed to the document's creator, because that is all the desktop API can tell it.
 - The history is read from the cloud, so a document with hundreds of versions takes a moment to open. Fusion shows a busy indicator while it reads.
 - Fusion exposes a public share link on the document rather than on a specific version, so the public-share ring marks the current version.

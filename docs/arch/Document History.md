@@ -21,6 +21,7 @@ It replaces the original behaviour, which selected the root component and ran Fu
 | `mfgdm_history.py` | The GraphQL read: one paginated request over `mfgdm://v3`, through the transport `partnumber_shared/mfgdm_props.gql` already owns. |
 | `resources/html/{index.html,style.css,app.js}` | The drawing, plus the width-dependent geometry. |
 | `tests/test_dochistory_history_model.py` | A port of the vitest suite covering the same bucketing in the web app, so the two presentations cannot drift apart in what they claim about a history. |
+| `tests/test_dochistory_doc_switch.py` | Document identity and the decision to tear the palette down when the active document changes. |
 
 ### Where the layout maths lives, and why it is split
 
@@ -113,6 +114,20 @@ Two things are read once for the whole file rather than per version, because bot
 - **The public share** comes from `DataFile.sharedLink.isShared`. Fusion exposes the link on the file rather than per version, so the ring marks the current version. Reading it per version would be one round trip per dot.
 
 Every per-version read is guarded individually: one unreadable version costs its own dot, not the whole history.
+
+### Following the active document
+
+The palette reads one document, once. Nothing told it when that stopped being the active one, so it went on showing the old history under the old document's name — a correct-looking history of the wrong design, which is worse than a visible failure (#8).
+
+`documentActivated`, `documentOpened` and `documentCreated` now all run `application_document_changed`, which does nothing but start a timer. **That emptiness is the point.** Reading the document model from inside one of those events can walk the document graph while Fusion's background saver is serialising it and abort the saver thread — the reason the Assembly Palette gallery auto-refresh is parked. Even `args.document.dataFile` is off limits there. The timer fires `_SWITCH_EVENT_ID`, and `_close_palette_if_stale` does the work a main-loop turn later, where reading a document is safe.
+
+Activation alone would very likely cover all three cases, since creating or opening a document activates it. All three are wired anyway: the failure mode is a wrong answer rather than a missing one, so it is not worth resting on that inference.
+
+**Closed, not reloaded**, and that is a cost decision. Reloading means `_gather_history` — a ~1.4s MFGDM read behind a busy indicator — on every tab switch, and because a live page cannot re-read `init.js` it also means the teardown and rebuild `_open_palette` describes, losing the scroll position and the view toggles regardless. Paying that on a keystroke the user spent on something else is worse than asking for the click that re-opens it, and the palette was always documented as a snapshot. Hiding rather than deleting is not an option either: Fusion can leave a torn-down palette in `ui.palettes`, and toggling `isVisible` on that husk silently no-ops, so the next open would show nothing.
+
+Identity goes through `_document_identity`, not through comparing `Document` objects — two API calls hand back different wrappers around the same native document. It is `dataFile.id`, falling back to `"unsaved:" + name` for a document that has none, so two new untitled documents still tell apart. Anything unreadable falls back too, which means an offline document counts as "not the one on screen" and closes the palette rather than raising off an event handler. Comparing identities rather than closing unconditionally is what keeps a re-activation of the *same* document — which fires for reasons other than a switch — from churning the palette.
+
+Pinned in `tests/test_dochistory_doc_switch.py`. `_close_palette_if_stale` is split out of the handler precisely so it can be: a `CustomEventHandler` subclass cannot be instantiated with `adsk` stubbed.
 
 ### Thumbnails
 

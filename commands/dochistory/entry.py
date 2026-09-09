@@ -91,6 +91,15 @@ INIT_JS_PATH = os.path.join(_HTML_DIR, "init.js")
 _LOAD_EVENT_ID = "PTND_history_loadHistory"
 _LOAD_DELAY_SECONDS = 0.1
 
+# Checking whether the palette is still about the active document. On its own
+# event for the same reason the load is on one: reading the document model from
+# inside documentActivated and friends can walk the document graph while
+# Fusion's background saver is serialising it and abort the saver thread, which
+# is what parked the Assembly Palette gallery refresh. The application event
+# handlers touch nothing but a timer.
+_SWITCH_EVENT_ID = "PTND_history_docSwitch"
+_SWITCH_DELAY_SECONDS = 0.1
+
 _THUMB_EVENT_ID = "PTND_history_thumbTick"
 _THUMB_TICK_SECONDS = 0.15
 _THUMB_MAX_INFLIGHT = 8
@@ -126,6 +135,10 @@ _thumb_tick_pending = False
 _thumb_tick_scheduled_at = 0.0
 _thumb_event_handler = None
 _load_event_handler = None
+_switch_event_handler = None
+# The application-level document event handlers, kept alive for the add-in's
+# lifetime rather than a command's.
+local_handlers: list = []
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +147,7 @@ _load_event_handler = None
 
 
 def start():
-    global _thumb_event_handler, _load_event_handler
+    global _thumb_event_handler, _load_event_handler, _switch_event_handler
 
     cmd_def = ui.commandDefinitions.addButtonDefinition(
         CMD_ID, CMD_NAME, CMD_Description, ICON_FOLDER
@@ -163,9 +176,31 @@ def start():
     _load_event_handler = _LoadHistoryHandler()
     load_event.add(_load_event_handler)
 
+    try:
+        app.unregisterCustomEvent(_SWITCH_EVENT_ID)
+    except Exception:
+        pass
+    switch_event = app.registerCustomEvent(_SWITCH_EVENT_ID)
+    _switch_event_handler = _DocSwitchHandler()
+    switch_event.add(_switch_event_handler)
+
+    # All three funnel into the same deferred check. documentActivated alone
+    # would very likely do - creating or opening a document activates it - but
+    # the palette showing another document's history is a wrong answer rather
+    # than a missing one, so the three cases are wired explicitly rather than
+    # rested on that inference.
+    for event in (app.documentActivated, app.documentOpened, app.documentCreated):
+        ptutil.add_handler(
+            event, application_document_changed, local_handlers=local_handlers
+        )
+
 
 def stop():
-    global _thumb_event_handler, _load_event_handler
+    global \
+        _thumb_event_handler, \
+        _load_event_handler, \
+        _switch_event_handler, \
+        local_handlers
 
     qat = ui.toolbars.itemById("QAT")
     if qat:
@@ -184,13 +219,15 @@ def stop():
         except Exception:
             pass
 
-    for event_id in (_THUMB_EVENT_ID, _LOAD_EVENT_ID):
+    for event_id in (_THUMB_EVENT_ID, _LOAD_EVENT_ID, _SWITCH_EVENT_ID):
         try:
             app.unregisterCustomEvent(event_id)
         except Exception:
             pass
     _thumb_event_handler = None
     _load_event_handler = None
+    _switch_event_handler = None
+    local_handlers = []
     _reset_thumb_pump()
     _version_files.clear()
 
@@ -276,11 +313,17 @@ def _open_palette(state: dict):
 
 
 def _palette_closed(args: adsk.core.UserInterfaceGeneralEventArgs):
-    """Delete the palette on close and drop everything it was holding.
+    """Drop everything the palette was holding when the user closes it."""
+    _close_palette("closed by the user")
+
+
+def _close_palette(reason: str) -> None:
+    """Delete the palette and drop everything it was holding.
 
     Fusion can leave a torn-down palette object in ui.palettes after a close;
     toggling isVisible on that husk silently no-ops, so the next open would show
-    nothing. Deleting it here keeps itemById honest.
+    nothing. Deleting it here keeps itemById honest - which is also why a stale
+    palette is closed rather than hidden.
     """
     global _last_state
     _reset_thumb_pump()
@@ -292,6 +335,102 @@ def _palette_closed(args: adsk.core.UserInterfaceGeneralEventArgs):
             palette.deleteMe()
         except Exception:
             pass
+    ptutil.log(f"{CMD_NAME}: palette torn down ({reason}).")
+
+
+def _document_identity(doc) -> str:
+    """A stable string answering "which document is this", safe to compare.
+
+    A Document cannot be identified with ``is`` across two API calls - the two
+    calls return different Python wrappers around the same native document - so
+    identity goes through ``dataFile.id``. An unsaved document has no dataFile,
+    and falls back to its name, which is enough to tell two of them apart for
+    the one comparison this feeds.
+    """
+    if doc is None:
+        return ""
+    try:
+        data_file = doc.dataFile
+        if data_file is not None and data_file.id:
+            return data_file.id
+    except Exception:
+        pass
+    try:
+        return "unsaved:" + (doc.name or "")
+    except Exception:
+        return ""
+
+
+def application_document_changed(args: adsk.core.DocumentEventArgs):
+    """documentActivated / documentOpened / documentCreated. Touches nothing.
+
+    Deliberately empty of work. Reading the document model from an application
+    event can walk the document graph while Fusion's background saver is
+    serialising it and abort the saver thread, which is why the Assembly Palette
+    gallery refresh is parked. Even ``args.document.dataFile`` is off limits
+    here, so the whole check is deferred to a later main-loop turn.
+    """
+    _schedule_switch_check()
+
+
+def _schedule_switch_check() -> None:
+    """Hand the "is the palette still about the right document" check on."""
+    timer = threading.Timer(_SWITCH_DELAY_SECONDS, _fire_switch_event)
+    timer.daemon = True
+    timer.start()
+
+
+def _fire_switch_event() -> None:
+    """Runs on the timer thread, so it may touch nothing but fireCustomEvent."""
+    try:
+        app.fireCustomEvent(_SWITCH_EVENT_ID)
+    except Exception:
+        pass
+
+
+class _DocSwitchHandler(adsk.core.CustomEventHandler):
+    """Close the palette once it stops being about the active document.
+
+    Closed rather than reloaded, and the choice is a cost one. Reloading means
+    ``_gather_history`` - a ~1.4s MFGDM read behind a busy indicator - on every
+    tab switch, and because a live page cannot re-read init.js it also means the
+    teardown and rebuild ``_open_palette`` describes, losing the scroll position
+    and the view toggles regardless. Paying that on a keystroke the user spent
+    on something else is worse than asking for the click that re-opens it, and
+    the palette was always documented as a snapshot taken when it was opened.
+
+    What is not an option is leaving it: the header would name one document
+    while the rows described another, which reads as a correct history of the
+    wrong design.
+    """
+
+    def notify(self, args):
+        try:
+            _close_palette_if_stale()
+        except Exception:
+            ptutil.handle_error(CMD_NAME)
+
+
+def _close_palette_if_stale() -> None:
+    """Tear the palette down if it is no longer about the active document.
+
+    Split out of the handler so it can be tested: a CustomEventHandler subclass
+    cannot be instantiated with ``adsk`` stubbed, and the decision here is the
+    part worth pinning.
+    """
+    if not _last_state:
+        return  # No palette of ours is open.
+    if ui.palettes.itemById(PALETTE_ID) is None:
+        return  # State outlived the palette; nothing to tear down.
+    try:
+        active = app.activeDocument
+    except Exception:
+        active = None
+    # Reading the document is safe here in a way it is not in the application
+    # event: this is a later main-loop turn, not the middle of Fusion's dispatch.
+    if _document_identity(active) == _last_state.get("docId", ""):
+        return  # Same document - a re-activation, not a switch.
+    _close_palette("active document changed")
 
 
 def _schedule_load() -> None:
@@ -611,6 +750,10 @@ def _gather_history() -> dict:
     state = {
         "theme": _theme_str(),
         "docName": _doc_name(),
+        # Which document this reading is of. The page ignores it; it is here so
+        # _DocSwitchHandler can tell a switch from a re-activation without
+        # having to touch the document model at event time.
+        "docId": "",
         "status": "error",
         "message": "",
         "versionCount": 0,
@@ -629,6 +772,7 @@ def _gather_history() -> dict:
     if doc is None:
         state["message"] = "Open a document to see its version history."
         return state
+    state["docId"] = _document_identity(doc)
     if not doc.isSaved:
         state["status"] = "unsaved"
         state["message"] = (
