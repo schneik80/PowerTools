@@ -331,10 +331,9 @@ those runs have not covered:
   all resolved; a Center Slipper assembly (18 joints) exercises an end anchored
   to geometry owned by no occurrence. Two joints across the 69 are reported as
   not expressible, both with an honest reason. A Rear Hub export taken with a
-  joint suppressed showed the suppressed path was broken; it is fixed, and the
-  probe that identified the flags confirms all three against that design — see
-  the suppression section. What has not yet run is an *export* with the fix in
-  place, which should move the joint into the not-expressed list.
+  joint suppressed showed the suppressed path was broken; it is fixed and
+  re-confirmed by export — see the suppression section. All four variants have
+  now been exercised against Fusion.
 
   `Overall Assembly` is worth re-exporting: its last run predates the
   dotted-path work, when 157 of its 178 joints could not be expressed, and its
@@ -531,6 +530,12 @@ design denies is the worse error, and a joint suppressed by any route is
 equally not built. Only the *exact* suppressed health state counts — a joint
 that merely errors or warns is still meant to be there, and dropping its
 connection would understate the design.
+
+Re-exported with the fix, that design drops from 17 connections to 16.
+`Rigid 10` appears only in the not-expressed list, as
+`Rigid Rigid 10: ISO 7380 - M3 x 12:1 <-> 6 mm Ball Nut:1 -- suppressed in the
+design, so not part of the built configuration`, and the file still validates
+and still round-trips to 17 nodes and 16 edges with nothing skipped.
 
 Two smaller notes from the same run. `isLightBulbOn` is `False` for every
 joint, healthy or not, so it says nothing about suppression and is not
