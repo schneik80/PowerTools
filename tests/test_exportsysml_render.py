@@ -660,17 +660,19 @@ def test_the_two_undeliverable_views_say_so_verbatim():
     assert "Not derived from the Fusion document." in text
 
 
-def test_no_mass_roll_up_is_claimed():
-    """Whether Fusion includes children in a component's mass is undocumented.
+def test_the_assembly_total_is_the_root_figure_not_a_sum():
+    """Mass, volume and area include children, verified against live designs.
 
-    Until that is verified in Fusion, the document reports what Fusion returns
-    per component and explicitly declines to sum it.
+    The root's own reading is therefore the assembly total, and adding the
+    components up is what would be wrong. An espresso machine whose root
+    reports 8.667 kg sums to 23.629 kg over its inventory rows.
     """
     text = render.add_document(worked_example(), "m.sysml")
 
-    assert "Root component mass" in text
-    assert "computes no roll-up" in text
-    assert "Assembly mass" not in text
+    assert "Assembly mass" in text
+    assert "Root component mass" not in text
+    assert "all include a component's children" in text
+    assert "adding them up is exactly what would go wrong" in text
 
 
 def test_unknown_values_render_as_an_em_dash():
@@ -1264,9 +1266,48 @@ def test_a_root_with_no_envelope_says_so_without_a_zero():
     assert "Assembly envelope: —" in text
 
 
-def test_the_caveat_no_longer_hedges_on_the_bounding_box():
-    """Only mass, volume and area are still unknown for child inclusion."""
+def test_nothing_still_hedges_about_child_inclusion():
+    """Mass, volume, area and the envelope are all settled as inclusive."""
     text = render.add_document(worked_example(), "m.sysml")
 
-    assert "A bounding box includes the component's children" in text
-    assert "physical properties and bounding box include its child" not in text
+    assert "does not document whether" not in text
+    assert "might double-count" not in text
+
+
+def test_the_inventory_table_warns_that_it_does_not_sum():
+    """A reader adding the Mass column gets a badly wrong number.
+
+    A subassembly's mass already includes its contents, so the column
+    double-counts: in a real espresso machine, 23.629 kg for an 8.667 kg
+    machine. The warning quotes both figures because the comparison is what
+    makes the point, not the assertion.
+    """
+    parts = model.AssemblyModel(
+        meta=model.DocMeta(document_name="D"),
+        root_key="r",
+        nodes={
+            "r": node("r", name="R", children=(("sub", 1),), mass_kg=10.0),
+            "sub": node("sub", name="Sub", children=(("leaf", 2),), mass_kg=10.0),
+            "leaf": node("leaf", name="Leaf", bodies=1, mass_kg=5.0),
+        },
+    )
+
+    text = render.add_document(parts, "m.sysml")
+
+    # 10 (root) + 10 (sub) + 5 x 2 (leaf) = 30, against a 10 kg assembly.
+    assert "does not sum" in text
+    assert "it gives 30 kg for an assembly that weighs 10 kg" in text
+
+
+def test_the_warning_is_omitted_when_the_root_has_no_mass():
+    """With nothing to compare against, the comparison would be noise."""
+    parts = model.AssemblyModel(
+        meta=model.DocMeta(document_name="D"),
+        root_key="r",
+        nodes={
+            "r": node("r", name="R", children=(("leaf", 1),)),
+            "leaf": node("leaf", name="Leaf", bodies=1, mass_kg=5.0),
+        },
+    )
+
+    assert "does not sum" not in render.add_document(parts, "m.sysml")

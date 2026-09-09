@@ -49,7 +49,7 @@ For every unique component in the assembly:
 - **Identity** — name, part number, description, and material.
 - **Classification** — `part` (bodies only), `subassembly` (children only), `hybrid` (bodies *and* children), or `empty` (neither).
 - **Quantity** — the total number of instances across the whole assembly, and the multiplicity under each parent.
-- **Mass, volume and surface area**, and the centre of mass.
+- **Mass, volume and surface area**, and the centre of mass. These include the component's children, so a subassembly's mass covers everything inside it.
 - **Bounding box** — the component's envelope, in millimetres. The box includes the component's children, so a subassembly's envelope is the envelope of everything inside it and the root's is the envelope of the whole assembly. A component that encloses nothing reports no envelope rather than a box of zeros.
 - **Interfaces** — joints, rendered as SysML connections.
 
@@ -63,7 +63,11 @@ The output uses fixed units so that two exports of the same design can be compar
 
 Fusion cannot always evaluate a physical property. Where it could not, the document shows an em dash (—) and the SysML model omits the attribute entirely. Neither ever substitutes a zero, because a zero cannot be told apart from a real measurement. Every value that could not be read is listed in the document's **Collection notes** appendix.
 
-The command also declines to compute a total assembly mass. The Fusion API does not document whether a component's reported mass, volume and area include its child components, so the document reproduces what Fusion returns per component rather than summing figures that might double-count subassemblies. Bounding boxes are different — those are known to include children, so the assembly envelope is a real figure.
+### Figures include children, and do not add up
+
+Mass, volume, area and the bounding box all include a component's children. A subassembly's mass is the mass of everything inside it, and the root's is the assembly total — so the command reports that total directly rather than computing one.
+
+The consequence is that **the component inventory's Mass column does not sum.** Adding it over every row counts each subassembly's contents twice; for one real espresso machine that gives 23.6 kg for a machine weighing 8.7 kg. The document says so under the table, with the figures for your own design.
 
 ## Example output
 

@@ -311,13 +311,12 @@ value too small to show at six decimal places, for the same reason.
 
 ### Still unverified in Fusion
 
-Not yet exercised in Fusion. CI stubs `adsk`, so a green suite proves the text
-renderers and the arithmetic and nothing about the collection pass. Outstanding:
+The command has been run in Fusion on `ADSKMVG91G2F5W` against several real
+designs — an espresso machine, a rear hub assembly, a gearbox — and the findings
+above came out of those runs. CI still stubs `adsk`, so a green suite proves the
+text renderers and the arithmetic and nothing about the collection pass. What
+those runs have not covered:
 
-- Whether `Component.physicalProperties` includes child components. It decides
-  whether a roll-up mass could ever be offered; until then the document reports
-  what Fusion returns per component and sums nothing. (`boundingBox` is
-  settled — see below.)
 - That the ends of `Component.joints` / `asBuiltJoints` resolve to the same
   components the walk recorded, including for a joint inside a subassembly, a
   joint anchored to root geometry, a suppressed joint and an as-built joint.
@@ -366,7 +365,7 @@ Constructs the OMG BNF made look doubtful, confirmed legal by the parser:
   suggests `end` cannot prefix a `part` usage, since `OccurrenceUsagePrefix`
   starts from `BasicUsagePrefix`. The parser accepts it. Trust the parser.
 
-### A bounding box includes the component's children
+### Physical properties and bounding boxes include children
 
 Confirmed against live designs rather than the API reference, which does not
 say. Components with **no bodies of their own** still report substantial boxes:
@@ -379,6 +378,22 @@ So a subassembly's extents are the envelope of everything inside it, and the
 root's are the envelope of the whole assembly — which is what the document now
 calls it. The remaining hedge in the mass-and-envelope caveat is about mass,
 volume and area only.
+
+`Component.physicalProperties` behaves the same way, and the espresso machine
+proves it arithmetically: the root reports 8.667 kg, its leaf parts sum to
+8.630 kg, and the 0.037 kg difference is the root's own single body. Volume and
+area track identically, at 0.998 and 0.995 of the root figure. `Generator`, a
+subassembly, reports exactly the mass of its one child.
+
+So the root's own reading *is* the assembly total and nothing needs summing —
+the earlier "declines to compute a roll-up" hedge is gone, replaced by naming
+the figures for what they are. The hazard moved rather than disappeared: the
+component inventory's Mass column is **not additive**, because every
+subassembly already contains its parts. Adding that column over the espresso
+machine gives 23.629 kg for a machine that weighs 8.667 kg, a 2.7x over-count,
+and volume and area are worse at 2.8x and 2.9x. The document now says so
+directly under the table, quoting both numbers for the design in hand, because
+the comparison is what stops someone doing it.
 
 The same sweep turned up a second thing. Two components in an "Overall Assembly"
 export came out as `0 x 0 x 0 mm`: Fusion returns a *degenerate* box for a

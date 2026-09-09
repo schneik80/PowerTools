@@ -625,6 +625,9 @@ def sysml_document(assembly) -> str:
     out.append("     * definitions, so a component used many times appears once.")
     out.append("     * An attribute is omitted where Fusion could not evaluate it:")
     out.append("     * a missing attribute means unknown, not zero.")
+    out.append("     * Mass, volume, area and the bounding box include the")
+    out.append("     * component's children, so a subassembly's figures cover")
+    out.append("     * everything inside it and must not be added together.")
     if joint_types:
         out.append("     * Each Fusion joint becomes a connection carrying the")
         out.append("     * degrees of freedom its kind permits, and where it is.")
@@ -764,6 +767,25 @@ def md_cell(text) -> str:
         .replace("]", "\\]")
         .replace("`", "\\`")
     )
+
+
+def _mass_sums(assembly, counts):
+    """``(naive column sum, assembly total)`` in kg, or ``(None, None)``.
+
+    The naive figure is what a reader gets by adding the inventory's Mass
+    column over every row times its quantity. Because a subassembly's mass
+    already includes its contents, that double-counts; quoting both numbers
+    side by side is the shortest way to stop someone doing it. Returns nothing
+    when the root has no mass, since there would be nothing to compare against.
+    """
+    root = assembly.root
+    if root is None or root.mass_kg is None:
+        return None, None
+    naive = 0.0
+    for key, node in assembly.nodes.items():
+        if node.mass_kg is not None:
+            naive += node.mass_kg * counts.get(key, 0)
+    return naive, root.mass_kg
 
 
 def _md_point(point, factor: float = 1.0) -> str:
@@ -993,15 +1015,25 @@ def add_document(assembly, sysml_filename: str) -> str:
             f"{_md_number(node.mass_kg)} | {md_cell(node.material) or '—'} |"
         )
     out.append("")
+    naive, total = _mass_sums(assembly, counts)
+    if naive is not None and total is not None:
+        out.append(
+            "> **The Mass column does not sum.** A subassembly's mass includes "
+            "everything inside it, so adding this column over every row counts "
+            f"each subassembly's contents again: it gives {number(naive)} kg "
+            f"for an assembly that weighs {number(total)} kg. The assembly "
+            "total is the root's own figure, below."
+        )
+        out.append("")
 
     out.append("### 4.3 Mass and envelope")
     out.append("")
     out.append(f"- Unique components: {len(assembly.nodes)}")
     out.append(f"- Total instances: {sum(counts.values())}")
     if root is not None:
-        out.append(f"- Root component mass: {_md_number(root.mass_kg)} kg")
-        out.append(f"- Root component volume: {_md_number(root.volume_cm3)} cm^3")
-        out.append(f"- Root component surface area: {_md_number(root.area_cm2)} cm^2")
+        out.append(f"- Assembly mass: {_md_number(root.mass_kg)} kg")
+        out.append(f"- Assembly volume: {_md_number(root.volume_cm3)} cm^3")
+        out.append(f"- Assembly surface area: {_md_number(root.area_cm2)} cm^2")
         extents = extents_mm(root)
         if extents is None:
             out.append("- Assembly envelope: —")
@@ -1010,13 +1042,11 @@ def add_document(assembly, sysml_filename: str) -> str:
             out.append(f"- Assembly envelope (L x W x H): {sides} mm")
     out.append("")
     out.append(
-        "> A bounding box includes the component's children, so a "
-        "subassembly's extents are the envelope of everything inside it and "
-        "the figure above is the envelope of the whole assembly. Mass, volume "
-        "and area are reported as Fusion returns them per component, and this "
-        "export deliberately computes no roll-up total: the API does not "
-        "document whether they include child components, and a summed mass "
-        "that double-counted subassemblies would be a plausible wrong answer."
+        "> Mass, volume, area and the envelope all include a component's "
+        "children. The figures above are therefore the assembly's own totals "
+        "as Fusion reports them for the root, not something this export added "
+        "up — and adding them up is exactly what would go wrong, since every "
+        "subassembly already contains its parts."
     )
     out.append("")
 
