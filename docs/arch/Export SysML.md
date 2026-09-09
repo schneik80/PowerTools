@@ -335,10 +335,20 @@ those runs have not covered:
   re-confirmed by export — see the suppression section. All four variants have
   now been exercised against Fusion.
 
-  `Overall Assembly` is worth re-exporting: its last run predates the
-  dotted-path work, when 157 of its 178 joints could not be expressed, and its
-  59 null-end joints would stress that path far harder than the single one seen
-  so far.
+  `Overall Assembly` has been re-exported and is the strongest evidence for the
+  dotted-path work: 178 joints, of which 21 could be expressed before and 118
+  can now. The 60 that remain are 59 ends anchored to geometry owned by no
+  occurrence and one end unreachable from its owner — genuinely inexpressible
+  rather than missed, and 118 + 60 accounts for every joint. 89 of the 118
+  connections name at least one end by a dotted path, which is the mechanism
+  doing the work.
+
+  It is also the largest artefact checked end to end: 2437 lines, 104
+  components, 118 connections, validating clean and round-tripping through
+  `sysml_import` to 104 nodes and 109 edges with nothing skipped and no
+  warnings. More edges than nodes because components are shared, which is what
+  a DAG keyed on identity is for. Its 2.68x inventory over-count is the largest
+  seen and the clearest argument for the non-additive note.
 
   `Rear Hub ASSY R` has been re-exported and the identity fix holds. The
   earlier run was the *before* artifact for the collision: 16 definitions for
@@ -437,7 +447,9 @@ export came out as `0 x 0 x 0 mm`: Fusion returns a *degenerate* box for a
 component that encloses nothing rather than returning no box, so the emitter was
 publishing a measurement of nothing. `extents_cm` now treats an all-zero box as
 absent, by the same rule that omits an unevaluated mass. A single zero dimension
-is kept — a shim really is flat.
+is kept — a shim really is flat. Re-exporting that design confirms it:
+`Drive Shaft v4` and `Output Shaft v4` now carry no envelope at all, and no
+`bbox*Mm = 0` remains anywhere in the file.
 
 ### Joint origins are in the owning component's frame, and that is the right one
 
