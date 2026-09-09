@@ -83,7 +83,7 @@ So a two-figure number means "no release yet at this point" and a three-figure o
 
 Because a save restarts the third figure, turning **Show other changes** on and off never renumbers a save &mdash; the other changes fill in around them and the saves keep the numbers they had.
 
-The numbers lean at an angle above their dots, each ending at the mark it names. That is what lets every event carry one: printed flat, a number needs as much clear width as it is wide, and a busy day does not have it. Only where a day holds more saves than the row can separate at all do some numbers drop out, and the hover card still carries them.
+The numbers lean at an angle above their dots, each ending at the mark it names. That is what lets every event carry one: printed flat, a number needs as much clear width as it is wide, and a busy day does not have it. Only where a day holds more saves than the row can separate at all do some numbers drop out, and the hover card still carries those.
 
 A release's number is drawn in the accent its dot is filled with, so the releases stand out when scanning a long history; every other number is plain text.
 
@@ -96,6 +96,8 @@ Between two day rows, a rule and a phrase say how long the design was untouched.
 Rest the pointer on an open ring to see what the change was &mdash; "Property change", the property and its new value, when, and who. There is no thumbnail or version number, because no version was made.
 
 Rest the pointer on a dot to see that version's thumbnail, version number, milestone and release markers, the description typed at save time, the exact local timestamp, and who saved it.
+
+Both carry the event's [index](#the-index) number, whether or not **Index** is on &mdash; so pointing at an event always tells you its number, including the ones a crowded day had to leave off the plot.
 
 The thumbnail is fetched from the cloud only for the version you actually rest on, and cached for the rest of the session, so scanning across a busy day costs nothing.
 

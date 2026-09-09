@@ -613,9 +613,13 @@
             if (v.isMilestone) marks += " · Milestone";
             if (v.revision) marks += " · Release " + v.revision;
         }
-        // Carried on the card too, so a label the declutter pass dropped in day
-        // view is still readable without switching to the thread.
-        if (showIndex && v.indexLabel) marks += " · " + indexLabelText(v);
+        // Always, not only while the toggle is on. The card is the detail view:
+        // it is where an exact timestamp lives, and where a number the declutter
+        // pass had to drop is still reachable. Gating this on showIndex made
+        // sense while the toggle was the only way to see a number at all; once
+        // hovering a track revealed them, it just meant the one place you were
+        // already pointing at an event would not tell you its number.
+        if (v.indexLabel) marks += " · " + indexLabelText(v);
         cardEl.appendChild(el("div", { class: "title", text: marks }));
         if (v.publicShare) {
             cardEl.appendChild(el("div", { class: "share", text: "Public share" }));
