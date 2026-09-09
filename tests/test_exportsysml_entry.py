@@ -19,6 +19,9 @@ import ast
 import importlib
 from pathlib import Path
 
+import adsk.fusion
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PT_PKG = REPO_ROOT.name
 
@@ -447,3 +450,42 @@ def test_the_timeline_route_is_only_consulted_when_the_joint_says_no():
 
     assert scan._is_suppressed(_Joint(own=True, timeline=True), "J", "Owner") is True
     assert scan.notes == []
+
+
+class _HealthJoint:
+    """A joint whose own flag is clear but whose health state is not."""
+
+    isSuppressed = False
+    name = "Rigid 10"
+
+    def __init__(self, health):
+        self.healthState = health
+
+
+def test_a_suppressed_health_state_counts_as_suppressed():
+    """Probed on a live Rear Hub: the suppressed joint read healthState 3."""
+    scan = entry._Scan(None)
+    suppressed = adsk.fusion.FeatureHealthStates.SuppressedFeatureHealthState
+
+    assert scan._is_suppressed(_HealthJoint(suppressed), "Rigid 10", "Owner") is True
+    assert any("suppressed health state" in n for n in scan.notes)
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        "HealthyFeatureHealthState",
+        "WarningFeatureHealthState",
+        "ErrorFeatureHealthState",
+    ],
+)
+def test_an_unhealthy_joint_is_not_treated_as_suppressed(state):
+    """Only the exact suppressed state counts.
+
+    A joint that errors or warns is still meant to be in the assembly, and
+    dropping its connection would understate the design.
+    """
+    scan = entry._Scan(None)
+    joint = _HealthJoint(getattr(adsk.fusion.FeatureHealthStates, state))
+
+    assert scan._is_suppressed(joint, "Rigid 9", "Owner") is False

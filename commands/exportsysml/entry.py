@@ -423,25 +423,40 @@ class _Scan:
     def _is_suppressed(self, joint, name, label) -> bool:
         """True when *joint* is not part of the built configuration.
 
-        Two independent signals, because Fusion has two. ``Joint.isSuppressed``
-        is the joint's own flag, and ``TimelineObject.isSuppressed`` is the
-        feature's -- suppressing a joint from the browser sets the second and
-        leaves the first alone. Reading only the first published a suppressed
-        joint as a live connection: a Rear Hub export emitted
-        ``connection 'Rigid 10' ... connect iso7380M3X12 to c6MmBallNut`` for a
-        joint the design had switched off, and the only visible sign was that
-        the joint's origin had moved to where the screw sits unjointed.
+        Three signals, because Fusion sets more than one and the obvious one is
+        not the one that fires. Suppressing a joint from the browser leaves
+        ``Joint.isSuppressed`` at ``False``; it sets the joint's health state to
+        ``SuppressedFeatureHealthState`` and its timeline feature's
+        ``isSuppressed``. Probed against a live Rear Hub with ``Rigid 10``
+        suppressed, that row read ``isSuppressed=False``,
+        ``healthState=3``, ``timelineObject.isSuppressed=True``, and the other
+        eighteen joints read healthy on all three.
 
-        Either signal is enough. Asserting an interface the design denies is
-        the worse error, and a joint suppressed by either route is equally not
-        built.
+        Reading only the first published the joint as a live connection --
+        ``connection 'Rigid 10' ... connect iso7380M3X12 to c6MmBallNut`` for a
+        joint the design had switched off, the only visible sign being that its
+        origin had moved to where the screw sits unjointed.
+
+        Any one is enough. Asserting an interface the design denies is the worse
+        error, and a joint suppressed by any route is equally not built. Only
+        the exact suppressed health state counts: a joint that is merely
+        erroring or warning is still meant to be there.
         """
         if bool(_read(lambda: joint.isSuppressed, False)):
             return True
+
+        health = _read(lambda: joint.healthState)
+        if health == adsk.fusion.FeatureHealthStates.SuppressedFeatureHealthState:
+            self.note(
+                f"{label}: joint {name!r} reports a suppressed health state "
+                "though the joint's own flag does not; treated as suppressed"
+            )
+            return True
+
         timeline_object = _read(lambda: joint.timelineObject)
-        if timeline_object is None:
-            return False
-        if bool(_read(lambda t=timeline_object: t.isSuppressed, False)):
+        if timeline_object is not None and bool(
+            _read(lambda t=timeline_object: t.isSuppressed, False)
+        ):
             self.note(
                 f"{label}: joint {name!r} is suppressed in the timeline though "
                 "the joint itself does not report it; treated as suppressed"

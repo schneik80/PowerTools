@@ -331,8 +331,10 @@ those runs have not covered:
   all resolved; a Center Slipper assembly (18 joints) exercises an end anchored
   to geometry owned by no occurrence. Two joints across the 69 are reported as
   not expressible, both with an honest reason. A Rear Hub export taken with a
-  joint suppressed showed the suppressed path was broken — see the suppression
-  section — and it is fixed but not yet re-confirmed against Fusion.
+  joint suppressed showed the suppressed path was broken; it is fixed, and the
+  probe that identified the flags confirms all three against that design — see
+  the suppression section. What has not yet run is an *export* with the fix in
+  place, which should move the joint into the not-expressed list.
 
   `Overall Assembly` is worth re-exporting: its last run predates the
   dotted-path work, when 157 of its 178 joints could not be expressed, and its
@@ -511,17 +513,30 @@ from `(12.68, -3.12, 21.5)` to `(3.69, 0, 3.69)` — the screw falling back to
 where it sits unjointed. The suppression was real and visible in the geometry;
 `isSuppressed` reported `False`.
 
-`TimelineObject.isSuppressed` is a separate property on the joint's timeline
-feature, and the collection now treats either flag as suppression, recording a
-note when it was the timeline that answered. Either signal is sufficient
-because asserting an interface the design denies is the worse error, and a
-joint suppressed by either route is equally not built.
+`PTJointSuppressProbe` settled which flags do fire. Against that live design,
+with `Rigid 10` suppressed and the other eighteen joints healthy:
 
-`PTJointSuppressProbe`, a throwaway script in Fusion's Scripts folder outside
-this repo, prints every suppression-adjacent property per joint so the flag
-that actually fires is identified rather than assumed. Until it has been run
-with a suppressed joint present, the timeline route is the best-supported
-explanation rather than a confirmed one.
+| Property | `Rigid 10` | The other 18 |
+|---|---|---|
+| `Joint.isSuppressed` | `False` | `False` |
+| `Joint.healthState` | `3` (`SuppressedFeatureHealthState`) | `0` |
+| `TimelineObject.isSuppressed` | `True` | `False` |
+| `Joint.isVisible` | *raises* | `False` |
+| `Joint.isLightBulbOn` | `False` | `False` |
+
+So the property named after the concept is the one that does not carry it, and
+two others do. The collection checks all three, cheapest first, and records a
+note saying which answered. Any one is sufficient: asserting an interface the
+design denies is the worse error, and a joint suppressed by any route is
+equally not built. Only the *exact* suppressed health state counts — a joint
+that merely errors or warns is still meant to be there, and dropping its
+connection would understate the design.
+
+Two smaller notes from the same run. `isLightBulbOn` is `False` for every
+joint, healthy or not, so it says nothing about suppression and is not
+consulted. And `Joint.isVisible` *raises* on a suppressed joint, which is worth
+knowing before reaching for it: the guarded reads absorb it, but an unguarded
+one would take the export down over a joint that is switched off.
 
 ### As-built joints carry no origin, and the document says so
 
