@@ -294,6 +294,46 @@ Segments rows* over every combination. -- `b3bed5f`
 
 ## Data, cloud, identifiers
 
+**A wedged `DataFileFuture` never leaves `UploadProcessing`, and nothing in the
+API can rescue you from it.** `Component.saveCopyAs` hands back a future with
+exactly two members, `dataFile` and `uploadState` -- there is no abort. An
+Externalize run of 75 components wedged on component 34 and was still spinning
+430s later: Fusion was healthy (its MCP server on `:27182` still answered, so
+the `adsk.doEvents()` pump was live), the upload simply never advanced. Three
+things had to line up to make it unrecoverable, and all three are easy to
+reproduce elsewhere:
+
+- `_save_to_cloud`'s poll loop had **no timeout**. It is a fork of
+  `ptutil.upload_utils._wait_via_upload_state` -- justified, because the shared
+  helper's `pump_events_for()` between polls is exactly what keeps this
+  pipeline from draining -- but the fork dropped the original's
+  `DEFAULT_UPLOAD_TIMEOUT_SECONDS = 300`. **When you fork a wait loop to change
+  its pumping, keep its bound.** The bound is the safety property; the pumping
+  is the optimisation.
+- The `cancel_check` parameter was **dead code**: the only caller passed a
+  `no_cancel()` that returns `False`. A cancel hook nothing can ever trip reads
+  as safety in review and provides none.
+- The run deliberately used the status-bar `ui.progressBar` instead of
+  `ProgressDialog`. `ProgressBar` has **no cancel affordance at all** -- only
+  `ProgressDialog` has `wasCancelled`. Choosing the non-modal widget silently
+  removed the user's last exit, and because the loop runs in a `CustomEvent`
+  handler there was no command to terminate either. Force-quit was the only way
+  out.
+
+Fix: bound the spin (`UPLOAD_TIMEOUT_SECONDS`), and add a run-level breaker
+(`MAX_CONSECUTIVE_UPLOAD_FAILURES`) because a wedged pipeline stays wedged --
+without it the remaining 41 components each burn the full timeout and one hang
+becomes a 3.5-hour one. The per-upload timeout needed no new recovery path: the
+existing "upload failed -- skipping" branch already does the right thing, and
+since no CHECKPOINT is written for a skipped component, resume retries it.
+-- `commands/externalize/entry.py`, `docs/arch/Externalize.md`
+
+**Verify a hang fix by reproducing the hang.** The first regression test for
+this passed against the *buggy* code -- it was tripping a `TypeError` from the
+changed signature, not the infinite loop. A test for an unbounded loop has to be
+shown to actually not terminate before the fix (`timeout 15 ...; exit 124`) and
+to terminate after it.
+
 **`app.data.activeProject` raises `InternalValidationError('id.size()')` when
 the Data Panel has no project in context.** Because a raise inside a palette's
 `incomingFromHTML` handler is swallowed by DEBUG-gated `handle_error`, this

@@ -38,6 +38,19 @@ IS_PROMOTED = False
 # proved a stuck component (KLROLLE) went from ∞ stall to 5.9s.
 EVENT_ID = "PTAT_externalize_runner"
 
+# Hard ceiling on the per-component upload spin in `_save_to_cloud`. Fusion can
+# leave a DataFileFuture in UploadProcessing indefinitely and `DataFileFuture`
+# offers no way to abort one, so the spin must impose its own deadline or the
+# run hangs with no user escape. Matches
+# ptutil.upload_utils.DEFAULT_UPLOAD_TIMEOUT_SECONDS; the slowest healthy upload
+# observed across five 15-to-75 component runs was 36.6s.
+UPLOAD_TIMEOUT_SECONDS = 300.0
+
+# When this many uploads fail back to back, Fusion's upload pipeline itself is
+# wedged rather than one component being unlucky. Abort the run instead of
+# burning UPLOAD_TIMEOUT_SECONDS on every component that is left.
+MAX_CONSECUTIVE_UPLOAD_FAILURES = 2
+
 # Global variables by referencing values from /config.py
 WORKSPACE_ID = config.design_workspace
 TAB_ID = config.tools_tab_id
@@ -521,9 +534,7 @@ class _RunnerHandler(adsk.core.CustomEventHandler):
 
         replaced = 0
         replaced_instances = 0
-
-        def no_cancel():
-            return False
+        consecutive_failures = 0
 
         # Snapshot the target folder's files once. The per-component existence
         # check below is then an O(1) dict lookup instead of a fresh linear scan
@@ -557,16 +568,21 @@ class _RunnerHandler(adsk.core.CustomEventHandler):
                     log_writer(f"[{idx}/{total}] uploading {comp_name}…")
                     upload_t0 = time.monotonic()
                     df = _save_to_cloud(
-                        data["component"],
-                        comp_name,
-                        target_folder,
-                        log_writer,
-                        no_cancel,
+                        data["component"], comp_name, target_folder, log_writer
                     )
                     if df is None:
+                        consecutive_failures += 1
                         log_writer(
                             f"[{idx}/{total}] upload failed for {comp_name} — skipping"
                         )
+                        if consecutive_failures >= MAX_CONSECUTIVE_UPLOAD_FAILURES:
+                            log_writer(
+                                f"Aborting run after {consecutive_failures} "
+                                "consecutive upload failures — Fusion's upload "
+                                "pipeline is not draining. Re-run the command "
+                                "to resume from the last checkpoint."
+                            )
+                            break
                         continue
                     # Record it so a later component with the same name reuses
                     # this upload instead of creating a duplicate.
@@ -576,6 +592,7 @@ class _RunnerHandler(adsk.core.CustomEventHandler):
                         f"({time.monotonic() - upload_t0:.1f}s)"
                     )
 
+                consecutive_failures = 0
                 log_writer(f"[{idx}/{total}] replacing {comp_name}{suffix}…")
                 for occ, transform in instances:
                     occ.deleteMe()
@@ -800,9 +817,10 @@ def _save_to_cloud(
     comp_name: str,
     cloud_folder: adsk.core.DataFolder,
     log_fn=None,
-    cancel_check=None,
+    timeout_seconds: float = UPLOAD_TIMEOUT_SECONDS,
 ):
-    """Upload `component` to `cloud_folder`; return DataFile or None.
+    """Upload `component` to `cloud_folder`; return DataFile, or None on
+    failure or timeout.
 
     Tight `adsk.doEvents()` spin on `future.uploadState`, no `time.sleep`.
     The continuous event pumping is what advances Fusion's upload pipeline
@@ -810,9 +828,20 @@ def _save_to_cloud(
     thread and the pipeline stalls indefinitely (forum 11164467); batching
     many futures without a tight per-iteration pump has the same effect.
     Pattern restored from commit 9609042 where it was first proven to work.
+
+    The spin is bounded by `timeout_seconds`. Fusion can leave a future in
+    UploadProcessing forever, `DataFileFuture` exposes no way to abort one,
+    and the run's status-bar progress bar has no cancel affordance, so an
+    unbounded spin hangs the whole run with no user escape. Returning None on
+    the deadline feeds the caller's existing skip path; no CHECKPOINT is
+    written for a skipped component, so the next run retries it.
+
+    This is deliberately not `ptutil.wait_for_upload` — that helper sleeps
+    through `pump_events_for()` between polls, which is exactly what stalls
+    this pipeline. It is a fork of the same loop, and it must keep that
+    helper's timeout.
     """
     log = log_fn or (lambda _msg: None)
-    is_cancelled = cancel_check or (lambda: False)
 
     save_t0 = time.monotonic()
     try:
@@ -835,12 +864,17 @@ def _save_to_cloud(
 
         if state != adsk.core.UploadStates.UploadProcessing:
             break
-        if is_cancelled():
-            return None
 
         now = time.monotonic()
+        elapsed = now - save_t0
+        if timeout_seconds > 0 and elapsed >= timeout_seconds:
+            log(
+                f"  TIMED OUT: {comp_name} still UploadProcessing after "
+                f"{elapsed:.0f}s - abandoning this upload"
+            )
+            return None
         if now - last_heartbeat >= 5.0:
-            log(f"  still waiting on {comp_name} ({now - save_t0:.0f}s)")
+            log(f"  still waiting on {comp_name} ({elapsed:.0f}s)")
             last_heartbeat = now
 
     if state == adsk.core.UploadStates.UploadFailed:

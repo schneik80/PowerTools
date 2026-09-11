@@ -50,6 +50,8 @@ Each local first-level component is processed in sequence. Watch the live log vi
 
 > **Note:** If a component cannot be externalized (for example, the upload fails), it is skipped and recorded in the log. All successfully externalized components are still re-inserted and committed.
 >
+> **Note:** An upload that Fusion never finishes is abandoned after 5 minutes and logged as `TIMED OUT`; the run moves on to the next component and the skipped one is retried on the next run. If two uploads fail back to back the run stops early rather than waiting out the timeout on every remaining component — the log says so, the parent assembly is still saved with everything that succeeded, and re-running resumes from the last checkpoint.
+>
 > **Note:** If a cloud file with the same name already exists in the target folder, the command reuses that file instead of creating a duplicate.
 >
 > **Note:** While a run is in progress, starting another Externalize run is refused with a message — wait for the current one to finish.

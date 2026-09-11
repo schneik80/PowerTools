@@ -37,7 +37,7 @@ C4Component
   Component(save_loc, "DropDownCommandInput", "Fusion UI", "Save Location: Same as Document or Create Sub-folder")
   Component(log_inputs, "Logging tab", "Fusion UI", "Log Progress, log path, Open live log viewer")
   Component(resume_status, "TextBoxCommandInput", "Fusion UI", "Run status — driven by _analyze_resume_state on the temp log")
-  Component(save_to_cloud, "_save_to_cloud", "Helper", "saveCopyAs + tight adsk.doEvents() poll on uploadState until UploadFinished")
+  Component(save_to_cloud, "_save_to_cloud", "Helper", "saveCopyAs + tight adsk.doEvents() poll on uploadState until UploadFinished, bounded by UPLOAD_TIMEOUT_SECONDS")
   Component(temp_save, "_temp_save", "Helper", "Triggers AutoSaveFilesCommand text command — local recovery checkpoint, no new cloud version")
   Component(save_parent, "_save_parent_doc", "Helper", "Document.save once at end of run via futil.wait_for_upload — single new parent cloud version")
   Component(log_writer, "_LogWriter", "Helper", "Appends key events to the per-run log file")
@@ -108,3 +108,35 @@ sequenceDiagram
 A direct `saveCopyAs` from inside `command_execute` returns a `DataFileFuture` whose `uploadState` never transitions away from `Processing` — Fusion's upload pipeline does not advance while a command with CommandInputs holds the main thread. Cancelling the command makes the queued uploads land on the server, which is the smoking-gun observation behind the architecture. Moving the loop into a `CustomEvent` handler — fired from `command_execute`, executed *after* the dialog closes — gets us into a context where the same call completes in a few seconds. This was validated with an isolation spike before the refactor.
 
 `AutoSaveFilesCommand` between iterations creates a local recovery save (no new cloud version) so a crash mid-run doesn't lose the in-progress replacements. The single `Document.save` at the end commits exactly one new parent assembly version, regardless of how many components were externalized.
+
+### Why the upload spin is bounded
+
+`_save_to_cloud` is a fork of `ptutil.upload_utils._wait_via_upload_state`, not a
+caller of it. The shared helper calls `pump_events_for()` between polls, and that
+sleep is exactly what keeps this pipeline from draining — hence the tight
+`adsk.doEvents()` spin here.
+
+The fork originally dropped the helper's `DEFAULT_UPLOAD_TIMEOUT_SECONDS`, which
+made the spin unbounded. Fusion can leave a `DataFileFuture` in
+`UploadProcessing` indefinitely, and there is no escape from that state:
+
+- `DataFileFuture` exposes only `dataFile` and `uploadState` — no abort.
+- The run uses the status-bar `ui.progressBar`, which (unlike `ProgressDialog`)
+  has no cancel affordance at all, so there was no way for the user to stop it.
+- The loop runs inside a `CustomEvent` handler, so there is no command to
+  terminate either.
+
+A 75-component run wedged on component 34 and was still spinning after 430s with
+the only exit being a force-quit. Two bounds now apply:
+
+| Bound | Constant | Behaviour |
+|---|---|---|
+| Per upload | `UPLOAD_TIMEOUT_SECONDS` (300s) | Abandon that component, return `None` |
+| Per run | `MAX_CONSECUTIVE_UPLOAD_FAILURES` (2) | Abort the whole run |
+
+The per-upload timeout feeds the pre-existing skip path, so nothing else had to
+change: no CHECKPOINT is written for a skipped component, so the next run retries
+it. The run-level breaker matters because a wedged pipeline tends to stay wedged
+— without it, the remaining 41 components would each burn the full 300s, turning
+one hang into a ~3.5 hour one. Aborting still runs `_finalize`, so the parent is
+committed with everything that did succeed and resume stays available.
