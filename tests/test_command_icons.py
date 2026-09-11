@@ -38,20 +38,30 @@ class IconSet:
             a set that shipped with original art and so never had one. The
             duplicate-art risk for those is covered by
             :func:`test_every_command_looks_different_from_every_other`.
+        subfolder: A folder beneath ``resources/`` holding an alternate set, for
+            a command that swaps its icon to report state. Match Units points
+            its ``CommandDefinition.resourceFolder`` at one of two sets
+            depending on whether the document's units agree with the
+            application default, so both are pinned here.
     """
 
     command: str
     variants: tuple[str, ...]
     placeholder: str | None
+    subfolder: str | None = None
 
     @property
     def resources(self) -> Path:
-        """Locate the command's resource folder.
+        """Locate the folder Fusion reads this set's icons from."""
+        folder = REPO_ROOT / "commands" / self.command / "resources"
+        return folder / self.subfolder if self.subfolder else folder
 
-        Returns:
-            The folder Fusion reads the icons from.
-        """
-        return REPO_ROOT / "commands" / self.command / "resources"
+    @property
+    def label(self) -> str:
+        """Name this set in test ids and failure messages."""
+        if self.subfolder:
+            return f"{self.command}/{self.subfolder}"
+        return self.command
 
 
 ICON_SETS = (
@@ -63,6 +73,8 @@ ICON_SETS = (
     IconSet("measurepath", THEME_VARIANTS, None),
     IconSet("flattensurface", THEME_VARIANTS, None),
     IconSet("dochistory", ALL_VARIANTS, None),
+    IconSet("matchunits", ALL_VARIANTS, None),
+    IconSet("matchunits", ALL_VARIANTS, None, subfolder="mismatch"),
 )
 
 
@@ -99,7 +111,7 @@ def _read_ihdr(path: Path) -> tuple[int, int, int, int]:
     return width, height, depth, color_type
 
 
-@pytest.mark.parametrize("icon_set", ICON_SETS, ids=lambda icon_set: icon_set.command)
+@pytest.mark.parametrize("icon_set", ICON_SETS, ids=lambda icon_set: icon_set.label)
 def test_every_variant_is_an_rgba_png_of_its_declared_size(icon_set: IconSet) -> None:
     """Each expected file exists and is an 8-bit RGBA PNG of its filename's size."""
     for name in _expected_names(icon_set):
@@ -115,7 +127,7 @@ def test_every_variant_is_an_rgba_png_of_its_declared_size(icon_set: IconSet) ->
         assert color_type == 6, f"{name} is not truecolour with alpha"
 
 
-@pytest.mark.parametrize("icon_set", ICON_SETS, ids=lambda icon_set: icon_set.command)
+@pytest.mark.parametrize("icon_set", ICON_SETS, ids=lambda icon_set: icon_set.label)
 def test_no_stray_variants(icon_set: IconSet) -> None:
     """The folder holds exactly the expected PNGs.
 
@@ -127,7 +139,7 @@ def test_no_stray_variants(icon_set: IconSet) -> None:
     assert found == sorted(_expected_names(icon_set))
 
 
-@pytest.mark.parametrize("icon_set", ICON_SETS, ids=lambda icon_set: icon_set.command)
+@pytest.mark.parametrize("icon_set", ICON_SETS, ids=lambda icon_set: icon_set.label)
 def test_icons_are_not_the_placeholders_they_replaced(icon_set: IconSet) -> None:
     """The shipped art is drawn for this command, not copied from another."""
     if icon_set.placeholder is None:
@@ -140,7 +152,7 @@ def test_icons_are_not_the_placeholders_they_replaced(icon_set: IconSet) -> None
         if not placeholder.is_file():
             continue
         assert (icon_set.resources / name).read_bytes() != placeholder.read_bytes(), (
-            f"{icon_set.command}/{name} is still a copy of {icon_set.placeholder}'s"
+            f"{icon_set.label}/{name} is still a copy of {icon_set.placeholder}'s"
         )
 
 
@@ -148,8 +160,10 @@ def test_every_command_looks_different_from_every_other() -> None:
     """No two sets converge.
 
     The commands share motifs on purpose -- two use the puzzle piece, three use
-    the number sign -- and the panel shows them side by side, so the badges have
-    to keep every pair apart at every size.
+    the number sign, two are a ruler -- and the panel shows them side by side,
+    so the badges have to keep every pair apart at every size. This also covers
+    Match Units' own pair: two sets that rendered the same would leave the
+    button silently reporting nothing.
     """
     for size in SIZES:
         name = f"{size}x{size}.png"
@@ -157,6 +171,6 @@ def test_every_command_looks_different_from_every_other() -> None:
         for icon_set in ICON_SETS:
             blob = (icon_set.resources / name).read_bytes()
             assert blob not in seen, (
-                f"{icon_set.command} and {seen[blob]} ship the same {name}"
+                f"{icon_set.label} and {seen[blob]} ship the same {name}"
             )
-            seen[blob] = icon_set.command
+            seen[blob] = icon_set.label

@@ -9,7 +9,7 @@ does not load them automatically.
 ## What this is
 
 - **PowerTools** is a single Autodesk Fusion add-in (Python) consolidating
-  **53 commands** (`_cmd(` entries in `command_registry.py` — count it, do not
+  **55 commands** (`_cmd(` entries in `command_registry.py` — count it, do not
   quote this number) behind one entry point (`PowerTools.py`), one registry
   (`command_registry.py`), one settings store (`settings_store.py`) and one
   shared helper package (`lib/ptAddInUtils`, imported as `ptutil`).

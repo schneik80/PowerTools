@@ -77,6 +77,7 @@ the unit-testable cores.
 | document | `docinfo` | `Document Information.md` | ✓ | — | — | |
 | document | `docopen` | `Show In Location.md` | ✓ | — | — | settings; no button (document events); ships disabled |
 | document | `favorites` | `Favorites.md` | ✓ | — | — | `cache/favorites_<hub>.json` |
+| document | `matchunits` | `Match Units.md` | ✓ | `logic.py` | `test_matchunits_logic.py` | settings; Inspect panels; work in `commandCreated`; `documentOpened` -> Timer -> CustomEvent; swaps `resourceFolder` between `resources/` and `resources/mismatch/` |
 | document | `openrecent` | `Open Recent.md` | ✓ | — | — | QAT File flyout, self-correcting placement; items open from `commandCreated` |
 | document | `versiondiff` | `Version Diff.md` | ✓ | `timeline_model.py`, `feature_icons.py`, `html_report.py` | — | ships disabled |
 | exports | `exportbomcsv` | `Export BOM.md` | ✓ | — | `test_csv_injection.py` | |
@@ -156,7 +157,7 @@ Import order in `__init__.py` is fixed (`general_utils` first; `# ruff: noqa: I0
 | Drawing tab panel | `FusionDocTab` / `PT_DrawingPowerTools` | command | `assigndrawingnumber` |
 | Manage tab panel (needs Manage Extension) | `ManageTab` / `PT_ManagePowerTools` | command | `syncitempartnumber` |
 | Animation (Publisher) panel | `Publisher3DEnvironment` / `Animation` / after `PublisherViewPanel` | command via `config.resolve_animation_workspace_id()` | `animationnamedview` |
-| Inspect panels, all design workspaces | discovered at runtime | command | `measurepath` |
+| Inspect panels, all design workspaces | discovered at runtime | `commands/_inspect_panels.py` (shared) | `measurepath`, `matchunits` |
 | Marking (right-click) menu | `markingMenuDisplaying` hook | command | `changecyclecolor` |
 | Assembly INSERT panel | below Insert STEP | command | `assemblypalette` launch button |
 | Palettes | `IMA_LLC_PowerTools_*` (`config.py` section 7) | command | `assemblybuilder`, `assemblypalette`, `dochistory`, `preferences`, `teamaddins` |
@@ -195,6 +196,8 @@ Built-in tabs and panels are never deleted; only our controls are.
 | Waiting on a save/upload | `ptutil.wait_for_upload`, used by `bottomupupdate`, `closealldocuments` |
 | Suspend autosave / re-acquire handles across pumped waits | `commands/bottomupupdate/entry.py` (`_suspend_autosave`, `close_processed_document`, `sweep_stray_documents`) |
 | Selection capture | `commands/externalize/entry.py`, `commands/measurepath/entry.py` |
+| State-dependent command icon (`resourceFolder` swap + dynamic tooltip) | `commands/matchunits/entry.py` |
+| Enum-name-keyed tables resolved against the live `adsk` enums | `commands/matchunits/logic.py` |
 | Custom graphics in `executePreview`, billboarded text, cones | `commands/measurepath/entry.py` |
 | `executePreview` apply with revert-on-cancel | `commands/roundsketchdimensions/entry.py` |
 | Palette RPC (`incomingFromHTML`, `sendInfoToHTML`, `init.js` bootstrap) | `commands/preferences/entry.py` + `resources/html/app.js`; `commands/assemblybuilder` |
@@ -203,7 +206,7 @@ Built-in tabs and panels are never deleted; only our controls are.
 | Runtime workspace/tab discovery with pinned IDs | `config.py` section 3c, `commands/animationnamedview/entry.py` |
 | GraphQL to MFGDM | `commands/partnumber_shared/mfgdm_props.py` |
 | Hub folder as a catalogue, revision fingerprinting, safe install | `commands/teamaddins/{catalog,installer,team_fs}.py` |
-| Pure-logic module + test pairing | `measurepath/pathgraph.py` <-> `tests/test_measurepath_pathgraph.py`; `refresh/logic.py` <-> `tests/test_refresh_logic.py`; `flattensurface/flatten.py` <-> `tests/test_flattensurface_*.py` (large solver) |
+| Pure-logic module + test pairing | `matchunits/logic.py` <-> `tests/test_matchunits_logic.py`; `measurepath/pathgraph.py` <-> `tests/test_measurepath_pathgraph.py`; `refresh/logic.py` <-> `tests/test_refresh_logic.py`; `flattensurface/flatten.py` <-> `tests/test_flattensurface_*.py` (large solver) |
 | Atomic JSON writes | `ptutil.write_json_atomic` (favorites, hub config, preferences) |
 | Reading Fusion's own recents | `lib/ptAddInUtils/fusion_recents.py` |
 | Generated icons | `commands/teamaddins/resources/generate_icons.py` + `tools/icons/iconkit.py` |

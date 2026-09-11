@@ -455,6 +455,8 @@ PowerTools/
 ├── commands/
 │   ├── __init__.py               # Command registry; bulk start()/stop() around bootstrap
 │   ├── _ui_bootstrap.py          # Creates/removes the two shared access points
+│   ├── _command_abort.py         # Bail out of command_created without doExecute
+│   ├── _inspect_panels.py        # Discovers/populates the design Inspect panels
 │   ├── assemblybuilder/ … refresh/        # Assembly command modules
 │   ├── assigndrawingnumber/ … versiondiff/ # Document Tools command modules
 │   ├── exportbomcsv/, exportmermaid/       # Exports command modules

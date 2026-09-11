@@ -4,6 +4,8 @@ paths:
   - "settings_store.py"
   - "commands/__init__.py"
   - "commands/_ui_bootstrap.py"
+  - "commands/_command_abort.py"
+  - "commands/_inspect_panels.py"
   - "commands/*/entry.py"
   - "commands/*/__init__.py"
 ---
@@ -27,25 +29,29 @@ settings key.**
 2. Registry entry `_cmd("<module>", "<Doc Name>.md", beta=?, settings=?)` in
    the right group. Doc filename is **not** derived from `CMD_NAME`
    (`sketchfix` -> `SketchFix.md`).
-3. Docs pair: `docs/<Doc Name>.md` (user guide) and `docs/arch/<Doc Name>.md`
+3. Placement on a **built-in** panel whose set of tabs varies (Inspect) goes
+   through `commands/_inspect_panels.py` -- `add_to_inspect_panels()` /
+   `remove_from_inspect_panels()`. Do not re-copy the tab walk; `measurepath`
+   and `matchunits` share it for exactly that reason.
+4. Docs pair: `docs/<Doc Name>.md` (user guide) and `docs/arch/<Doc Name>.md`
    (architecture note), a row in `docs/arch/index.md`, and a row in the README
    command table (then rebuild `README.pdf` -- skill `build-readme-pdf`).
-4. Icons: `resources/16x16.png`, `32x32.png`, `64x64.png` (+ `-dark`,
+5. Icons: `resources/16x16.png`, `32x32.png`, `64x64.png` (+ `-dark`,
    `-disabled`) drawn with skill `generate-icons`; pin in
    `tests/test_command_icons.py`. Never copy another command's PNGs.
-5. If it has settings: `settings_store.COMMAND_SETTING_DEFAULTS[<module>]`,
+6. If it has settings: `settings_store.COMMAND_SETTING_DEFAULTS[<module>]`,
    `has_settings=True`, and a `CMD_SECTIONS` entry in
    `commands/preferences/resources/html/app.js`. Ship-disabled commands go in
    `DEFAULT_DISABLED_COMMANDS` (112d08d).
-6. Pure logic in an `adsk`-free module (`logic.py`, `pathgraph.py`,
+7. Pure logic in an `adsk`-free module (`logic.py`, `pathgraph.py`,
    `catalog.py`) with `tests/test_<module>_*.py`. `entry.py` holds only Fusion
    contact.
-7. Preferences changes apply on the next Fusion restart -- the gating runs in
+8. Preferences changes apply on the next Fusion restart -- the gating runs in
    `commands.start()` only. Say so in the docs if relevant.
-8. Precondition failures before the dialog: `_command_abort.abort_before_dialog()`
+9. Precondition failures before the dialog: `_command_abort.abort_before_dialog()`
    + return with no inputs; never `args.command.doExecute()` (segfault,
    14871d7). `consume_abort()` in `execute`, `clear_abort()` in `destroy`.
-9. Commands only usable together go in `settings_store.COMMAND_SETS` (one
+10. Commands only usable together go in `settings_store.COMMAND_SETS` (one
    Preferences checkbox; members resolve through the lead's flag; members must
    share the lead's group -- `tests/test_settings_command_sets.py`) (6c554d5).
 

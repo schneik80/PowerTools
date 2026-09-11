@@ -21,10 +21,9 @@ import traceback
 import adsk.core
 import adsk.fusion
 
-from ... import config
-
 # Import the ptAddInUtils module from the parent directory.
 from ...lib import ptAddInUtils as ptutil
+from .. import _inspect_panels
 from .._command_abort import (
     abort_before_dialog,
     clear_abort,
@@ -43,19 +42,10 @@ CMD_Description = (
 )
 IS_PROMOTED = False
 
-WORKSPACE_ID = config.design_workspace
 # The command goes on every Inspect panel of every design-product workspace, so
 # it is to hand wherever Fusion's own Measure is - Solid, Surface, Mesh, Sheet
-# Metal and Plastic all carry one.
-#
-# Panels are discovered at runtime rather than listed: which tabs exist varies
-# with the Fusion version and the user's entitlements, and a hardcoded tab list
-# would silently miss panels on one build and log "not found" noise on another.
-# All of these panels are BUILT-IN and must never be created or deleted by us.
-_PANEL_MATCH = "inspect"
-# productType's exact value is not documented, so match it loosely and fall back
-# to the known design workspace id.
-_DESIGN_PRODUCT_MATCH = "design"
+# Metal and Plastic all carry one. Discovering them is shared with Match Units;
+# see commands/_inspect_panels.py for why they are walked rather than listed.
 
 ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "")
 
@@ -161,51 +151,6 @@ _marker_end = ()
 _path_segs = []
 
 
-def _is_design_workspace(workspace) -> bool:
-    """True if *workspace* hosts a Design product, so a path is measurable."""
-    if workspace.id == WORKSPACE_ID:
-        return True
-    try:
-        product = (workspace.productType or "").lower()
-    except Exception:
-        return False
-    return _DESIGN_PRODUCT_MATCH in product
-
-
-def _inspect_panels():
-    """Yield every Inspect panel of every design-product workspace.
-
-    Deduplicated by panel id: Fusion shows one panel across several tabs, so the
-    same panel can be reached more than once while walking the tab tree, and
-    adding a control twice would either throw or leave a duplicate button.
-    """
-    seen = set()
-    panels = []
-    try:
-        for workspace in ui.workspaces:
-            if not _is_design_workspace(workspace):
-                continue
-            groups = [workspace.toolbarPanels]
-            try:
-                groups.extend(tab.toolbarPanels for tab in workspace.toolbarTabs)
-            except Exception:
-                pass
-            for collection in groups:
-                if not collection:
-                    continue
-                for panel in collection:
-                    panel_id = panel.id or ""
-                    if _PANEL_MATCH not in panel_id.lower():
-                        continue
-                    if panel_id in seen:
-                        continue
-                    seen.add(panel_id)
-                    panels.append(panel)
-    except Exception:
-        ptutil.handle_error(f"{CMD_NAME}._inspect_panels")
-    return panels
-
-
 def start():
     """Register the command and add it to every design Inspect panel."""
     try:
@@ -214,21 +159,7 @@ def start():
         )
         ptutil.add_handler(cmd_def.commandCreated, command_created)
 
-        placed = []
-        for panel in _inspect_panels():
-            try:
-                if panel.controls.itemById(CMD_ID):
-                    continue
-                control = panel.controls.addCommand(cmd_def)
-                control.isPromoted = IS_PROMOTED
-                placed.append(panel.id)
-            except Exception as place_err:
-                ptutil.log(f"{CMD_NAME}: could not add to {panel.id} ({place_err})")
-
-        if placed:
-            ptutil.log(f"{CMD_NAME} added to {len(placed)} panel(s): {placed}")
-        else:
-            ptutil.log(f"{CMD_NAME}: no Inspect panel found to add to")
+        _inspect_panels.add_to_inspect_panels(cmd_def, CMD_NAME, IS_PROMOTED)
 
     except Exception:
         ptutil.handle_error(f"{CMD_NAME}.start")
@@ -237,14 +168,7 @@ def start():
 def stop():
     """Remove every control this command added, and its definition."""
     try:
-        for panel in _inspect_panels():
-            try:
-                control = panel.controls.itemById(CMD_ID)
-                if control:
-                    control.deleteMe()
-                # These are built-in Fusion panels; never delete the panel.
-            except Exception as drop_err:
-                ptutil.log(f"{CMD_NAME}: could not remove from {panel.id} ({drop_err})")
+        _inspect_panels.remove_from_inspect_panels(CMD_ID, CMD_NAME)
 
         cmd_def = ui.commandDefinitions.itemById(CMD_ID)
         if cmd_def:

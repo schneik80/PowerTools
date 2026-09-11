@@ -60,6 +60,23 @@
                 ];
             }
         },
+        matchunits: {
+            label: "Match Units",
+            // Rendered nested under its own row in the Commands list: the
+            // command's button is always there, and this one toggle only
+            // governs the extra open-time prompt, so it belongs beside the
+            // enable checkbox rather than in a section of its own.
+            inline: true,
+            render: function (cs) {
+                return [
+                    labelCheck(
+                        "Ask to match units when a document is opened",
+                        cs.prompt_on_open === true,
+                        function (v) { setCmdSetting("matchunits", "prompt_on_open", v); }
+                    )
+                ];
+            }
+        },
         defaultfolders: {
             label: "Add Project Folders",
             render: function (cs) {

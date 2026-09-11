@@ -75,6 +75,9 @@ COMMAND_SETTING_DEFAULTS = {
     "componentwarn": {"warn_non_leaf": False},
     "changecyclecolor": {"show_in_context_menu": True},
     "docopen": {"run_on_open": False, "run_on_activate": False},
+    # Match Units places its button unconditionally; the open-time prompt is a
+    # modal on top of opening a file, so it stays off until asked for.
+    "matchunits": {"prompt_on_open": False},
     "defaultfolders": {
         "basic": list(DEFAULT_FOLDER_SETS["basic"]),
         "advanced": list(DEFAULT_FOLDER_SETS["advanced"]),

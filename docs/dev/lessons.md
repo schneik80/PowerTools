@@ -432,6 +432,25 @@ the command silently resets and a dead key lingers in `preferences.json`.
 **`os.access` lies on Windows network shares; probe by writing.** The thumbnail
 cache picks `cache/thumbs` vs. the temp dir by attempting a write. -- `14f42ca`
 
+**Compare units on the enums, never on `UnitsManager.defaultLengthUnits`.**
+The API reference states that string is reshaped by the user's abbreviation and
+symbol preferences -- inches come back as `inch`, `in` or `"` -- and names
+`FusionUnitsManager.distanceDisplayUnits` as the consistent answer. There is no
+string form for mass at all. The two sides of a units comparison are
+`Design.fusionUnitsManager.{distanceDisplayUnits,massDisplayUnits}` and
+`app.preferences.defaultUnitsPreferences.itemByName("Design")`; `DistanceUnits`,
+`MassUnits` and `UnitSystems` all live in `adsk.fusion`, not `adsk.core`.
+Assigning `unitSystem` sets both halves at once, assigning either half flips
+`unitSystem` to `Custom`. -- `commands/matchunits/`
+
+**A pure module that has to name `adsk` enum values keys its tables by member
+name and resolves them against the live classes at start-up.** Hardcoding the
+integers mislabels every unit if Autodesk renumbers one, and the test harness
+fabricates `adsk` as a `MagicMock` whose attributes answer with mocks rather
+than integers, so a hardcoded table could not be tested against the real enums
+either. Names this build does not carry are reported, not guessed at.
+-- `commands/matchunits/logic.py`
+
 ---
 
 ## UI placement
@@ -456,6 +475,19 @@ that an anchor lives in the same container. -- `6789216`
 **Placement is discovered where the set of tabs varies.** Measure Path adds
 itself to every Inspect panel of every design-product workspace because which
 tabs exist depends on version and entitlement. -- `b3bed5f`
+
+**A command's icon and tooltip can be changed at runtime, and Fusion repaints
+an already-placed control.** Assigning `CommandDefinition.resourceFolder` (and
+`.tooltip`) after the control exists on a panel updates it in place -- no
+re-created control, no panel rebuild. That makes a state-reporting button
+practical: Match Units ships two full icon sets and points the definition at
+`resources/` or `resources/mismatch/` as the active document's units agree with
+the application default or not, writing the folder only when the verdict
+changes. Verified on `ADSKMVG91G2F5W` 2026-09-11 (channel not pinned -- see
+`docs/arch/Match Units.md`). Colour cannot carry such a state: `iconkit`
+paints one flat colour per variant and Fusion picks `-dark` / `-disabled` by
+filename, so the two sets have to differ geometrically.
+-- `commands/matchunits/entry.py`
 
 ---
 
