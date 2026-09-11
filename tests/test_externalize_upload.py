@@ -119,3 +119,127 @@ def test_circuit_breaker_threshold_is_small_enough_to_matter():
     """Two failures x 300s is the worst case before a wedged run gives up; a
     larger threshold would reintroduce a multi-hour hang on a big assembly."""
     assert 1 < entry.MAX_CONSECUTIVE_UPLOAD_FAILURES <= 3
+
+
+# ---------------------------------------------------------------------------
+# _snapshot_folder_files -- a bad index must not discard the queued run
+# ---------------------------------------------------------------------------
+
+
+class FakeDataFile:
+    def __init__(self, name):
+        self.name = name
+
+
+class ExplodingName:
+    """A DataFile whose name cannot be read."""
+
+    @property
+    def name(self):
+        raise RuntimeError("2 : InternalValidationError : name")
+
+
+class FakeDataFiles:
+    """Stand-in for adsk.core.DataFiles.
+
+    ``bad_indices`` raise from ``item()`` the way Fusion does for an index it
+    has not materialised, even though it is inside ``range(count)``.
+    """
+
+    def __init__(self, items, bad_indices=(), as_array_raises=False):
+        self._items = list(items)
+        self._bad = set(bad_indices)
+        self._as_array_raises = as_array_raises
+
+    def asArray(self):
+        if self._as_array_raises:
+            raise RuntimeError("2 : InternalValidationError : asArray")
+        return list(self._items)
+
+    @property
+    def count(self):
+        return len(self._items)
+
+    def item(self, index):
+        if index in self._bad:
+            raise RuntimeError("2 : InternalValidationError : item")
+        return self._items[index]
+
+
+class FakeFolder:
+    def __init__(self, data_files):
+        self._data_files = data_files
+
+    @property
+    def dataFiles(self):
+        if self._data_files is None:
+            raise RuntimeError("2 : InternalValidationError : dataFiles")
+        return self._data_files
+
+
+def test_snapshot_uses_as_array_when_available():
+    folder = FakeFolder(FakeDataFiles([FakeDataFile("A"), FakeDataFile("B")]))
+
+    result = entry._snapshot_folder_files(folder)
+
+    assert sorted(result) == ["A", "B"]
+
+
+def test_bad_index_skips_that_entry_and_keeps_the_rest():
+    """The regression: one unmaterialised index used to kill the whole run."""
+    files = FakeDataFiles(
+        [FakeDataFile("A"), FakeDataFile("B"), FakeDataFile("C")],
+        bad_indices=[1],
+        as_array_raises=True,
+    )
+    lines = []
+
+    result = entry._snapshot_folder_files(FakeFolder(files), lines.append)
+
+    assert sorted(result) == ["A", "C"]
+    assert any("1 of 3" in line for line in lines)
+    assert any("duplicate" in line for line in lines)
+
+
+def test_indexed_walk_is_the_fallback_for_as_array():
+    files = FakeDataFiles([FakeDataFile("A")], as_array_raises=True)
+    lines = []
+
+    result = entry._snapshot_folder_files(FakeFolder(files), lines.append)
+
+    assert sorted(result) == ["A"]
+    assert any("falling back to an indexed walk" in line for line in lines)
+
+
+def test_every_index_failing_yields_an_empty_map_not_a_raise():
+    files = FakeDataFiles(
+        [FakeDataFile("A"), FakeDataFile("B")],
+        bad_indices=[0, 1],
+        as_array_raises=True,
+    )
+
+    assert entry._snapshot_folder_files(FakeFolder(files), lambda _m: None) == {}
+
+
+def test_unreadable_folder_yields_an_empty_map_not_a_raise():
+    lines = []
+
+    assert entry._snapshot_folder_files(FakeFolder(None), lines.append) == {}
+    assert any("duplicate" in line for line in lines)
+
+
+def test_unreadable_entry_name_is_skipped():
+    files = FakeDataFiles([FakeDataFile("A"), ExplodingName(), None])
+
+    result = entry._snapshot_folder_files(FakeFolder(files), lambda _m: None)
+
+    assert sorted(result) == ["A"]
+
+
+def test_first_match_per_name_wins():
+    """Order matters: the pre-existing scan kept the first match."""
+    first, second = FakeDataFile("dup"), FakeDataFile("dup")
+
+    result = entry._snapshot_folder_files(FakeFolder(FakeDataFiles([first, second])))
+
+    assert result["dup"] is first

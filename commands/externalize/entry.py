@@ -540,13 +540,8 @@ class _RunnerHandler(adsk.core.CustomEventHandler):
         # check below is then an O(1) dict lookup instead of a fresh linear scan
         # of the *growing* folder every iteration (which was O(m*k)). Files
         # uploaded during this run are inserted into the map so later components
-        # still find them. Keep the FIRST match per name to match the prior scan.
-        existing_by_name = {}
-        target_files = target_folder.dataFiles
-        for i in range(target_files.count):
-            item = target_files.item(i)
-            if item.name not in existing_by_name:
-                existing_by_name[item.name] = item
+        # still find them.
+        existing_by_name = _snapshot_folder_files(target_folder, log_writer)
 
         for idx, data in enumerate(runnable, 1):
             comp_name = data["comp_name"]
@@ -927,6 +922,98 @@ def _save_parent_doc(parent_doc, replaced_count, log_fn, cancel_check):
 # ---------------------------------------------------------------------------
 # Cloud folder helpers
 # ---------------------------------------------------------------------------
+
+
+def _snapshot_folder_files(target_folder, log_fn=None) -> dict:
+    """Map ``{file name: DataFile}`` for `target_folder`, best effort.
+
+    This map is an optimisation and a duplicate guard, never a correctness
+    requirement, so a partial map always beats an exception. A name that is
+    missed means that component gets uploaded again (a duplicate cloud file);
+    a raise here kills the whole run before a single component is processed.
+
+    `DataFiles.count` and `DataFiles.item(i)` can disagree: `count` is a
+    server-side number, and `item(i)` raises
+    ``RuntimeError: 2 : InternalValidationError : item`` for an index Fusion
+    has not materialised. That discarded a queued 42-component run outright,
+    seen moments after 33 files landed in the folder -- a retry 43s later
+    worked, so the condition is transient. `asArray()` fetches the whole list
+    in one native call and never does index arithmetic, so it is tried first;
+    the indexed walk is the fallback and guards every index on its own.
+
+    Keeps the FIRST match per name, matching the original scan order.
+    """
+    log = log_fn or (lambda _msg: None)
+    by_name: dict = {}
+
+    duplicate_warning = (
+        "components will be uploaded again rather than reused, "
+        "which can create duplicate cloud files"
+    )
+
+    def record(item) -> bool:
+        """Add `item` under its name. False if it could not be read at all."""
+        if item is None:
+            return False
+        try:
+            name = item.name
+        except Exception:
+            return False
+        by_name.setdefault(name, item)
+        return True
+
+    try:
+        target_files = target_folder.dataFiles
+    except Exception as e:
+        log(
+            f"  WARNING: target folder's file list is unreadable ({e}); {duplicate_warning}"
+        )
+        return by_name
+
+    try:
+        files = target_files.asArray()
+    except Exception as e:
+        files = None
+        log(
+            f"  asArray() on the target folder raised ({e}); falling back to an indexed walk"
+        )
+
+    if files is not None:
+        unreadable = 0
+        for item in files:
+            if not record(item):
+                unreadable += 1
+        if unreadable:
+            log(
+                f"  WARNING: {unreadable} of {len(files)} entries in the target "
+                f"folder could not be read; {duplicate_warning}"
+            )
+        return by_name
+
+    try:
+        count = target_files.count
+    except Exception as e:
+        log(
+            f"  WARNING: target folder's file count is unreadable ({e}); {duplicate_warning}"
+        )
+        return by_name
+
+    unreadable = 0
+    for i in range(count):
+        try:
+            item = target_files.item(i)
+        except Exception:
+            unreadable += 1
+            continue
+        if not record(item):
+            unreadable += 1
+
+    if unreadable:
+        log(
+            f"  WARNING: {unreadable} of {count} entries in the target folder "
+            f"could not be read; {duplicate_warning}"
+        )
+    return by_name
 
 
 def _get_or_create_subfolder(parent_folder: adsk.core.DataFolder, name: str):

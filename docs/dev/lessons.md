@@ -342,6 +342,21 @@ surfaced as "nothing happens". Resolve through
 palettes show a *no target project* banner with a Re-check button (Fusion has
 no active-project-changed event). -- `7535954`, `architecture.md`
 
+**`DataFiles.count` and `DataFiles.item(i)` disagree, and an unguarded walk
+over them turns a transient hiccup into a lost run.** `count` is a server-side
+number; `item(i)` raises `RuntimeError: 2 : InternalValidationError : item` for
+an index Fusion has not materialised, even though the index is inside
+`range(count)`. Externalize walked the target folder that way to build its
+"already in the cloud?" map, *before* the per-component `try/except`, so one bad
+index reached the handler's outer catch and discarded a queued 42-component run
+before any work started. Observed moments after 33 files landed in the folder; a
+retry 43 seconds later worked. Prefer `DataFiles.asArray()` -- one native call,
+no index arithmetic -- and guard each index in the fallback walk. The wider rule:
+**when a cache or index is an optimisation rather than a correctness
+requirement, its construction must not be able to fail the operation it is
+speeding up.** Degrade to a smaller map and log what the degradation costs.
+-- `_snapshot_folder_files`, `docs/arch/Externalize.md`
+
 **Prefer Fusion's own on-disk recents over a home-grown cache, and never
 assume an Autodesk path.** `<options root>/<userId>/<hubPrefix>_RecentsWithoutSearch_1.json`
 is discovered, not assumed: several user directories coexist, stale ones look

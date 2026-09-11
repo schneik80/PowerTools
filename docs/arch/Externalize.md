@@ -38,6 +38,7 @@ C4Component
   Component(log_inputs, "Logging tab", "Fusion UI", "Log Progress, log path, Open live log viewer")
   Component(resume_status, "TextBoxCommandInput", "Fusion UI", "Run status — driven by _analyze_resume_state on the temp log")
   Component(save_to_cloud, "_save_to_cloud", "Helper", "saveCopyAs + tight adsk.doEvents() poll on uploadState until UploadFinished, bounded by UPLOAD_TIMEOUT_SECONDS")
+  Component(snapshot, "_snapshot_folder_files", "Helper", "Best-effort {name: DataFile} map of the target folder via asArray(), indexed walk as fallback")
   Component(temp_save, "_temp_save", "Helper", "Triggers AutoSaveFilesCommand text command — local recovery checkpoint, no new cloud version")
   Component(save_parent, "_save_parent_doc", "Helper", "Document.save once at end of run via futil.wait_for_upload — single new parent cloud version")
   Component(log_writer, "_LogWriter", "Helper", "Appends key events to the per-run log file")
@@ -140,3 +141,36 @@ it. The run-level breaker matters because a wedged pipeline tends to stay wedged
 — without it, the remaining 41 components would each burn the full 300s, turning
 one hang into a ~3.5 hour one. Aborting still runs `_finalize`, so the parent is
 committed with everything that did succeed and resume stays available.
+
+### Why the folder snapshot is best-effort
+
+`_run_loop` builds a `{name: DataFile}` map of the target folder once, so the
+per-component "does this already exist in the cloud?" check is an O(1) lookup
+rather than a fresh linear scan of a folder that grows on every iteration.
+
+That map is an optimisation and a duplicate guard — never a correctness
+requirement. It originally walked `DataFiles.item(i)` over `range(count)`
+unguarded, which made a transient data-layer hiccup fatal: `count` is a
+server-side number and `item(i)` raises
+`RuntimeError: 2 : InternalValidationError : item` for an index Fusion has not
+materialised. The walk runs *before* the per-component `try/except`, so the
+exception reached `notify()` and discarded a queued 42-component run before a
+single component was processed. It was seen moments after 33 files landed in
+that folder; a retry 43s later succeeded, so the condition is transient.
+
+`_snapshot_folder_files` now prefers `DataFiles.asArray()`, which fetches the
+whole list in one native call and does no index arithmetic, and falls back to an
+indexed walk that guards each index on its own. Every failure mode degrades to a
+smaller map instead of an exception:
+
+| Failure | Result |
+|---|---|
+| `folder.dataFiles` raises | empty map, warn |
+| `asArray()` raises | indexed walk |
+| `item(i)` raises, or an entry's `name` is unreadable | skip that entry, warn |
+| every index raises | empty map, warn |
+
+The trade-off is explicit: a name missing from the map means that component is
+uploaded again instead of reused, creating a duplicate cloud file. That is worth
+it against losing the whole run, but it is why every degraded path logs a
+warning that names the consequence.
