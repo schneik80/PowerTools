@@ -63,9 +63,10 @@
         matchunits: {
             label: "Match Units",
             // Rendered nested under its own row in the Commands list: the
-            // command's button is always there, and this one toggle only
-            // governs the extra open-time prompt, so it belongs beside the
-            // enable checkbox rather than in a section of its own.
+            // command's button is always there, and these toggles only govern
+            // the two optional prompts, so they belong beside the enable
+            // checkbox rather than in a section of their own. docopen does the
+            // same with two.
             inline: true,
             render: function (cs) {
                 return [
@@ -73,6 +74,11 @@
                         "Ask to match units when a document is opened",
                         cs.prompt_on_open === true,
                         function (v) { setCmdSetting("matchunits", "prompt_on_open", v); }
+                    ),
+                    labelCheck(
+                        "Ask to match units when switching to the Manufacture workspace",
+                        cs.prompt_on_manufacture === true,
+                        function (v) { setCmdSetting("matchunits", "prompt_on_manufacture", v); }
                     )
                 ];
             }

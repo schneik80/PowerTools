@@ -77,7 +77,7 @@ the unit-testable cores.
 | document | `docinfo` | `Document Information.md` | ✓ | — | — | |
 | document | `docopen` | `Show In Location.md` | ✓ | — | — | settings; no button (document events); ships disabled |
 | document | `favorites` | `Favorites.md` | ✓ | — | — | `cache/favorites_<hub>.json` |
-| document | `matchunits` | `Match Units.md` | ✓ | `logic.py` | `test_matchunits_logic.py` | settings; Inspect panels; work in `commandCreated`; `documentOpened` -> Timer -> CustomEvent; swaps `resourceFolder` between `resources/` and `resources/mismatch/` |
+| document | `matchunits` | `Match Units.md` | ✓ | `logic.py`, `mfg.py` | `test_matchunits_logic.py`, `test_matchunits_mfg_logic.py` | settings (2 prompts); Inspect panels; work in `commandCreated`; TWO independent deferrals -- `documentOpened` and `workspaceActivated`, each with its own Timer -> CustomEvent; swaps `resourceFolder` between `resources/` and `resources/mismatch/`; Manufacture units read/written only via `UnitSystems.List` / `UnitSystems.Activate` text commands |
 | document | `openrecent` | `Open Recent.md` | ✓ | — | — | QAT File flyout, self-correcting placement; items open from `commandCreated` |
 | document | `versiondiff` | `Version Diff.md` | ✓ | `timeline_model.py`, `feature_icons.py`, `html_report.py` | — | ships disabled |
 | exports | `exportbomcsv` | `Export BOM.md` | ✓ | — | `test_csv_injection.py` | |
@@ -198,6 +198,8 @@ Built-in tabs and panels are never deleted; only our controls are.
 | Selection capture | `commands/externalize/entry.py`, `commands/measurepath/entry.py` |
 | State-dependent command icon (`resourceFolder` swap + dynamic tooltip) | `commands/matchunits/entry.py` |
 | Enum-name-keyed tables resolved against the live `adsk` enums | `commands/matchunits/logic.py` |
+| Reading/writing a product Fusion gives no API for, via `executeTextCommand` + a parsed diagnostic | `commands/matchunits/mfg.py` |
+| Resolving a design from a non-Design workspace (`products.itemByProductType`) | `commands/animationnamedview/entry.py`, `commands/matchunits/entry.py` |
 | Custom graphics in `executePreview`, billboarded text, cones | `commands/measurepath/entry.py` |
 | `executePreview` apply with revert-on-cancel | `commands/roundsketchdimensions/entry.py` |
 | Palette RPC (`incomingFromHTML`, `sendInfoToHTML`, `init.js` bootstrap) | `commands/preferences/entry.py` + `resources/html/app.js`; `commands/assemblybuilder` |

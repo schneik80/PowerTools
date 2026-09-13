@@ -6,14 +6,20 @@
 # This file is confidential and only available to authorized individuals with the
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
-"""Unit tests for the Animation workspace/tab/panel lookups in config.py.
+"""Unit tests for the unpublished workspace lookups in config.py.
 
 Fusion publishes none of these IDs, so config pins the ones observed on a live
-build and keeps a display-name fallback behind each. The pinned IDs are what
-these tests lock down — the Animation environment is internally the *Publisher*
-environment (``Publisher3DEnvironment`` / ``PublisherViewPanel``), which is the
-detail that is easy to lose again — together with the fallback paths, which are
-otherwise only exercised on a build nobody has.
+build and keeps a display-name fallback behind each. Two workspaces are probed
+this way:
+
+* **Animation**, which is internally the *Publisher* environment
+  (``Publisher3DEnvironment`` / ``PublisherViewPanel``) — the detail that is
+  easy to lose again — plus its tab and anchor-panel lookups.
+* **Manufacture** (``CAMEnvironment``), which Match Units only watches; nothing
+  is placed on it.
+
+The fallback paths are what these tests mostly exist for: they are otherwise
+only exercised on a build nobody has.
 
 The Fusion collections are stubbed: they only need ``itemById`` plus iteration,
 which is all config uses.
@@ -161,3 +167,52 @@ def test_anchor_panel_id_is_empty_when_nothing_matches() -> None:
     """No anchor means the panel is appended rather than skipped."""
     tab = make_tab("Animation", "ANIMATION", [("PublishVideoPanel", "Publish")])
     assert config._anchor_panel_id(tab) == ""
+
+
+# -- Manufacture workspace -----------------------------------------------------
+
+
+def test_resolves_cam_environment_by_id(monkeypatch) -> None:
+    """The pinned ID wins. Manufacture is internally CAMEnvironment."""
+    use_workspaces(monkeypatch, make_workspaces(LIVE_WORKSPACES))
+    assert config.resolve_manufacture_workspace_id() == "CAMEnvironment"
+
+
+def test_manufacture_falls_back_to_display_name(monkeypatch) -> None:
+    """A build that renumbers the workspace is still found by display name."""
+    renumbered = [
+        pair if pair[0] != "CAMEnvironment" else ("CAM2Environment", "Manufacture")
+        for pair in LIVE_WORKSPACES
+    ]
+    use_workspaces(monkeypatch, make_workspaces(renumbered))
+    assert config.resolve_manufacture_workspace_id() == "CAM2Environment"
+
+
+def test_manufacture_name_fallback_is_case_insensitive(monkeypatch) -> None:
+    use_workspaces(
+        monkeypatch, make_workspaces([("Whatever", "MANUFACTURING WORKSPACE")])
+    )
+    assert config.resolve_manufacture_workspace_id() == "Whatever"
+
+
+def test_returns_none_without_a_manufacture_workspace(monkeypatch) -> None:
+    """No Manufacture workspace means None, so the check is skipped.
+
+    A user without the Manufacture workspace must not see start() fail.
+    """
+    without = [pair for pair in LIVE_WORKSPACES if pair[1] != "Manufacture"]
+    use_workspaces(monkeypatch, make_workspaces(without))
+    assert config.resolve_manufacture_workspace_id() is None
+
+
+def test_the_two_resolvers_do_not_collide(monkeypatch) -> None:
+    """Design, Animation and Manufacture each resolve to their own workspace.
+
+    The name fallbacks are substring matches, so this guards against one
+    resolver claiming another's workspace on a build where the IDs have moved.
+    """
+    use_workspaces(monkeypatch, make_workspaces(LIVE_WORKSPACES))
+
+    assert config.resolve_animation_workspace_id() == "Publisher3DEnvironment"
+    assert config.resolve_manufacture_workspace_id() == "CAMEnvironment"
+    assert config.design_workspace == "FusionSolidEnvironment"

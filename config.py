@@ -294,6 +294,68 @@ def get_or_create_animation_panel(workspace_id):
 
 
 # ---------------------------------------------------------------------------
+# 3d. Manufacture workspace — watched, not decorated.
+#
+# Nothing places a control here; Match Units only needs to know when the user
+# has switched INTO it, because the Manufacture product keeps its own active
+# unit system, separate from the design's, and the API exposes no way to read or
+# write it (see commands/matchunits/mfg.py).
+#
+# "CAMEnvironment" is the ID observed on a live build (Fusion 2704.1.36) and was
+# already recorded in tests/test_config_animation_workspace.py before anything
+# used it. It is unpublished like the Animation IDs above, so it is probed with
+# a display-name fallback rather than trusted, and the full workspace list is
+# logged when the fallback runs.
+# ---------------------------------------------------------------------------
+
+manufacture_workspace_candidates = (
+    "CAMEnvironment",
+    "FusionCAMEnvironment",
+    "CAMProductType",
+    "ManufactureEnvironment",
+)
+
+# Display names matched, case-insensitively, when none of the IDs above hit.
+manufacture_workspace_names = ("Manufacture", "Manufacturing", "CAM")
+
+
+def resolve_manufacture_workspace_id():
+    """Find the ID of Fusion's Manufacture workspace on this build.
+
+    Same shape as :func:`resolve_animation_workspace_id`: pinned candidates
+    first, then a display-name scan that logs every workspace it saw, so a
+    build that renames the workspace can be fixed by reading the debug log
+    rather than by guesswork.
+
+    Returns:
+        The workspace ID string, or None on a build with no Manufacture
+        workspace — in which case the caller skips the check rather than
+        failing to start.
+    """
+    workspaces = adsk.core.Application.get().userInterface.workspaces
+    for candidate in manufacture_workspace_candidates:
+        try:
+            if workspaces.itemById(candidate) is not None:
+                return candidate
+        except Exception:
+            continue
+
+    ptutil.log("Manufacture workspace not found by ID; scanning workspaces.")
+    wanted = {name.strip().lower() for name in manufacture_workspace_names}
+    fallback = None
+    for workspace in workspaces:
+        try:
+            workspace_id, name = workspace.id, workspace.name
+        except Exception:
+            continue
+        ptutil.log(f"  workspace id={workspace_id!r} name={name!r}")
+        lowered = (name or "").lower()
+        if fallback is None and any(want in lowered for want in wanted):
+            fallback = workspace_id
+    return fallback
+
+
+# ---------------------------------------------------------------------------
 # 4. Shared PowerTools Settings dropdown in the QAT File menu
 # ---------------------------------------------------------------------------
 

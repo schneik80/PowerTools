@@ -443,6 +443,41 @@ string form for mass at all. The two sides of a units comparison are
 Assigning `unitSystem` sets both halves at once, assigning either half flips
 `unitSystem` to `Custom`. -- `commands/matchunits/`
 
+**The Manufacture product's units have no API. `UnitSystems.List` and
+`UnitSystems.Activate <id>` via `executeTextCommand` are the whole interface.**
+`adsk.cam.CAM` does not override `Product.unitsManager`, so it returns the base
+`core.UnitsManager` — read-only `defaultLengthUnits`, length only. There is no
+`CAMUnitsManager` and no `CAMDefaultUnitsPreferences`. Ids are `MmMKS` and
+`InchImperial` for the CAM product; the Design product declares six
+(`CmMKS`, `MmMKS`, `MMKS`, `InchImperial`, `Imperial`, `Custom`). Both commands
+act on the **active asset**, and `Activate` takes **no target argument** — so
+re-check the active workspace immediately before writing, and verify afterwards
+that the intended product moved and the other did not. `List` reports the active
+system by *name*, and those names are not stable across products (`celsius`
+under CAM, `Celsius` under Design), so match the name only within one output.
+The setting is per document and survives save/close/reload. Verified on
+`ADSKMVG91G2F5W` 2026-09-12. -- `commands/matchunits/mfg.py`
+
+**`unitsManager.evaluateExpression("1")` reads any product's active length unit
+as a number.** It interprets `1` in that product's default distance unit and
+returns internal units (cm): mm gives 0.1, inch 2.54, cm 1.0, m 100. The stub
+documents this outright. It is the way to compare units without touching the
+`defaultLengthUnits` string, and it works on the base `UnitsManager`, which is
+all the CAM product offers. **It signals failure by returning `-1`, not by
+raising** — so a `try/except` guard does not catch it, and an unguarded `-1`
+compares as "differs" against every real unit. Reject non-positive values.
+-- `commands/matchunits/mfg.py`
+
+**`Design.cast(app.activeProduct)` is `None` in every non-Design workspace.**
+`activeProduct` is the *active workspace's* product, so in Manufacture,
+Animation, Drawing or Render the cast fails even though the design is right
+there. Ask for it by product type instead:
+`doc.products.itemByProductType("DesignProductType")`. Getting this wrong is
+silent and the symptom is delayed: Match Units repainted its state badge as
+"neutral" whenever `documentActivated` fired while Manufacture was active, and
+nothing fired on the way back to Design, so the button kept claiming the units
+matched. -- `commands/animationnamedview/entry.py`, `commands/matchunits/entry.py`
+
 **A pure module that has to name `adsk` enum values keys its tables by member
 name and resolves them against the live classes at start-up.** Hardcoding the
 integers mislabels every unit if Autodesk renumbers one, and the test harness
