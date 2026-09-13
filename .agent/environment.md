@@ -17,7 +17,7 @@ detail. Use them verbatim in notes and commit messages.
 | Tag | Device | Runs Fusion? | Notes |
 |---|---|---|---|
 | **`mac-air-m4`** | `ADSKMVG91G2F5W` — MacBook Air, Apple M4, 32 GB, macOS 26.5.1 (build 25F80), Darwin 25.5.0, arm64 | Yes — **production and pre-production** | The macOS dev box, and the device every fact in this file was verified on (2026-09-03). `debugpy` already installed |
-| **`g16win`** | `g16win.local` — **Windows 11**, x86_64 | Yes — **production and pre-production** | Where the Windows-only bugs surface (`25d5f48`, `93c6b36` — Change Cycle Color path + theme resolution). The `README.pdf` toolchain was written against **MiKTeX** here |
+| **`g16win`** | `g16win.local` — **Windows 11**, x86_64 | Yes — **production and pre-production** | Where the Windows-only bugs surface (`25d5f48`, `93c6b36` — Change Cycle Color path + theme resolution). The `README.pdf` toolchain was written against **MiKTeX** here. Toolchain characterised 2026-09-12: the dev venv is **`.venv-dev`**, not `.venv` (see [Invocation traps on `g16win`](#invocation-traps-on-g16win)) |
 | **`ryzen-nobara`** | `ryzen-nobara.local` — **Nobara 44** (Fedora 44 base), AMD Ryzen, x86_64 | **No** — there is no native Fusion client for Linux, so `import adsk` can never resolve | Lint / test / release zip / PDF only (Homebrew pandoc + TeX Live xelatex). Anything verified only here is "not yet exercised in Fusion" |
 
 Three consequences worth holding onto:
@@ -122,6 +122,51 @@ committed; bootstrap it with
 ```bash
 python3 -m venv .venv && .venv/bin/pip install "ruff==0.15.20" "pytest>=8.0"
 ```
+
+### Invocation traps on `g16win`
+
+Verified on `g16win` 2026-09-12. As on `mac-air-m4`, these are properties of
+how the toolchain was installed on the device, not of the repo.
+
+1. **Two venvs exist, and only `.venv-dev` matches CI.**
+   `.venv-dev\Scripts\ruff` is **0.15.20** (= the `ci.yml` pin) and the venv
+   also carries pytest and mypy 2.1.0. `.venv\Scripts\ruff` is **0.16.3**,
+   which passes locally and fails CI (`ef424c6`), and `.venv` has no mypy.
+   Both interpreters are 3.13.14. Use `.venv-dev` for every gate:
+
+   ```powershell
+   .venv-dev\Scripts\ruff format --check .
+   .venv-dev\Scripts\ruff check .
+   .venv-dev\Scripts\python -m pytest -q
+   ```
+
+   Bare `ruff`, `pytest`, `uv` and `py` are **not on `PATH`** (`where` finds
+   none of them), so the `uvx ruff@<pin>` fallback from the mac section does
+   not exist here.
+2. **Default `python` is the Microsoft Store build** (3.13.14 at
+   `%LOCALAPPDATA%\Microsoft\WindowsApps\python.exe`). Its site-packages is
+   sandboxed and read-only, so `pip install --user` lands somewhere no
+   interpreter looks. Never install into it, and never into Fusion's bundled
+   interpreter (no pip, replaced on every update). Bootstrap the venv with
+
+   ```powershell
+   python -m venv .venv-dev
+   .\.venv-dev\Scripts\python -m pip install "ruff==0.15.20" "pytest>=8.0" mypy
+   ```
+
+3. **Four tests fail at a clean HEAD on this device, all Windows-specific.**
+   Read a full-suite run as "these four plus nothing new" until they are
+   fixed; none of them is caused by local changes.
+   - `tests/test_readme_pdf_build.py::test_repo_readme_pdf_is_current` and
+     `build_readme_pdf.py --check` both report STALE. `core.autocrlf` is
+     `input`, yet `git ls-files --eol README.md` shows `i/lf w/crlf`: the
+     worktree README is CRLF, and the stamp hashes worktree bytes. Treat the
+     PDF as authoritative when built on `mac-air-m4` or `ryzen-nobara`.
+   - `tests/test_changecyclecolor_fusion_install.py::test_posix_candidates_keep_the_versioned_bin_layout`
+     -- `os.path.join` emits backslashes for the POSIX candidate list.
+   - `tests/test_command_abort.py` (both tests) -- the AST guard reads source
+     without `encoding="utf-8"`, so cp1252 raises `UnicodeDecodeError` on
+     byte 0x90.
 
 ## Other repo commands
 
