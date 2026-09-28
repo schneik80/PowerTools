@@ -544,6 +544,18 @@ produced rather than reading again, and log every action the page sends so the
 next silence says which side went quiet. -- `assemblypalette` `htmlReady`,
 `dochistory`
 
+**To dock a palette beside the browser, set `dockingState` and stop;
+`snapTo()` undocks the browser.** `5c28d4d` docked the Assembly Palette left
+and then called `palette.snapTo(browser, PaletteSnapOptionsLeft)`. `snapTo`
+returned `True` and pulled the docked `Browser` out into one floating group
+with the palette, so the palette opened floating mid-screen. Measured live on
+`ADSKMVG91G2F5W` (pre-production, 2706.0.97) with throwaway palettes: setting
+`PaletteDockStateLeft` on its own puts a new palette on the outer edge of the
+left dock column, directly left of the browser, and `snapTo` undocked the
+browser in every order tried. A `True` return from a placement call says
+nothing about where the palette ended up; read `left`/`width`/`dockingState`
+back. -- `5c28d4d`, `assemblypalette`
+
 **Ship the defaults a new install should start with; `load()` merges stored
 values over defaults, so existing users keep their choices.** Six commands ship
 disabled via `DEFAULT_DISABLED_COMMANDS`; folder sets are editable and kept

@@ -49,6 +49,10 @@ paths:
   calling the show/create path again -- that rebuilds the page and loses the
   active tab, scroll, filter and per-session state. Signature-compare first so
   a tab switch does not repaint identically.
+- **Place a palette beside the browser by setting `dockingState` only.** A
+  newly docked-left palette lands on the outer edge, left of the browser.
+  Never `snapTo()` a docked native palette -- it undocks it into a floating
+  group (`5c28d4d`, lessons "HTML palettes").
 - **`assemblypalette._diag` only reaches the Text Commands window.** Nothing it
   writes reaches `cache/powertools-debug.log`, so a crash takes the reasoning
   with it. Use `ptutil.log` for anything that must outlive the session.

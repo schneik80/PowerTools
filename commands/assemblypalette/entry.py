@@ -49,10 +49,10 @@ CMD_Description = (
 )
 PALETTE_NAME = "Assembly Palette"
 PALETTE_ID = config.assembly_palette_id
+# Docking left is enough to land left of the browser: a newly docked palette
+# takes the outer edge of the left dock column. Do not snapTo() the browser --
+# that undocks it into a floating group with this palette.
 PALETTE_DOCKING = adsk.core.PaletteDockingStates.PaletteDockStateLeft
-# Once docked left, the palette snaps to the left of Fusion's native browser
-# palette. Its id is not published, so _find_browser_palette() probes for it.
-PALETTE_SNAP = adsk.core.PaletteSnapOptions.PaletteSnapOptionsLeft
 
 ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "")
 _HTML_DIR = os.path.join(
@@ -525,41 +525,8 @@ def _show_palette():
 
     if palette.dockingState == adsk.core.PaletteDockingStates.PaletteDockStateFloating:
         palette.dockingState = PALETTE_DOCKING
-        _snap_left_of_browser(palette)
 
     palette.isVisible = True
-
-
-def _find_browser_palette():
-    """Return Fusion's native browser palette, or None.
-
-    Its id is unpublished, so match a native palette whose id mentions
-    "browser" rather than hardcoding one (lessons: never hardcode unpublished
-    ids); the display name is localised and is not used.
-    """
-    try:
-        palettes = ui.palettes
-        for i in range(palettes.count):
-            p = palettes.item(i)
-            if p is None or not p.isNative:
-                continue
-            if "browser" in (p.id or "").casefold():
-                return p
-    except Exception as e:
-        _diag(f"browser palette probe failed: {e}")
-    return None
-
-
-def _snap_left_of_browser(palette) -> None:
-    browser = _find_browser_palette()
-    if browser is None or not browser.isVisible:
-        _diag("browser palette not found or hidden; left-docked only")
-        return
-    try:
-        ok = palette.snapTo(browser, PALETTE_SNAP)
-        _diag(f"snapped left of browser palette {browser.id!r}: {ok}")
-    except Exception as e:
-        _diag(f"snapTo browser palette {browser.id!r} failed: {e}")
 
 
 def _gather_palette_state() -> dict:

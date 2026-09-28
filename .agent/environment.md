@@ -263,13 +263,21 @@ below is what `mac-air-m4` has; do not assume the other two match.
 | Server | Transport | Use it for |
 |---|---|---|
 | `autodesk-product-help` | `mcp-remote` → developer.api.autodesk.com | Searching official Autodesk/Fusion help. The sanctioned way to satisfy "verify API names against the reference, not memory" |
-| `fusion` | HTTP `localhost:27182/mcp` | Live introspection of a **running** Fusion |
+| `fusion` | HTTP `127.0.0.1:27182/mcp` | Live introspection of a **running** Fusion |
 | `drawio`, `pencil`, `atlassian` | — | Diagrams, design files, Jira/Confluence (needs OAuth) |
 
 **`fusion` returning `ConnectionRefused` means Fusion is not running** (or the
 "Fusion MCP Addin" in the AddIns folder above is not loaded). It is not a
 missing capability — ask the user to start Fusion, then retry. It is also
 permanently unavailable on `ryzen-nobara`, where Fusion cannot run at all.
+
+**Configure `fusion` as `127.0.0.1`, not `localhost`.** Verified on
+`ADSKMVG91G2F5W` (pre-production 2706.0.97): the server answers a request
+addressed to `localhost` with HTTP 404 `Invalid Host header`, which Claude Code
+reads as an OAuth server and reports as "Dynamic Client Registration rejected
+(HTTP 404)" / "needs authentication". The server has no auth; the same request
+to `http://127.0.0.1:27182/mcp` initialises normally. If the URL in
+`~/.claude.json` says `localhost`, change it and restart the session.
 
 That server is the only way to verify anything against a real Fusion: the test
 suite stubs `adsk` with `MagicMock`, so **it proves pure logic only**. Say
