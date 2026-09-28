@@ -2,7 +2,7 @@
 
 [Back to PowerTools Assembly](../README.md)
 
-The Assembly Palette command opens a docked quick-start palette that helps you populate a brand-new assembly. It appears automatically when you create a new, empty design with **Assembly** design intent, and can also be opened on demand from a toolbar button. From a single panel you can create external Part, Hybrid, or Assembly components in place, hand off to the Assembly Builder or Global Parameters commands, and insert components from a gallery of your currently-open or recently-used documents.
+The Assembly Palette command opens a docked quick-start palette that helps you populate a brand-new assembly. It appears automatically when you create a new, empty design with **Assembly** design intent, and can also be shown or hidden on demand from a toolbar button. From a single panel you can create external Part, Hybrid, or Assembly components in place, hand off to the Assembly Builder or Global Parameters commands, and insert components from a gallery of your currently-open or recently-used documents.
 
 ## What you can do
 
@@ -50,7 +50,7 @@ The Assembly Palette command opens a docked quick-start palette that helps you p
 | Automatic | Opens docked to the left, beside the browser, when a **new, empty, Assembly-intent** design becomes active. |
 | Manual | **Assembly** tab > **Insert** panel > **Assembly Palette** (below **Insert STEP File**). In a hybrid-intent document: **Solid** tab > **Assemble** panel > **Assembly Palette**. |
 
-The palette docks to the left edge of the Fusion window, to the left of the browser. Closing it does not disable the automatic trigger — creating another new empty Assembly design opens it again.
+The palette docks to the left edge of the Fusion window, to the left of the browser. The **Assembly Palette** button toggles it: click it to show the palette, and click it again while the palette is showing to close it. Closing it does not disable the automatic trigger — creating another new empty Assembly design opens it again.
 
 > **Developers:** see the [architecture notes](./arch/Assembly%20Palette.md).
 

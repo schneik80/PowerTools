@@ -161,7 +161,7 @@ _IDLE_CMD_IDS = ("", "SelectCommand")
 # these buttons are the on-demand entry points.
 LAUNCH_CMD_ID = "PTAT_assemblyPalette"
 LAUNCH_CMD_NAME = "Assembly Palette"
-LAUNCH_CMD_DESC = "Open the Assembly Palette quick-start palette."
+LAUNCH_CMD_DESC = "Show or hide the Assembly Palette quick-start palette."
 LAUNCH_WORKSPACE_ID = "FusionSolidEnvironment"
 # Two placements. The Assembly tab's Insert panel (assembly-intent documents)
 # is shared with insertSTEP and created on demand, with the control positioned
@@ -333,11 +333,17 @@ def start():
 
 
 def _launch_command_created(args: adsk.core.CommandCreatedEventArgs):
-    """Toolbar button clicked — open the palette regardless of the active doc.
-    _show_palette() rebuilds a fresh palette each time, so this is safe to
-    invoke even when the palette was previously auto-popped and closed."""
+    """Toolbar button clicked — toggle the palette regardless of the active doc.
+    A visible palette is torn down exactly as if its close button had been
+    clicked; otherwise _show_palette() rebuilds a fresh one, so this is safe to
+    invoke even when the palette was previously auto-popped, hidden or closed."""
     try:
-        _show_palette()
+        palette = ui.palettes.itemById(PALETTE_ID)
+        if palette is not None and palette.isVisible:
+            _diag("launch button: palette visible — closing.")
+            _tear_down_palette()
+        else:
+            _show_palette()
     except Exception:
         ptutil.handle_error(CMD_NAME)
 
@@ -646,13 +652,20 @@ def _palette_closed(args: adsk.core.UserInterfaceGeneralEventArgs):
     object lingered in ui.palettes after close and the next show() silently
     no-op'd on isVisible — leaving the user with no palette.
 
+    The launch button calls _tear_down_palette() too, so toggling the palette
+    off is indistinguishable from closing it.
+
     We also pin *_palette_was_open_for* to the currently-active document so
     that any spurious documentActivated event Fusion fires immediately after
     close (e.g. when CEF releases focus) doesn't immediately re-pop the
     palette for the same doc. Creating a NEW doc will produce a different
     Document instance which trips the `is` check and pops normally."""
-    global _palette_was_open_for
     _diag("palette closed — tearing down.")
+    _tear_down_palette()
+
+
+def _tear_down_palette() -> None:
+    global _palette_was_open_for
     _inserted_in_session.clear()
     try:
         _palette_was_open_for = app.activeDocument
@@ -663,7 +676,7 @@ def _palette_closed(args: adsk.core.UserInterfaceGeneralEventArgs):
         try:
             palette.deleteMe()
         except Exception as e:
-            _diag(f"deleteMe() in close handler raised: {e}")
+            _diag(f"deleteMe() in teardown raised: {e}")
 
 
 def _palette_navigating(args: adsk.core.NavigationEventArgs):

@@ -50,7 +50,7 @@ C4Component
 
   Container_Boundary(python, "Python Backend") {
     Component(trigger, "documentActivated gate", "Trigger", "Pops palette once per new empty Assembly-intent doc; _palette_was_open_for dedup")
-    Component(launch, "Launch button", "Toolbar", "PTAT_assemblyPalette control in Assembly > Insert and Solid > Assemble; opens palette on demand")
+    Component(launch, "Launch button", "Toolbar", "PTAT_assemblyPalette control in Assembly > Insert and Solid > Assemble; toggles the palette: closes it via _tear_down_palette when visible, else _show_palette")
     Component(state, "Palette state", "_gather_palette_state", "Theme, doc name, open docs, recent docs, target project")
     Component(open, "Open enumerator", "_list_open_docs", "Top-level filter (documentReferences), dedup by DataFile id, excludes the active doc by DataFile id + unsaved/inserted")
     Component(recent, "Recent enumerator", "_list_recent_docs", "Cache filtered to not-open + not-inserted; newest-first; dedup")
