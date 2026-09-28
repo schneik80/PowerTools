@@ -8,7 +8,8 @@
         recentDocs: [],
         showChildren: false,
         hasTargetProject: true,
-        targetProject: ''
+        targetProject: '',
+        activeDocSaved: false
     };
 
     // Design intents the icon set covers. Anything else — including the ~25% of
@@ -313,6 +314,30 @@
         }
     }
 
+    // Assembly Builder is offered only for a document that has never been
+    // saved. Accepts a boolean or its JSON string form from sendInfoToHTML.
+    function applyActiveDocSaved(saved) {
+        if (typeof saved === 'string') {
+            try { saved = JSON.parse(saved); } catch (e) { saved = false; }
+        }
+        saved = !!saved;
+        var btn = document.getElementById('btnAssemblyBuilder');
+        if (btn) {
+            btn.disabled = saved;
+            btn.title = saved
+                ? 'Assembly Builder needs a new, unsaved document.'
+                : '';
+        }
+        var hint = document.getElementById('assemblyBuilderHint');
+        if (hint) {
+            hint.textContent = saved
+                ? 'Unavailable: this document has been saved. Assembly Builder '
+                    + 'needs a new, unsaved document.'
+                : 'Closes this dialog and opens Assembly Builder to design a '
+                    + 'multi-level hierarchy.';
+        }
+    }
+
     // Ask the backend to re-resolve the target project. Fusion has no
     // active-project-changed event, so this is how we learn the user picked a
     // project in the Data Panel — via an explicit re-check.
@@ -331,6 +356,8 @@
     function autoRecheckIfNeeded() {
         var banner = document.getElementById('noProjectBanner');
         if (banner && !banner.hidden) send('recheckProject', {});
+        // No save event reaches the palette, so re-ask on every return.
+        send('recheckDocSaved', {});
     }
 
     // --- Initial paint from ptInit ---
@@ -343,6 +370,7 @@
         hasProject: ptInit.hasTargetProject,
         name: ptInit.targetProject
     });
+    applyActiveDocSaved(ptInit.activeDocSaved);
 
     // "Show referenced children" toggles whether reference-loaded sub-assemblies
     // / parts of open assemblies appear in the Open tab. Off by default → only
@@ -409,8 +437,9 @@
     var recheckBtn = document.getElementById('btnRecheckProject');
     if (recheckBtn) recheckBtn.addEventListener('click', recheckProject);
 
-    // Fusion emits no active-project event, so approximate one: when the user
-    // returns to the palette after using the Data Panel, re-check.
+    // Fusion emits no active-project event, and the palette has no save
+    // event, so approximate both: when the user returns to the palette (after
+    // the Data Panel, or after saving), re-check.
     window.addEventListener('focus', autoRecheckIfNeeded);
     document.addEventListener('visibilitychange', function () {
         if (!document.hidden) autoRecheckIfNeeded();
@@ -461,6 +490,8 @@
                     setThumbs(thumbs);
                 } else if (action === 'setTargetProject') {
                     applyTargetProject(data);
+                } else if (action === 'setActiveDocSaved') {
+                    applyActiveDocSaved(data);
                 }
             } catch (e) {
                 console.log('[Assembly Palette] handler error:', e);

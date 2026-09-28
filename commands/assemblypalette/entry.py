@@ -77,6 +77,10 @@ _RECENT_LIMIT = recents.RECENT_LIMIT
 
 # Commands we hand off to from the palette.
 _ASSEMBLY_BUILDER_CMD_ID = "PTAT_AssemblyBuilder"
+_BUILDER_SAVED_MSG = (
+    "Assembly Builder is available from this palette only for a new, unsaved "
+    "document. Create a new design to use it."
+)
 _GLOBAL_PARAMETERS_CMD_ID = "PTAT_globalParameters"
 # Fusion's own Fasteners command — the ASSEMBLY > INSERT panel button, defined by
 # Fusion as FusionFastenersCommand in its ribbon and command-definition
@@ -546,6 +550,8 @@ def _gather_palette_state() -> dict:
         "recentDocs": _list_recent_docs(),
         # Drives the "no target project" banner + New Component enablement.
         "hasTargetProject": folder is not None,
+        # Disables the Assembly Builder handoff for a saved document.
+        "activeDocSaved": _active_doc_is_saved(),
         "targetProject": cache.target_project_label(folder),
     }
 
@@ -625,6 +631,24 @@ def _send_palette_init(palette: adsk.core.Palette):
             {"hasProject": state["hasTargetProject"], "name": state["targetProject"]}
         ),
     )
+    palette.sendInfoToHTML("setActiveDocSaved", json.dumps(state["activeDocSaved"]))
+
+
+def _active_doc_is_saved() -> bool:
+    """True when the active document has been saved.
+
+    The palette offers Assembly Builder only for a document that has never
+    been saved. Only `isSaved` is read -- no model walk -- so this is safe from
+    the page's focus handler. No documentSaved handler backs it (see the parked
+    auto-refresh note in docs/arch); the page re-asks on open, focus and ↻."""
+    try:
+        return bool(getattr(app.activeDocument, "isSaved", False))
+    except Exception:
+        return False
+
+
+def _send_active_doc_saved(palette: adsk.core.Palette) -> None:
+    palette.sendInfoToHTML("setActiveDocSaved", json.dumps(_active_doc_is_saved()))
 
 
 def _send_target_project(palette: adsk.core.Palette) -> None:
@@ -1147,7 +1171,21 @@ def _palette_incoming(html_args: adsk.core.HTMLEventArgs):
         html_args.returnData = "OK"
         return
 
+    if action == "recheckDocSaved":
+        if palette:
+            _send_active_doc_saved(palette)
+        html_args.returnData = "OK"
+        return
+
     if action == "launchAssemblyBuilder":
+        # The page disables the button for a saved document; this catches a
+        # save made since the page last asked.
+        if _active_doc_is_saved():
+            if palette:
+                _send_active_doc_saved(palette)
+            ui.messageBox(_BUILDER_SAVED_MSG, CMD_NAME)
+            html_args.returnData = "OK"
+            return
         _hide_palette(palette)
         _execute_command(_ASSEMBLY_BUILDER_CMD_ID)
         html_args.returnData = "OK"

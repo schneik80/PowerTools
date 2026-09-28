@@ -7,7 +7,7 @@ The Assembly Palette command opens a docked quick-start palette that helps you p
 ## What you can do
 
 - **Create a component in place** — type a name, pick **Part**, **Hybrid**, or **Assembly** intent, and generate an external component in the active design with `addNewExternalComponent`. The chosen design intent is applied to the new component automatically.
-- **Hand off to related commands** — open **Assembly Builder** to design a multi-level hierarchy, or **Global Parameters** to define a shared parameter set, without hunting for them on the toolbar. The palette hides while the handed-off command runs.
+- **Hand off to related commands** — open **Assembly Builder** to design a multi-level hierarchy, or **Global Parameters** to define a shared parameter set, without hunting for them on the toolbar. The palette hides while the handed-off command runs. **Assembly Builder…** is available only while the active document is new and unsaved; once the document has been saved, the button is greyed out.
 - **Insert an open document** — the **Open** tab shows a thumbnail gallery of your currently-open Part/Hybrid/Assembly documents. Click a card to insert that document into the active design as a referenced component (`addByInsert`).
 - **Show only what you opened** — by default the Open tab lists only **top-level documents** (the ones you opened directly). Tick **Show referenced children** to also list the sub-assemblies and parts that Fusion loaded as references of an open assembly.
 - **Never the document you are in** — the document you are inserting *into* is never listed on the Open tab, since a document cannot contain itself. The galleries repaint when you press **↻**, so if you switch Fusion tabs with the palette open, a card may briefly be the document you are now in; clicking it shows a message rather than inserting anything, and **↻** puts the list right.
@@ -35,7 +35,7 @@ The Assembly Palette command opens a docked quick-start palette that helps you p
 4. **To insert a recent document:** switch to the **Recent** tab and click a card. Documents are listed newest-first, with the count on the tab. Only the newest 40 are drawn at once — type part of a name in the filter box to find anything further down the list.
    - A card shows a Part, Hybrid, or Assembly icon beside its name. Some documents have no design intent recorded on Fusion's side; those show no icon rather than a guessed one.
 5. **To insert a fastener:** select the **Fasteners ↗** link at the bottom of the insert card. The palette hides and Fusion's Fasteners dialog opens. The trailing **↗** marks a link that opens another dialog.
-6. **To design a hierarchy or manage parameters:** select **Assembly Builder…** or **Global Parameters…**. The palette hides and the chosen command opens.
+6. **To design a hierarchy or manage parameters:** select **Assembly Builder…** or **Global Parameters…**. The palette hides and the chosen command opens. **Assembly Builder…** is unavailable once the document has been saved.
 
 > **Note:** A document you insert during a palette session is removed from both galleries on the next refresh, so a second click cannot silently create a duplicate occurrence. Use the **↻** refresh button to re-scan open and recent documents at any time.
 
