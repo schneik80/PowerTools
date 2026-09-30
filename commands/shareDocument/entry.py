@@ -139,7 +139,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
         # Check if the document is shared
         if not shareState.isShared:
             # creating a link can take a few seconds so show a busy bar
-            (progressBar.showBusy("Generating Share Link"),)
+            progressBar.showBusy("Generating Share Link")
 
             shareState.isShared = True  # Share the document
 
@@ -147,14 +147,17 @@ def command_execute(args: adsk.core.CommandEventArgs):
         shareLink = shareState.linkURL
 
         if shareLink == "":
+            # A bare return, never exit(): SystemExit is not an Exception, so it
+            # would escape the handler into Fusion's Python host.
             ptutil.log("Failed to get a link to the document")
+            progressBar.hide()
             ui.messageBox(
                 "Failed to share the document.",
                 "Share Document",
                 1,
                 2,
             )
-            exit(0)
+            return
 
         # Copy the shared link to the clipboard
         ptutil.clipText(shareLink)
@@ -213,6 +216,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
     except Exception:
         # Write the error message to the TEXT COMMANDS window.
+        ui.progressBar.hide()
         ptutil.handle_error(CMD_NAME)
 
 

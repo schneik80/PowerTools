@@ -105,6 +105,15 @@ KNOWN_TIME_SLEEP_SITES = {
     "commands/teamaddins/installer.py": 1,  # rmtree retry backoff
 }
 
+# ``exit()`` / ``quit()`` / ``sys.exit()`` raise SystemExit, which is not an
+# Exception: it escapes the handler's ``except Exception:`` and ptutil's
+# wrapper alike and lands in Fusion's Python host (issue #9). Handlers bail
+# out with ``return``. The one known site is a child process, where exiting
+# is the point: {relative path: number of exit calls}.
+KNOWN_PROCESS_EXIT_SITES = {
+    "commands/changecyclecolor/_color_picker_subprocess.py": 1,
+}
+
 # Prefixes in use: PT_, PTAT_, PTND_, PTE_, PTPM_, PTAN_, PTSHD_. The rule
 # that matters is no ``-`` and no whitespace; the shape pins what exists.
 CMD_ID_SHAPE = re.compile(r"^PT[A-Z]*_[A-Za-z0-9_]+$")
@@ -175,6 +184,20 @@ def _is_sleep_call(node: ast.AST) -> bool:
     if isinstance(func, ast.Attribute):
         return func.attr == "sleep" and isinstance(func.value, ast.Name)
     return isinstance(func, ast.Name) and func.id == "sleep"
+
+
+def _is_process_exit_call(node: ast.AST) -> bool:
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id in {"exit", "quit"}
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr in {"exit", "_exit"}
+        and isinstance(func.value, ast.Name)
+        and func.value.id in {"sys", "os"}
+    )
 
 
 def _import_entry(module: str):
@@ -391,3 +414,14 @@ def test_time_sleep_sites_are_exactly_the_known_ones():
         if count:
             found[str(path.relative_to(REPO_ROOT)).replace("\\", "/")] = count
     assert found == KNOWN_TIME_SLEEP_SITES
+
+
+def test_process_exit_sites_are_exactly_the_known_ones():
+    """``exit()`` in a handler raises SystemExit past every ``except
+    Exception:`` into Fusion's Python host (issue #9). Handlers ``return``."""
+    found: dict[str, int] = {}
+    for path in _command_sources():
+        count = sum(1 for node in ast.walk(_parse(path)) if _is_process_exit_call(node))
+        if count:
+            found[str(path.relative_to(REPO_ROOT)).replace("\\", "/")] = count
+    assert found == KNOWN_PROCESS_EXIT_SITES
