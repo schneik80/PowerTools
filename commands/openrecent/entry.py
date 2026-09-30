@@ -401,7 +401,14 @@ def _find_data_file_by_id(df_id: str):
 
 
 def _on_document_event(args: adsk.core.DocumentEventArgs) -> None:
-    """Record the activated/opened document and refresh the flyout."""
+    """Record the activated/opened document and refresh the flyout.
+
+    An invisible open by another command fires the same events (issue #11);
+    that sibling is never the user's document and must not land in recents.
+    """
+    if not ptutil.is_user_document(args.document):
+        ptutil.log(f"{CMD_NAME}: document event is not the user's document, skipping.")
+        return
     try:
         recents.remember_recent_if_eligible(args.document)
         _rebuild_menu()

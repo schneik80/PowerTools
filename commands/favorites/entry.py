@@ -234,7 +234,14 @@ def _hub_cache_file(hub_id: str) -> str:
 
 
 def _favorites_document_event(args: adsk.core.DocumentEventArgs):
-    """Fire on documentActivated / documentOpened; switch hub cache if needed."""
+    """Fire on documentActivated / documentOpened; switch hub cache if needed.
+
+    An invisible open by another command fires the same events (issue #11);
+    the hub follows the user's document only.
+    """
+    if not ptutil.is_user_document(args.document):
+        ptutil.log("Favorites: document event is not the user's document, skipping.")
+        return
     try:
         new_hub_id = _get_active_hub_id()
         if new_hub_id and new_hub_id != _active_hub_id:

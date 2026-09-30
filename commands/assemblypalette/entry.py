@@ -458,7 +458,12 @@ def _maybe_show_palette_for(doc, source: str) -> None:
 
 def _on_document_activated(args: adsk.core.DocumentEventArgs):
     """Primary trigger. Fires on every tab switch, but the dedup gate in
-    _maybe_show_palette_for keeps the popup from re-firing for the same doc."""
+    _maybe_show_palette_for keeps the popup from re-firing for the same doc.
+    Invisible opens by other commands fire this too (issue #11); the guard runs
+    before the dedup so the sibling never becomes _palette_was_open_for."""
+    if not ptutil.is_user_document(args.document):
+        _diag("documentActivated: not the user's document — skip.")
+        return
     try:
         _maybe_show_palette_for(args.document, "documentActivated")
     except Exception:
@@ -468,6 +473,9 @@ def _on_document_activated(args: adsk.core.DocumentEventArgs):
 def _on_document_opened(args: adsk.core.DocumentEventArgs):
     """Backup trigger. Some Fusion builds emit this for File > New; others
     don't. The same dedup gate handles overlap with documentActivated."""
+    if not ptutil.is_user_document(args.document):
+        _diag("documentOpened: not the user's document — skip.")
+        return
     try:
         _maybe_show_palette_for(args.document, "documentOpened")
     except Exception:

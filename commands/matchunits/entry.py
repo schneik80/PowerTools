@@ -305,7 +305,15 @@ def document_opened(args: adsk.core.DocumentEventArgs):
     Nothing is read or prompted here: a modal dialog raised from this event
     blocks Fusion's open pipeline, and touching the design model from an
     application event races the background saver.
+
+    The one thing read is whether the event is about the user's document at
+    all: an invisible open by another command fires this event too (issue
+    #11), and must not arm a check that would then run against whatever is
+    active when the timer lands.
     """
+    if not ptutil.is_user_document(args.document):
+        ptutil.log(f"{CMD_NAME} [documentOpened]: not the user's document, skipping.")
+        return
     if not settings_store.command_setting("matchunits", "prompt_on_open", False):
         return
     _schedule_check()
@@ -313,6 +321,11 @@ def document_opened(args: adsk.core.DocumentEventArgs):
 
 def document_activated(args: adsk.core.DocumentEventArgs):
     """Bring the button's icon and tooltip in line with the new active document."""
+    if not ptutil.is_user_document(args.document):
+        ptutil.log(
+            f"{CMD_NAME} [documentActivated]: not the user's document, skipping."
+        )
+        return
     _refresh_indicator()
 
 

@@ -194,6 +194,37 @@ def isSaved() -> bool:
     return True
 
 
+def is_user_document(doc) -> bool:
+    """True when *doc* is the document the user is actually looking at.
+
+    The gate every ``documentOpened`` / ``documentActivated`` /
+    ``documentCreated`` handler runs first (issue #11). An invisible open --
+    ``app.documents.open(dataFile, False)``, as used by Assign Drawing Number,
+    Version Diff and Externalize -- fires those application events like any
+    other open, and the delivery moment varies: during ``open()`` (macOS),
+    after the caller's ``close()`` (Windows, inside execute) or *inside* the
+    ``close()`` call (Windows, deferred). Without this gate Show In Location
+    navigated the Data Panel to the sibling and Match Units ran its check on
+    it. The API's own notion of "active" is used rather than wrapper identity,
+    because ``app.activeDocument is args.document`` never matches across
+    wrappers.
+
+    Requires ``doc`` to be non-null, ``isValid``, ``isVisible`` and
+    ``isActive`` (all three verified against the Document reference). Every
+    read is defensive: a handle mid-close can fault natively rather than raise
+    (rule 3), so a missing or raising property counts as "not the user's".
+    """
+    if doc is None:
+        return False
+    for prop in ("isValid", "isVisible", "isActive"):
+        try:
+            if not getattr(doc, prop, False):
+                return False
+        except Exception:
+            return False
+    return True
+
+
 def handle_error(name: str, show_message_box: bool = False):
     """Utility function to simplify error handling.
 

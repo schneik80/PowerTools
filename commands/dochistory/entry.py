@@ -369,7 +369,14 @@ def application_document_changed(args: adsk.core.DocumentEventArgs):
     serialising it and abort the saver thread, which is why the Assembly Palette
     gallery refresh is parked. Even ``args.document.dataFile`` is off limits
     here, so the whole check is deferred to a later main-loop turn.
+
+    The only reads are the ``isValid`` / ``isVisible`` / ``isActive`` flags
+    behind ``ptutil.is_user_document``: an invisible open by another command
+    fires these events too (issue #11) and must not schedule a check.
     """
+    if not ptutil.is_user_document(args.document):
+        ptutil.log(f"{CMD_NAME}: document event is not the user's document, skipping.")
+        return
     _schedule_switch_check()
 
 

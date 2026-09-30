@@ -618,6 +618,7 @@ and `ui` the rest of the package uses.
 | `pump_events_for(seconds, tick_seconds=0.03)` | The sanctioned wait: `adsk.doEvents()` every tick until the deadline; `seconds <= 0` pumps once |
 | `clipText(text)` | Clipboard via `clip.exe` / `pbcopy` argument lists (no shell) |
 | `isSaved() -> bool` | If the active document is unsaved, shows "Please Save" and returns False |
+| `is_user_document(doc) -> bool` | First line of every `documentOpened` / `documentActivated` / `documentCreated` handler: True only if `doc` is non-null, `isValid`, `isVisible` and `isActive`; a missing or raising property counts as False. Filters out the invisible sibling that `app.documents.open(dataFile, False)` announces through the same events (issue #11) |
 | `handle_error(name, show_message_box=False)` | Logs the traceback through `log()` (so it is DEBUG-gated too); optional message box |
 | `perf_timer(label, context="")` | Context manager; emits a `[PERF]` line only when `config.PERF_TRACE` |
 

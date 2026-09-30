@@ -71,10 +71,6 @@ def _show_in_location(event_name: str, doc: adsk.core.Document):
     """Get the URN from the event document and run Dashboard.ShowInLocation via executeTextCommand."""
     urn = None
     try:
-        if not doc:
-            ptutil.log(f"{CMD_NAME} [{event_name}]: no active document, skipping.")
-            return
-
         data_file = doc.dataFile
         if not data_file:
             ptutil.log(
@@ -96,13 +92,22 @@ def _show_in_location(event_name: str, doc: adsk.core.Document):
         urn = None
 
 
-# Event handler — fires at the end of every document open.
+# Event handler — fires at the end of every document open. Invisible opens by
+# other commands fire it too (issue #11); only the user's document navigates.
 def application_documentOpened(args: adsk.core.DocumentEventArgs):
+    if not ptutil.is_user_document(args.document):
+        ptutil.log(f"{CMD_NAME} [documentOpened]: not the user's document, skipping.")
+        return
     if settings_store.command_setting("docopen", "run_on_open", True):
         _show_in_location("documentOpened", args.document)
 
 
 # Event handler — fires when the user switches to a different document tab.
 def application_documentActivated(args: adsk.core.DocumentEventArgs):
+    if not ptutil.is_user_document(args.document):
+        ptutil.log(
+            f"{CMD_NAME} [documentActivated]: not the user's document, skipping."
+        )
+        return
     if settings_store.command_setting("docopen", "run_on_activate", True):
         _show_in_location("documentActivated", args.document)

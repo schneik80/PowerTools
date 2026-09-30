@@ -137,6 +137,11 @@ def stop():
 
 
 def _on_document_event(args: adsk.core.DocumentEventArgs):
+    # Invisible opens by other commands fire these events too (issue #11);
+    # the button state follows the user's document only.
+    if not ptutil.is_user_document(args.document):
+        ptutil.log(f"{CMD_NAME}: document event is not the user's document, skipping.")
+        return
     _refresh_enabled()
 
 
