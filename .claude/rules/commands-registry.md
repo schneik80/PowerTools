@@ -29,7 +29,7 @@ settings key.**
    ASCII (it doubles as a Fusion tooltip) and take it from the user doc.
 2. Registry entry `_cmd("<module>", "<Doc Name>.md", beta=?, settings=?)` in
    the right group. Doc filename is **not** derived from `CMD_NAME`
-   (`sketchfix` -> `SketchFix.md`).
+   (`sketchunderconstrained` -> `SketchUnder.md`).
 3. Placement on a **built-in** panel whose set of tabs varies (Inspect) goes
    through `commands/_inspect_panels.py` -- `add_to_inspect_panels()` /
    `remove_from_inspect_panels()`. Do not re-copy the tab walk; `measurepath`

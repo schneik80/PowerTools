@@ -1,6 +1,6 @@
 # PowerTools for Autodesk Fusion
 
-PowerTools is a single Autodesk Fusion add-in that puts the missing everyday commands back into Fusion, for people who run distributed assemblies, manage team data in Fusion Team, and want the batch, numbering, export and sharing tools that desktop CAD and PDM systems take for granted. One install adds 54 commands to the places you already work (the Design toolbar, the Quick Access Toolbar, the File and Share menus, the Drawing and Animation workspaces), each switchable from one Preferences page.
+PowerTools is a single Autodesk Fusion add-in that puts the missing everyday commands back into Fusion, for people who run distributed assemblies, manage team data in Fusion Team, and want the batch, numbering, export and sharing tools that desktop CAD and PDM systems take for granted. One install adds 52 commands to the places you already work (the Design toolbar, the Quick Access Toolbar, the File and Share menus, the Drawing and Animation workspaces), each switchable from one Preferences page.
 
 - **Assemblies**: plan a hierarchy on a canvas and generate the components, externalize local components, infer constraints on an imported STEP, update a distributed design bottom-up.
 - **Team data**: hub-unique part and drawing numbers, shared global parameters, where-used and version history views, one-click refresh and close-all.
@@ -35,7 +35,7 @@ PowerTools is a single Autodesk Fusion add-in that puts the missing everyday com
 
 **File › PowerTools Preferences** on the Quick Access Toolbar opens a palette with one section per command group: an enable checkbox, summary and guide link per command, and settings beneath the commands that have them. Enabling or disabling a command applies on the next Fusion restart; settings apply immediately. **Open settings file** and **Import settings…** back up or restore every choice.
 
-- **Off by default**: Component Warning, Show In Location, Get and Update, Reference Manager, Radial Hole Circle, Version Diff.
+- **Off by default**: Component Warning, Show In Location, Get and Update, Radial Hole Circle, Version Diff.
 - **Beta**, hidden until **Show beta commands** is ticked under **General**: Infer Constraints, Radial Hole Circle, Flatten Surface.
 - The **Related Data** section sets up the templates folder; the **Team Add-ins** section shows the shared add-ins folder and its settings.
 
@@ -62,7 +62,6 @@ Most commands live on the **Utilities** tab of the Design workspace, in the **Po
 | [Infer Constraints](./docs/Infer%20Constraints.md) | Design › Utilities › Power Tools | Propose concentric and coincident constraints for an already-positioned assembly and apply the ones you pick. Beta. |
 | [Component Warning](./docs/Component%20Warning.md) | PowerTools Preferences (background) | Warn before a feature is created in the root component or against another component. Off by default. |
 | [Change Cycle Color](./docs/Change%20Cycle%20Color.md) | Right-click menu | Choose the color Component Color Cycling uses for the selected components, instead of the next random one. |
-| [Reference Manager](./docs/Reference%20Manager.md) | Quick Access Toolbar | Open Fusion's Reference Manager from the toolbar. Off by default. |
 | [Document References](./docs/Document%20References.md) | Design › Utilities › Power Tools | Where-used for the active design: root assemblies, parents, children, drawings, fasteners and [related data](./docs/Related%20Data.md). |
 | [Refresh Active Document](./docs/Document%20Refresh.md) | File | Check the hub for a newer version of the open document and reload it. |
 
@@ -97,7 +96,6 @@ Most commands live on the **Utilities** tab of the Design workspace, in the **Po
 
 | Command | Location | Description |
 | --- | --- | --- |
-| [Sketch Repair](./docs/SketchFix.md) | Sketch › Modify | Remove tiny segments and close small gaps in the active sketch. |
 | [Round Sketch Dimensions](./docs/Round%20Sketch%20Dimensions.md) | Sketch › Modify | Round the sketch's length and angle dimensions to a chosen increment, with live preview. |
 | [Sketch Under-constrained](./docs/SketchUnder.md) | Sketch › Modify | Highlight the sketch objects that are not fully constrained. |
 | [Radial Hole Circle](./docs/RadialHoleCircle.md) | Sketch › Create | A construction circle on a picked centre with a diameter dimension and a point at twelve o'clock. Beta, off by default. |

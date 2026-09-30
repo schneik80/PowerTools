@@ -47,7 +47,6 @@ DEFAULT_DISABLED_COMMANDS = frozenset(
         "componentwarn",
         "docopen",
         "getandupdate",
-        "refmanager",
         "sketchcirclecenterpoint",
         "versiondiff",
     }

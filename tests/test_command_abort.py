@@ -220,7 +220,7 @@ def _guarded_handlers():
 
 # Every registered command has a commandCreated handler, and favorites has
 # three; a walk that finds fewer than this has broken, not found a clean tree.
-MIN_GUARDED_HANDLERS = 55
+MIN_GUARDED_HANDLERS = 53
 
 
 def test_no_command_created_calls_do_execute() -> None:
@@ -517,8 +517,8 @@ def test_the_early_return_guard_sees_the_tree() -> None:
                 with_execute += 1
             if _first_input_build_line(fu) != float("inf"):
                 with_inputs += 1
-    # 40 and 17 at time of writing; most input-less commands never build one.
-    assert with_execute >= 30, with_execute
+    # 29 and 17 at time of writing; most input-less commands never build one.
+    assert with_execute >= 29, with_execute
     assert with_inputs >= 15, with_inputs
     # relateddata registers execute only after its inputs: the walk must place
     # the registration after the first input build, so its precondition

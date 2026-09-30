@@ -149,10 +149,10 @@ KNOWN_CLOSE_IN_EXECUTE_SITES = {
 }
 
 # Every registered dialog command registers ``.execute``; the input-less,
-# palette and event-only entry files do not (rule 1). 30 files register one as
+# palette and event-only entry files do not (rule 1). 29 files register one as
 # of 2026-09-30 (38 before issue #16 moved eight QAT launchers into
-# commandCreated); a walk that sees fewer than this has broken, not found a
-# clean tree.
+# commandCreated, one fewer after #22 removed a Sketch-panel command); a walk
+# that sees fewer than this has broken, not found a clean tree.
 MIN_EXECUTE_HANDLER_FILES = 25
 
 # Rule 1 (f18b911, 11cfc51, 8a676af): ``execute`` never fires with no document
@@ -160,8 +160,8 @@ MIN_EXECUTE_HANDLER_FILES = 25
 # ``.execute`` but builds no CommandInput therefore does nothing in exactly the
 # no-document case. Issue #16 moved the ones reachable from the QAT / QATRight
 # (favorites' navigate and Add items, the six share-flyout commands,
-# refmanager, getandupdate) into commandCreated. The handlers below still do
-# it. Eight sit on Design-workspace toolbar panels, which Fusion only shows
+# getandupdate, and a since-removed QAT launcher) into commandCreated. The
+# handlers below still do it. Seven sit on Design-workspace toolbar panels, which Fusion only shows
 # with a document open, so the case cannot arise there. Three sit in the QAT
 # File dropdown, live on the start screen, and have the same bug as issue #16:
 # recorded here, not fixed here. {module: (handler, ...)}. Shrinks as sites
@@ -176,7 +176,6 @@ KNOWN_EXECUTE_ONLY_INPUTLESS = {
     # Design workspace > Manage tab > Power Tools panel (config.manage_panel_id).
     "syncitempartnumber": ("command_created",),
     # Design workspace > Sketch tab > Modify panel (SketchModifyPanel).
-    "sketchfix": ("command_created",),
     "sketchunderconstrained": ("command_created",),
     # Design workspace > Solid tab > Inspect panel (InspectPanel).
     "timelinecompute": ("command_created",),
@@ -577,7 +576,9 @@ def test_the_literal_walk_can_see_cross_module_anchors():
     """Self-check: the walk must find a known foreign anchor, or an empty
     result would pass the test above vacuously."""
     literals = _pt_literals_by_file()
-    assert "commands/refmanager/entry.py" in literals.get("PTAT_getandupdate", set())
+    assert "commands/linkGlobalParameters/entry.py" in literals.get(
+        "PTAT_globalParameters", set()
+    )
     assert "commands/scriptsmanager/entry.py" in literals.get("PT_preferences", set())
 
 
@@ -798,10 +799,9 @@ def test_pt_anchors_name_a_command_that_started_earlier():
 
 
 def test_the_anchor_walk_can_actually_see_anchors():
-    """Self-check: refmanager anchors on getandupdate and linkGlobalParameters
-    on globalParameters; an empty walk would pass the test above vacuously.
+    """Self-check: linkGlobalParameters anchors on globalParameters; an empty
+    walk would pass the test above vacuously.
     (scriptsmanager anchors on preferences through a Name, ``PREFERENCES_CMD_ID``,
     which the literal walk deliberately does not see.)"""
     sites = {(module, anchor) for module, anchor, _ in _pt_anchor_sites()}
-    assert ("refmanager", "PTAT_getandupdate") in sites
     assert ("linkGlobalParameters", "PTAT_globalParameters") in sites

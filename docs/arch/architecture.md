@@ -213,16 +213,16 @@ does its work in `commandCreated` and registers no `execute` handler:
 `exportsysml`, `refresh`, the items of the `openrecent` flyout, the Favorites
 navigate and Add items, the six Share Menu commands (`shareDocument`,
 `shareSettings`, `OpenDesktop`, `OpenInTeam`, `projectInvite`,
-`projectMembers`), `refmanager` and `getandupdate` (issue #16). Their document
+`projectMembers`) and `getandupdate` (issue #16). Their document
 guards now run with no document open, so `ptutil.isSaved()` treats a `None`
-`activeDocument` as unsaved. `refmanager`, `getandupdate` and `shareSettings`
+`activeDocument` as unsaved. `getandupdate` and `shareSettings`
 launch a native Fusion command (`CommandDefinition.execute()`) from
 `commandCreated`; that is not `doExecute` (rule 20) but has not yet been
 exercised in Fusion on either channel.
 `tests/test_exportsysml_entry.py::test_no_execute_handler_is_registered` pins
 the shape for one of them. `KNOWN_EXECUTE_ONLY_INPUTLESS` in
 `tests/test_command_contract.py` is the exact list of `commandCreated`
-handlers that still register `execute` without building an input: eight sit
+handlers that still register `execute` without building an input: seven sit
 on Design-workspace toolbar panels, which Fusion only shows with a document
 open, and three (`autosave`, `exportbomcsv`, `exportmermaid`) are in the QAT
 File dropdown and still have the bug -- recorded there, not yet fixed.
@@ -482,7 +482,7 @@ default without a migration.
 | `save(data)` | `write_json_atomic` then clear the memo |
 | `beta_mode()`, `is_group_enabled(key)`, `is_command_enabled(key)`, `command_setting(module, sub, default)` | Accessors; `is_command_enabled` resolves a `COMMAND_SETS` member through its lead |
 | `validate(data)`, `import_from_file(path)` | Import: rejects unknown top-level keys, then replaces the active settings |
-| `DEFAULT_DISABLED_COMMANDS` | Ships switched off: `componentwarn`, `docopen`, `getandupdate`, `refmanager`, `sketchcirclecenterpoint`, `versiondiff` |
+| `DEFAULT_DISABLED_COMMANDS` | Ships switched off: `componentwarn`, `docopen`, `getandupdate`, `sketchcirclecenterpoint`, `versiondiff` |
 | `COMMAND_SETS`, `SET_LEAD` | `globalParameters` leads `linkGlobalParameters` and `refreshGlobalParametersCache`: one Preferences checkbox; a member's own flag is inert |
 | `COMMAND_SETTING_DEFAULTS` | Per-command settings sections (`componentwarn`, `changecyclecolor`, `docopen`, `matchunits`, `defaultfolders`, `teamaddins`) |
 | `DEFAULT_FOLDER_SETS` | Seed for the Default Folders lists |

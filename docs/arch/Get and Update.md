@@ -6,7 +6,7 @@
 |---|---|
 | **Command ID** | `PTAT_getandupdate` |
 | **Registry** | group `assembly` (`Assembly`); **ships disabled** (`settings_store.DEFAULT_DISABLED_COMMANDS`) |
-| **UI location** | Quick Access Toolbar (`ui.toolbars.itemById("QAT")`), `addCommand(cmd_def, "save", True)` — placed after Fusion's Save control. Reference Manager (`commands/refmanager/entry.py`) anchors its own QAT button on `PTAT_getandupdate` |
+| **UI location** | Quick Access Toolbar (`ui.toolbars.itemById("QAT")`), `addCommand(cmd_def, "save", True)` — placed after Fusion's Save control |
 | **Files** | `commands/getandupdate/entry.py`; `resources/` PNGs (16 light/dark/disabled, 32 light/disabled, 64) plus two `force rebuild *.pxd` source bundles, which `tools/release/build_release.py` excludes from the zip |
 | **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`](architecture.md#general_utils) |
 | **Tests** | none module-specific |
@@ -47,9 +47,7 @@ None — two consecutive `execute()` calls with no branching.
 ## Tests
 
 - No module-specific test. `tests/test_command_contract.py` checks the
-  registry entry, `CMD_ID` literal and description casing, and its literal walk
-  self-check asserts that `commands/refmanager/entry.py` references
-  `PTAT_getandupdate` (the anchor dependency); `tests/test_command_abort.py`
+  registry entry, `CMD_ID` literal and description casing; `tests/test_command_abort.py`
   includes `command_created` in its AST guard; `tests/test_release_build.py`
   asserts the `.pxd` bundle content is excluded from the release zip.
 - `entry.py` is Fusion-bound and is not exercised by the suite; nothing here is

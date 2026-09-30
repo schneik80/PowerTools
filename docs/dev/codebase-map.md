@@ -69,7 +69,6 @@ are not repeated per row.
 | assembly | `globalParameters` | `Global Parameters.md` | — | — | lead of the `COMMAND_SETS` set with the two below (one checkbox) |
 | assembly | `inferconstraints` | `Infer Constraints.md` | — | — | beta |
 | assembly | `linkGlobalParameters` | `Link Global Parameters.md` | — | — | set member |
-| assembly | `refmanager` | `Reference Manager.md` | — | — | ships disabled; anchors on `PTAT_getandupdate` |
 | assembly | `refreshGlobalParametersCache` | `Refresh Global Parameters Cache.md` | — | — | set member |
 | assembly | `refrences` | `Document References.md` | — | — | folder name is misspelled on purpose (stable key); one deliberate `doExecute`; one recorded `time.sleep` |
 | assembly | `refresh` | `Document Refresh.md` | `logic.py` | `test_refresh_logic.py` | QAT File; closes from `commandCreated` |
@@ -90,7 +89,6 @@ are not repeated per row.
 | exports | `exportbomcsv` | `Export BOM.md` | — | `test_csv_injection.py` | |
 | exports | `exportmermaid` | `Export Mermaid.md` | — | — | |
 | exports | `exportsysml` | `Export SysML.md` | `model.py`, `render.py` | `test_exportsysml_{model,render,entry}.py` | QAT File (before `ExportCommand`); work in `commandCreated`; keys on `Component.id` + name |
-| partmodeling | `sketchfix` | `SketchFix.md` | — | — | |
 | partmodeling | `roundsketchdimensions` | `Round Sketch Dimensions.md` | `rounding.py` | `test_roundsketchdimensions_rounding.py` | `executePreview` apply; abort pattern |
 | partmodeling | `sketchunderconstrained` | `SketchUnder.md` | — | — | |
 | partmodeling | `sketchcirclecenterpoint` | `RadialHoleCircle.md` | — | — | beta; ships disabled (graphics); one deliberate `doExecute` via custom event; abort pattern |
@@ -209,7 +207,7 @@ The full table with owners is
 | Self-correcting flyout placement, candidate control ids | `commands/openrecent/entry.py` |
 | Ending a command from `commandCreated` when a precondition fails | `commands/_command_abort.py`; `versiondiff`, `roundsketchdimensions`, `assigndrawingnumber`, `assignpartnumbers`, `measurepath`, `sketchcirclecenterpoint`; `changecyclecolor` carries a local variant of the same flag |
 | `threading.Timer` -> `fireCustomEvent` deferral | `commands/teamaddins/entry.py` (`_schedule_check` / `_fire_check`), `commands/assemblypalette/entry.py` (post-insert chain, thumbnail pump), `commands/dochistory/entry.py`, `commands/matchunits/entry.py` |
-| Polling an `adsk.core.Future` without blocking | `commands/assemblypalette/entry.py` and `commands/dochistory/entry.py` thumbnails; inline variant behind a progress bar in `commands/refmanager` |
+| Polling an `adsk.core.Future` without blocking | `commands/assemblypalette/entry.py` and `commands/dochistory/entry.py` thumbnails |
 | Deferring heavy work to a `CustomEvent` fired from `execute` | `commands/externalize/entry.py` (`PTAT_externalize_runner`) |
 | Escaping the mouse-event stack through a custom event | `commands/sketchcirclecenterpoint/entry.py::custom_event_commit` |
 | Waiting on a save/upload | `ptutil.wait_for_upload`; `bottomupupdate`, `closealldocuments`, `externalize` (bounded fork `_save_to_cloud`) |

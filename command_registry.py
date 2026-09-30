@@ -17,7 +17,7 @@
 # gating from this registry; the Preferences command renders its tree from it.
 # `module` is the on-disk command folder name (also the stable settings key).
 # `doc` is the exact filename under docs/ (note these are NOT always CMD_NAME,
-# e.g. module `sketchfix` -> `SketchFix.md`).
+# e.g. module `sketchunderconstrained` -> `SketchUnder.md`).
 
 
 def _cmd(module, doc, beta=False, settings=False):
@@ -41,7 +41,6 @@ GROUPS = [
             _cmd("globalParameters", "Global Parameters.md"),
             _cmd("inferconstraints", "Infer Constraints.md", beta=True),
             _cmd("linkGlobalParameters", "Link Global Parameters.md"),
-            _cmd("refmanager", "Reference Manager.md"),
             _cmd("refreshGlobalParametersCache", "Refresh Global Parameters Cache.md"),
             _cmd("refrences", "Document References.md"),
             _cmd("refresh", "Document Refresh.md"),
@@ -80,7 +79,6 @@ GROUPS = [
         "key": "partmodeling",
         "label": "Part Modeling",
         "commands": [
-            _cmd("sketchfix", "SketchFix.md"),
             _cmd("roundsketchdimensions", "Round Sketch Dimensions.md"),
             _cmd("sketchunderconstrained", "SketchUnder.md"),
             _cmd("sketchcirclecenterpoint", "RadialHoleCircle.md", beta=True),

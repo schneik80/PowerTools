@@ -45,7 +45,6 @@ its place, Tests, and an optional Learnings section at the end.
 - [Global Parameters](Global%20Parameters.md)
 - [Infer Constraints](Infer%20Constraints.md)
 - [Link Global Parameters](Link%20Global%20Parameters.md)
-- [Reference Manager](Reference%20Manager.md)
 - [Refresh Global Parameters Cache](Refresh%20Global%20Parameters%20Cache.md)
 - [Document References](Document%20References.md)
 - [Document Refresh](Document%20Refresh.md)
@@ -75,7 +74,6 @@ its place, Tests, and an optional Learnings section at the end.
 
 **Part Modeling** (`partmodeling`)
 
-- [SketchFix](SketchFix.md)
 - [Round Sketch Dimensions](Round%20Sketch%20Dimensions.md)
 - [SketchUnder](SketchUnder.md)
 - [RadialHoleCircle](RadialHoleCircle.md)

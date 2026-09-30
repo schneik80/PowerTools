@@ -238,8 +238,8 @@ that start fine; `execute()` returns `True` whether or not the command appears;
 
 **Futures have no completion event; poll from a timer-fired custom event, a
 few per tick, with timeout and negative cache.** `adsk.core.Future` exposes
-only `state`. Reference Manager polls inline behind a modal progress bar,
-which is fine; a palette being scrolled cannot. Assembly Palette resolves
+only `state`. Reference Manager (removed, #22) polled inline
+behind a modal progress bar, which is fine; a palette being scrolled cannot. Assembly Palette resolves
 thumbnails through `DataFile.thumbnail` this way, and the page requests them
 lazily via `IntersectionObserver` so payloads scale with what is visible.
 `FailedFutureState` is the documented "no thumbnail" answer, not a broken
@@ -312,8 +312,8 @@ flags bring the parts back once there is a plane to place it on
 (`commands/flattensurface/entry.py`, the `INPUT_TRIAD` setup).
 
 **A `delete-if-empty` branch on a built-in panel or tab is dead code that
-reads as a rule-10 violation.** `sketchfix`, `sketchunderconstrained`,
-`timelinecompute` and `insertSTEP` end `stop()` with "delete the panel when its control count
+reads as a rule-10 violation.** `sketchunderconstrained`,
+`timelinecompute` and `insertSTEP` (and `sketchfix`, removed in #22) end `stop()` with "delete the panel when its control count
 is 0, then the tab when it has no panels" against Fusion's own
 `SketchModifyPanel` / `InsertPanel`, which are never empty. The branch never
 fires, but a reader (or an AST rule) cannot tell it from a real deletion;
