@@ -870,3 +870,14 @@ Do not regress these (`a06e049`, `266e2c2`):
 ---
 
 *Copyright © 2026 IMA LLC. All rights reserved.*
+- **A fix list is a closed scope; new findings go on the list, not into the
+  work.** The 2026-09-30 hazard review fixed six items and each one surfaced
+  more: the rule-6 guard found three unlisted close-in-execute sites, the
+  early-return guard flagged a fourth command, the probe exposed a
+  `documentOpened` side effect -- and every one was pulled into the work
+  instead of onto the list. The owner's correction: bug finding and fixing
+  falls into a trend where "every finish adds another fix, then that fix ends
+  only to add more." A guard or test that reveals extra sites pins them in an
+  allowlist with a note; a review file records them; the owner decides whether
+  they become work. Say "found X, not fixing, on the list", and end each item
+  at its commit.
