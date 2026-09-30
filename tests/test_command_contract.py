@@ -6,7 +6,9 @@ exist. Until now the contract each command must keep -- rule 9 (Fusion IDs use
 arch index row, README row) and the ``time.sleep`` half of rule 2 -- was
 asserted for exactly one command (``tests/test_exportsysml_entry.py``). These
 tests iterate the registry so every command is held to it, and a new command
-is held to it the moment it is registered.
+is held to it the moment it is registered. Rule 6 (no document close inside an
+``execute`` handler) and the ``SystemExit`` guard (issue #9) are AST walks over
+the same files.
 
 Every known gap is an explicit allowlist that the matching test asserts is
 *exactly equal* to what the tree contains. Fixing a gap therefore fails the
@@ -114,6 +116,43 @@ KNOWN_PROCESS_EXIT_SITES = {
     "commands/changecyclecolor/_color_picker_subprocess.py": 1,
 }
 
+# Rule 6 (11cfc51): never close a document inside a command event. That crash
+# was the *visible* close. The invisible ``documents.open(df, False)`` +
+# ``close(False)`` inside ``command_execute`` was probed with
+# ``tools/fusion_probes/close_in_execute_probe.py`` on 2706.0.97, macOS
+# ADSKMVG91G2F5W and Windows g16win.local, production and pre-production,
+# 2026-09-30: no fault in any placement, though the open fires documentOpened
+# into every other command (issue #11). Issue #10 asked for exactly the two
+# probed sites; the walk below (execute handlers plus the same-module helpers
+# they call, one level deep) also finds three unprobed ones, and a plausible
+# wrong number is worse than an error, so all five are recorded here.
+# Recorded, not blessed; shrinks as sites are restructured (deferred
+# Timer -> custom event, the probe's mode C/D). {relative path: close calls}.
+KNOWN_CLOSE_IN_EXECUTE_SITES = {
+    # Probed. Invisible open, close in ``finally`` of a helper called from
+    # command_execute. Ships enabled.
+    "commands/assigndrawingnumber/entry.py": 1,
+    # NOT probed: the open passes ``True`` (visible) and there is no pump
+    # before the close -- the 11cfc51 shape. Ships disabled (lessons.md);
+    # probe modes E/F exist to settle it.
+    "commands/versiondiff/entry.py": 2,
+    # Not probed. Closures defined and called inside command_execute close the
+    # processed document and sweep strays, pumping 0.25 s after each close.
+    "commands/bottomupupdate/entry.py": 2,
+    # Not probed. ``_apply_parameters`` creates/saves a parameters document
+    # and closes it (mid-path and in ``finally``).
+    "commands/globalParameters/entry.py": 2,
+    # Not probed. ``_derive_into_active`` opens invisibly, closes in
+    # ``finally`` and re-activates the caller's document.
+    "commands/linkGlobalParameters/entry.py": 1,
+}
+
+# Every registered dialog command registers ``.execute``; the 17 input-less,
+# palette and event-only entry files do not (rule 1). 38 files register one as
+# of 2026-09-30; a walk that sees fewer than this has broken, not found a
+# clean tree.
+MIN_EXECUTE_HANDLER_FILES = 35
+
 # Prefixes in use: PT_, PTAT_, PTND_, PTE_, PTPM_, PTAN_, PTSHD_. The rule
 # that matters is no ``-`` and no whitespace; the shape pins what exists.
 CMD_ID_SHAPE = re.compile(r"^PT[A-Z]*_[A-Za-z0-9_]+$")
@@ -198,6 +237,116 @@ def _is_process_exit_call(node: ast.AST) -> bool:
         and isinstance(func.value, ast.Name)
         and func.value.id in {"sys", "os"}
     )
+
+
+def _is_add_handler(call: ast.Call) -> bool:
+    """``add_handler(...)`` under any prefix: ``ptutil.add_handler``, bare, etc."""
+    func = call.func
+    if isinstance(func, ast.Attribute):
+        return func.attr == "add_handler"
+    return isinstance(func, ast.Name) and func.id == "add_handler"
+
+
+def _function_defs(tree: ast.AST):
+    return [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+
+
+def _event_handlers(tree: ast.Module, event: str):
+    """Every FunctionDef registered via ``add_handler(<x>.<event>, <handler>)``.
+
+    Same resolution as ``tests/test_command_abort.py``: a handler passed by
+    name resolves to the FunctionDef(s) of that name; a handler produced by a
+    factory call (``_make_open_handler(...)``) resolves to every FunctionDef
+    nested inside that factory.
+    """
+    by_name: dict[str, list] = {}
+    for fu in _function_defs(tree):
+        by_name.setdefault(fu.name, []).append(fu)
+    for call in ast.walk(tree):
+        if not (isinstance(call, ast.Call) and _is_add_handler(call)):
+            continue
+        if len(call.args) < 2:
+            continue
+        target = call.args[0]
+        if not (isinstance(target, ast.Attribute) and target.attr == event):
+            continue
+        handler = call.args[1]
+        if isinstance(handler, ast.Name):
+            yield from by_name.get(handler.id, [])
+        elif isinstance(handler, ast.Call) and isinstance(handler.func, ast.Name):
+            for factory in by_name.get(handler.func.id, []):
+                for nested in _function_defs(factory):
+                    if nested is not factory:
+                        yield nested
+
+
+def _file_handle_names(fn: ast.AST) -> set[str]:
+    """Names bound from the builtin ``open(...)`` inside *fn* (``fh = open(p)``,
+    ``with open(p) as fh``). Their ``.close()`` closes a file, not a document;
+    ``app.documents.open`` is an Attribute call and is not matched."""
+    names: set[str] = set()
+
+    def _is_builtin_open(node):
+        return (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "open"
+        )
+
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Assign) and _is_builtin_open(node.value):
+            names.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        elif isinstance(node, ast.With):
+            for item in node.items:
+                if _is_builtin_open(item.context_expr) and isinstance(
+                    item.optional_vars, ast.Name
+                ):
+                    names.add(item.optional_vars.id)
+    return names
+
+
+def _close_calls_in(fn: ast.AST):
+    """``<receiver>.close(...)`` calls in *fn*, minus file handles."""
+    files = _file_handle_names(fn)
+    for node in ast.walk(fn):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "close"
+        ):
+            continue
+        receiver = node.func.value
+        if isinstance(receiver, ast.Name) and receiver.id in files:
+            continue
+        yield node
+
+
+def _close_in_execute_sites(tree: ast.Module):
+    """Line numbers of document ``.close()`` calls reachable from an
+    ``.execute`` handler: in the handler itself (nested closures included,
+    since ``ast.walk`` descends into them) or in a same-module function it
+    calls, one level deep -- assigndrawingnumber's close lives in a helper.
+    Lines are a set so a closure counted from the handler and again as a
+    callee is one site."""
+    by_name = {fu.name: fu for fu in _function_defs(tree)}
+    lines: set[int] = set()
+    for handler in _event_handlers(tree, "execute"):
+        scopes = [handler]
+        for node in ast.walk(handler):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id in by_name
+                and by_name[node.func.id] is not handler
+            ):
+                scopes.append(by_name[node.func.id])
+        for scope in scopes:
+            lines.update(call.lineno for call in _close_calls_in(scope))
+    return lines
 
 
 def _import_entry(module: str):
@@ -425,3 +574,41 @@ def test_process_exit_sites_are_exactly_the_known_ones():
         if count:
             found[str(path.relative_to(REPO_ROOT)).replace("\\", "/")] = count
     assert found == KNOWN_PROCESS_EXIT_SITES
+
+
+# --- Rule 6: no document close inside an execute handler --------------------
+
+
+def test_close_in_execute_sites_are_exactly_the_known_ones():
+    """Rule 6 (11cfc51): a document closed inside a command event. The known
+    sites are recorded, not blessed; see KNOWN_CLOSE_IN_EXECUTE_SITES for
+    which were probed and how (issue #10)."""
+    found: dict[str, int] = {}
+    for path in _entry_paths():
+        count = len(_close_in_execute_sites(_parse(path)))
+        if count:
+            found[str(path.relative_to(REPO_ROOT)).replace("\\", "/")] = count
+    assert found == KNOWN_CLOSE_IN_EXECUTE_SITES
+
+
+def test_the_execute_walk_can_actually_see_handlers():
+    """Self-check: if ``add_handler`` or ``.execute`` were renamed, or the
+    helper-following broke, the guard above would pass on an empty set. Pin a
+    floor, the two probed handlers, and the helper hop that finds
+    assigndrawingnumber's close."""
+    with_execute = {
+        path.parent.name
+        for path in _entry_paths()
+        if any(True for _ in _event_handlers(_parse(path), "execute"))
+    }
+    assert len(with_execute) >= MIN_EXECUTE_HANDLER_FILES, sorted(with_execute)
+    assert {"assigndrawingnumber", "versiondiff", "bottomupupdate"} <= with_execute
+
+    adn = _parse(_entry_path("assigndrawingnumber"))
+    direct = {
+        call.lineno
+        for handler in _event_handlers(adn, "execute")
+        for call in _close_calls_in(handler)
+    }
+    assert not direct, "assigndrawingnumber's close moved into command_execute"
+    assert _close_in_execute_sites(adn), "the one-level helper hop is broken"

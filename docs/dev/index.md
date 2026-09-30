@@ -82,7 +82,7 @@ user-facing steps are in the [README Installation section](../../README.md#insta
 | `docs/arch/` | Architecture: `architecture.md` plus one note per command. Does not ship. |
 | `docs/dev/` | This guide, the codebase map, the lessons ledger, debugging, release, and the API recipes. Does not ship. |
 | `tests/` | Pytest suite; runs outside Fusion (see [Testing](#testing)). |
-| `tools/` | `release/build_release.py`, `pandoc/build_readme_pdf.py`, `icons/iconkit.py`, `debug/update_debug_path.py`. |
+| `tools/` | `release/build_release.py`, `pandoc/build_readme_pdf.py`, `icons/iconkit.py`, `debug/update_debug_path.py`, `fusion_probes/` (see [Fusion probes](#fusion-probes)). |
 | `pyproject.toml` | Ruff / mypy / pytest configuration (developer tooling only). |
 
 ## The command-module pattern
@@ -165,6 +165,19 @@ python3 tools/debug/update_debug_path.py --list                # repoint .env/.z
 
 This project does **not** use pull requests; branches merge straight to
 `main`. See [`.agent/workflow.md`](../../.agent/workflow.md).
+
+### Fusion probes
+
+`tools/fusion_probes/` holds throwaway scripts that answer one runtime
+question before a fix is decided -- for example whether an invisible
+`documents.open` + `close` inside `command_execute` still faults
+(`close_in_execute_probe.py`, issue #10). They import `adsk`, so they run only
+inside Fusion: open one from **Utilities > Add-Ins > Scripts** (as a script,
+not an add-in) on **both channels of both Fusion devices**, and record the
+verdict per device + channel + build in the issue or `docs/dev/lessons.md`.
+Each probe's docstring says what to run and what to record. They are dev-only
+and are excluded from the release zip by the `tools/` rule in
+`tools/release/build_release.py`.
 
 ## Testing
 

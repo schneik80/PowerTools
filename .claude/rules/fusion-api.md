@@ -39,7 +39,12 @@ explains it. Full write-ups: `docs/dev/lessons.md`.
     `consume_abort`/`clear_abort` exist for (5bae0e3).
 - **Never close a document inside a command event** -- do it from
   `commandCreated` after the command terminates, and pump events after each
-  close (11cfc51).
+  close (11cfc51). That crash was the *visible* close; the invisible
+  `documents.open(df, False)` + `close(False)` inside `execute` was probed on
+  2706.0.97 (macOS + Windows, both channels, 2026-09-30) and does not fault,
+  but it fires `documentOpened` into every other command (issue #11) -- the
+  sites that do it are pinned in `tests/test_command_contract.py`
+  `KNOWN_CLOSE_IN_EXECUTE_SITES` (issue #10), which may only shrink.
 - **QAT controls placed in `start()` can silently fail** when Fusion starts
   with no document. Make placement idempotent and retry from
   `documentActivated` (`preferences._ensure_control`, 2afdbe1).

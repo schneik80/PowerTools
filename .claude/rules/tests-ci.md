@@ -72,10 +72,12 @@ follow-up reformat (ef424c6); the PDF went stale twice (48722db, 28188f7).
   registrations, so a handler by any name (or returned by a `_make_*`
   factory) is covered.
 - `test_command_contract.py` iterates `command_registry.iter_commands()` and
-  holds every command to AGENTS.md rules 9, 15 and the `time.sleep` half of
-  rule 2: entry imports under the stub, `CMD_Description` present/ASCII, docs
-  pair, arch index row, README link target, literal underscore-only `CMD_ID`,
-  every `PT*_` literal resolves to a `CMD_ID`. Its `KNOWN_*` allowlists are
+  holds every command to AGENTS.md rules 6, 9, 15, the `time.sleep` half of
+  rule 2 and the `exit()` ban (#9): entry imports under the stub,
+  `CMD_Description` present/ASCII, docs pair, arch index row, README link
+  target, literal underscore-only `CMD_ID`, every `PT*_` literal resolves to a
+  `CMD_ID`, no process exit under `commands/`, and every `.close(` reachable
+  from an `execute` handler is a recorded site. Its `KNOWN_*` allowlists are
   asserted *equal* to the tree, so fixing a gap means shrinking the list, and
   a new gap fails loudly. Do not grow a list to make it pass.
 - Cross-platform: CI runs on Linux (`ubuntu-latest`); `os.path.normcase` only

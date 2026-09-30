@@ -438,6 +438,14 @@ def _sync_drawing_number_to_source_design(
                 f"{getattr(source_data_file, 'name', '?')!r} not open — "
                 f"opening silently for titleblock sync."
             )
+            # Deliberate rule-6 exemption (AGENTS.md; 11cfc51 was the *visible*
+            # close-in-command crash). This invisible open + close inside
+            # command_execute was probed on 2706.0.97, macOS ADSKMVG91G2F5W and
+            # Windows g16win.local, production and pre-production, 2026-09-30:
+            # no fault in any placement (tools/fusion_probes/
+            # close_in_execute_probe.py). Pinned in tests/test_command_contract.py
+            # KNOWN_CLOSE_IN_EXECUTE_SITES; the open still fires documentOpened
+            # into every other command (issue #11). See issue #10.
             try:
                 source_doc = app.documents.open(source_data_file, False)
                 opened_by_us = True
@@ -495,6 +503,8 @@ def _sync_drawing_number_to_source_design(
         return ""
     finally:
         # Close the source design if we opened it — regardless of outcome.
+        # Rule-6 exemption, probed 2026-09-30 (see the comment at the open
+        # above; issue #10). Counted in KNOWN_CLOSE_IN_EXECUTE_SITES.
         if opened_by_us and source_doc is not None:
             try:
                 source_doc.close(False)

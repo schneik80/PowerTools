@@ -46,7 +46,10 @@ PDF_BUILDER = HERE.parent / "pandoc" / "build_readme_pdf.py"
 
 # Tracked directories that are dev-only. Matched as path prefixes. `.claude/`
 # and `.agent/` are tracked on purpose (shared agent settings, rules, skills
-# and tool-neutral guidance) and are as developer-only as `tests/`.
+# and tool-neutral guidance) and are as developer-only as `tests/`. `tools/`
+# also covers `tools/fusion_probes/` -- throwaway scripts run inside Fusion to
+# answer a runtime question (issue #10); they import `adsk` and must never
+# ship. tests/test_release_build.py pins the probe path.
 EXCLUDED_DIRS = (
     "tests/",
     "tools/",

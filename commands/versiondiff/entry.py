@@ -500,6 +500,20 @@ def command_execute(args: adsk.core.CommandEventArgs):
         )
 
         # Open comparison version
+        #
+        # Deliberate rule-6 exemption (AGENTS.md; 11cfc51 was the *visible*
+        # close-in-command crash), covering this open and both closes below
+        # (after the timeline walk, and the finally). The invisible
+        # ``documents.open(df, False)`` + ``close(False)`` inside
+        # command_execute was probed on 2706.0.97, macOS ADSKMVG91G2F5W and
+        # Windows g16win.local, production and pre-production, 2026-09-30:
+        # no fault in any placement (tools/fusion_probes/
+        # close_in_execute_probe.py). NOTE: this call passes ``True`` -- a
+        # *visible* open -- which the probe did not cover; the command ships
+        # disabled and must not be enabled as-is (docs/dev/lessons.md).
+        # Pinned in tests/test_command_contract.py KNOWN_CLOSE_IN_EXECUTE_SITES
+        # (2 sites). See issue #10; the open also fires documentOpened into
+        # every other command (issue #11).
         ptutil.log(f"Opening comparison version V{compare_data_file.versionNumber}...")
         compare_doc = app.documents.open(compare_data_file, True)
 

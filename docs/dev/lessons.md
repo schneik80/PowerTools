@@ -64,15 +64,33 @@ abort too. `tests/test_command_abort.py::test_no_command_created_calls_do_execut
 is an AST guard over the whole `commands/` tree. -- `14871d7`, `a90be46`,
 `5bae0e3`
 
-**Never close a document inside a command-related event.** The API does not
-support it; the command must finish before a transaction opens. Close All
-Documents therefore runs entirely from `commandCreated`, re-checks
+**Never close a *visible* document inside a command-related event.** The API
+does not support it; the command must finish before a transaction opens. Close
+All Documents therefore runs entirely from `commandCreated`, re-checks
 `Document.isValid` before each close and pumps events for 0.25 s after it.
 Never-saved documents are closed with `close(True)` so Fusion can collect a
-name; `doc.save()` cannot write them. Version Diff still opens and closes its
-comparison document inside `command_execute`
-(`commands/versiondiff/entry.py`); it ships disabled, and this is why it must
-not be enabled as-is. -- `11cfc51`
+name; `doc.save()` cannot write them. -- `11cfc51`
+
+The *invisible* open + close (`documents.open(df, False)` then `close(False)`)
+is a different animal. `tools/fusion_probes/close_in_execute_probe.py` ran it
+inside `execute`, inside `commandCreated`, deferred through a Timer -> custom
+event, and deferred + pumped + re-acquired, on build 2706.0.97 on macOS
+(`ADSKMVG91G2F5W`) and Windows (`g16win.local`), production and
+pre-production, 2026-09-30: every placement passed with the parent document
+still `isValid`. Assign Drawing Number (`_sync_drawing_number_to_source_design`),
+Global Parameters and Link Global Parameters therefore keep their invisible
+open + close as a dated, explicit exemption pinned by
+`tests/test_command_contract.py::KNOWN_CLOSE_IN_EXECUTE_SITES`; the guard
+shrinks if they are ever restructured. Two sites in that list are *not*
+covered by the probe: Version Diff opens its comparison document **visibly**
+(`open(df, True)`) and closes it inside `execute` with no pump -- the 11cfc51
+shape, which is why it ships disabled -- and Bottom-Up Update opens visibly
+and closes inside its pumped `execute` loop, which has run in production for
+years and is the strongest evidence that the pumped, re-acquired form is
+safe. Probe modes E (visible, no pump) and F (visible, re-activate parent,
+pump) exist to settle Version Diff the same way. What the probe *did* show is
+that the invisible open fires `documentOpened` into every other command --
+see "Document events fire for documents that are not the user's" below. -- #10
 
 **A control placed in `start()` may silently not exist; retry from
 `documentActivated`.** Symptom: Preferences unreachable for a whole session when
@@ -223,6 +241,24 @@ lazily via `IntersectionObserver` so payloads scale with what is visible.
 mechanism -- the earlier belief that the cloud thumbnail "did not resolve
 reliably" was wrong (`commands/refrences` had used it successfully all along).
 -- `14f42ca`
+
+**Document events fire for documents that are not the user's, at times you do
+not control.** `app.documents.open(dataFile, False)` -- the invisible open
+that Assign Drawing Number, Version Diff and Externalize use -- raises the
+application-level `documentOpened` (and on some paths `documentActivated`)
+event exactly like a user open. Every handler on those events then runs
+against a document that is not active, is not visible, and may already be
+closing: the probe log showed the event delivered *during* the caller's
+`open()` on macOS, *after* its `close()` on Windows inside `execute`, and
+*between* "before close" and "after close" on Windows when deferred -- i.e.
+inside the `close()` call, the stale-handle shape rule 3 warns about. Show In
+Location dutifully navigated the Data Panel to the sibling; Match Units ran
+its units check on it. Every document-event handler therefore opens with
+`ptutil.is_user_document(args.document)` -- `isValid`, `isVisible` and
+`isActive` all true, each read defensively -- and returns otherwise. The two
+`Document` properties are in the official reference; wrapper identity
+(`args.document is app.activeDocument`) never matches across wrappers and is
+not a substitute. -- #11
 
 ---
 

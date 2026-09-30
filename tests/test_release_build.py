@@ -30,6 +30,7 @@ _spec.loader.exec_module(build_release)
         "tests/test_json_utils.py",
         "tools/pandoc/build_readme_pdf.py",
         "tools/release/build_release.py",
+        "tools/fusion_probes/close_in_execute_probe.py",
         ".github/workflows/ci.yml",
         ".gitignore",
         ".git-blame-ignore-revs",
