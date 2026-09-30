@@ -18,6 +18,7 @@ from ... import config
 from ...lib import ptAddInUtils as ptutil
 from ...lib.ptAddInUtils import cache_utils as cache
 from .. import _ui_bootstrap
+from . import rows
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -34,104 +35,6 @@ ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resource
 # ── Constants ─────────────────────────────────────────────────────────────────
 UNIT_OPTIONS = ["in", "ft", "mm", "cm", "m"]
 
-# ── Parameter name validation ─────────────────────────────────────────────────
-# First char must be a letter; subsequent chars may be letter/digit or allowed symbols.
-_PARAM_NAME_RE = re.compile(r'^[A-Za-z][A-Za-z0-9_"$°µ]*$')
-
-# Fusion 360 unit designations that are reserved and cannot be parameter names.
-# This list is case-sensitive — Fusion expressions are case-sensitive.
-_RESERVED_UNITS: frozenset[str] = frozenset(
-    {
-        # Length
-        "mm",
-        "cm",
-        "m",
-        "km",
-        "in",
-        "ft",
-        "yd",
-        "mil",
-        "thou",
-        "um",
-        "nm",
-        "pm",
-        # Angle
-        "deg",
-        "rad",
-        "arcmin",
-        "arcsec",
-        "mas",
-        "sr",
-        # Volume / capacity
-        "ml",
-        "l",
-        "dl",
-        "cl",
-        "gal",
-        "qt",
-        "pt",
-        # Temperature
-        "C",
-        "F",
-        "K",
-        # Mass
-        "g",
-        "kg",
-        "lb",
-        "oz",
-        "slug",
-        "mg",
-        "t",
-        # Force
-        "N",
-        "kN",
-        "lbf",
-        "kip",
-        "ozf",
-        "dyn",
-        # Pressure
-        "Pa",
-        "kPa",
-        "MPa",
-        "GPa",
-        "psi",
-        "ksi",
-        "bar",
-        "atm",
-        # Power
-        "W",
-        "kW",
-        "MW",
-        "hp",
-        # Energy
-        "J",
-        "kJ",
-        "MJ",
-        "cal",
-        "kcal",
-        "BTU",
-        "Wh",
-        "kWh",
-        # Electrical
-        "A",
-        "mA",
-        "V",
-        "mV",
-        "kV",
-        "ohm",
-        "Hz",
-        "kHz",
-        "MHz",
-        # Time
-        "s",
-        "ms",
-        "us",
-        "min",
-        "hr",
-        # Built-in constant
-        "pi",
-    }
-)
 TABLE_ID = "gp_param_table"
 ADD_BTN_ID = "gp_add_row_btn"
 DEL_BTN_ID = "gp_del_row_btn"
@@ -141,8 +44,8 @@ MODE_INPUT_ID = "gp_mode"
 STATUS_INPUT_ID = "gp_status"
 PARAM_SET_NAME_ID = "gp_param_set_name"
 # Sentinel prefix stored in parameter comments to identify PowerTools-managed parameters.
-# UNIT_OPTIONS are the units offered in the UI; _RESERVED_UNITS is the broader set
-# of Fusion unit strings that are forbidden as parameter names.
+# UNIT_OPTIONS are the units offered in the UI; rows.RESERVED_UNITS is the broader
+# set of Fusion unit strings that are forbidden as parameter names.
 _PARAM_TAG = "PT-globparm"
 
 local_handlers = []
@@ -155,19 +58,6 @@ _row_counter = 0  # monotonically-increasing row ID to avoid input-ID conflicts
 _table_dirty = False  # True when the user has edited the table since last load
 _command_executed = False  # True once command_execute has fired successfully
 _param_doc_names: list[str] = []  # cached display names for dropdown
-
-
-def _is_valid_param_name(name: str) -> tuple[bool, str]:
-    """Return (is_valid: bool, reason: str) for a Fusion 360 parameter name."""
-    if not name:
-        return False, "Name is required"
-    if not name[0].isalpha():
-        return False, "Must start with a letter"
-    if not _PARAM_NAME_RE.match(name):
-        return False, 'Only letters, digits, _, ", $, °, µ are allowed'
-    if name in _RESERVED_UNITS:
-        return False, f'"{name}" is a reserved Fusion unit name'
-    return True, ""
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -279,9 +169,14 @@ def _clear_data_rows(table: adsk.core.TableCommandInput) -> None:
         table.deleteRow(table.rowCount - 1)
 
 
-def _collect_rows(table: adsk.core.TableCommandInput) -> list[dict]:
-    """Return a list of dicts for every data row (skips header row 0)."""
-    rows = []
+def _read_rows(table: adsk.core.TableCommandInput) -> list[rows.ParameterRow]:
+    """Read every data row (below header row 0) into plain values.
+
+    This is the only place the table cells are touched; what the rows mean --
+    which are blank, which are valid, what they collect to -- is decided in
+    ``rows.py`` so the validator and the collector share one rule set.
+    """
+    out: list[rows.ParameterRow] = []
     for r in range(HEADER_ROW + 1, table.rowCount):
         chk = adsk.core.BoolValueCommandInput.cast(table.getInputAtPosition(r, 0))
         name = adsk.core.StringValueCommandInput.cast(table.getInputAtPosition(r, 1))
@@ -292,16 +187,23 @@ def _collect_rows(table: adsk.core.TableCommandInput) -> list[dict]:
         if name is None:
             continue
 
-        rows.append(
-            {
-                "enabled": chk.value if chk else False,
-                "name": name.value.strip(),
-                "value": float(val.value) if val and val.value.strip() else 0.0,
-                "unit": unit.selectedItem.name if unit else "mm",
-                "comment": cmnt.value if cmnt else "",
-            }
+        out.append(
+            rows.ParameterRow(
+                row=r,
+                enabled=chk.value if chk else False,
+                name=name.value,
+                value=val.value if val else "",
+                unit=unit.selectedItem.name if unit else rows.DEFAULT_UNIT,
+                comment=cmnt.value if cmnt else "",
+            )
         )
-    return rows
+    return out
+
+
+def _collect_rows(table: adsk.core.TableCommandInput) -> list[dict]:
+    """Return a parameter dict per non-blank data row (blank names are skipped
+    by the same rule the validator uses -- see ``rows.is_blank_row``)."""
+    return rows.collect_parameter_rows(_read_rows(table))
 
 
 def _any_row_checked(table: adsk.core.TableCommandInput) -> bool:
@@ -932,33 +834,7 @@ def _validate_and_reason(inputs: adsk.core.CommandInputs) -> str:
     if table.rowCount <= HEADER_ROW + 1:
         return ""  # empty table — allowed
 
-    seen_names: set = set()
-    for r in range(HEADER_ROW + 1, table.rowCount):
-        name = adsk.core.StringValueCommandInput.cast(table.getInputAtPosition(r, 1))
-        val = adsk.core.StringValueCommandInput.cast(table.getInputAtPosition(r, 2))
-
-        if name is None:
-            continue
-
-        name_val = name.value.strip()
-        if not name_val:
-            continue  # blank rows are skipped
-
-        ok, reason = _is_valid_param_name(name_val)
-        if not ok:
-            return f'Row {r}: "{name_val}" — {reason}'
-
-        if name_val in seen_names:
-            return f'Duplicate parameter name: "{name_val}"'
-        seen_names.add(name_val)
-
-        if val is not None:
-            try:
-                float(val.value.strip())
-            except ValueError:
-                return f'Row {r}: value "{val.value.strip()}" is not a valid number'
-
-    return ""
+    return rows.validate_parameter_rows(_read_rows(table))
 
 
 def command_validate_input(args: adsk.core.ValidateInputsEventArgs):
