@@ -18,7 +18,6 @@
 #   6. Hub configuration (Related Data)
 #   7. Palette IDs (Assembly)
 
-import json
 import os
 import os.path
 import sys
@@ -462,10 +461,18 @@ def loadHub(__file__):
         COMPANY_HUB_CONFIGS = {}
         return
 
-    with open(my_hub_path) as json_file:
-        hub_data = json.load(json_file)
+    # read_json absorbs a truncated or unreadable file (-> {}), and entries are
+    # filtered to dicts with an "id": this runs at import time, so any raise here
+    # would prevent PowerTools.run from ever being entered -- with nothing logged.
+    hub_data = ptutil.read_json(my_hub_path, {})
+    if not isinstance(hub_data, dict):
+        hub_data = {}
 
-    hubs = hub_data.get("hubs", [])
+    hubs = [
+        entry
+        for entry in (hub_data.get("hubs") or [])
+        if isinstance(entry, dict) and entry.get("id")
+    ]
     COMPANY_HUB = [entry["id"] for entry in hubs]
     COMPANY_HUB_CONFIGS = {
         entry["id"]: {

@@ -175,7 +175,18 @@ def load() -> dict:
         return _cache
     defaults = _defaults()
     if not os.path.isfile(config.SETTINGS_PREFS_FILE):
-        save(_migrate_legacy(defaults))
+        defaults = _migrate_legacy(defaults)
+        try:
+            save(defaults)
+        except OSError as exc:
+            # Read-only install (or unwritable settings dir): keep running on
+            # in-memory defaults rather than aborting commands.start() with no
+            # command registered. save() left _cache cleared; pin defaults.
+            ptutil.log(
+                f"settings_store: cannot write {config.SETTINGS_PREFS_FILE}: {exc}"
+            )
+            _cache = defaults
+            return _cache
         return load()
     stored = ptutil.read_json(config.SETTINGS_PREFS_FILE, {})
     if not isinstance(stored, dict):

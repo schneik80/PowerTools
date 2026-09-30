@@ -94,7 +94,7 @@ def _root_candidates(platform: str, environ, home: str) -> tuple[str, ...]:
             # normally name the same directory, but may differ in separator or
             # casing (and os.path cannot normalize a Windows path from a POSIX
             # host, which is how the tests exercise this branch).
-            key = candidate.replace("\\", "/").rstrip("/").lower()
+            key = candidate.replace("\\", "/").rstrip("/").casefold()
             if key not in keys:
                 keys.add(key)
                 out.append(candidate)

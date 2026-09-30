@@ -7,7 +7,6 @@
 # permission of the copyright holders.  If you encounter this file and do not have
 # permission, please contact the copyright holders and delete this file.
 
-import json
 import os
 
 import adsk.core
@@ -65,6 +64,19 @@ def _cache_path_for_hub(hub_id: str) -> str:
     return os.path.join(config.CACHE_PATH, f"{hub_id}.json")
 
 
+def _load_templates_from_cache(path: str):
+    """Return the cached template dict at *path*, or None on a miss.
+
+    A missing, unreadable, corrupt, empty or non-dict cache file all count as a
+    miss so the caller falls through to the live API fetch (which rewrites the
+    cache) instead of raising inside a command handler.
+    """
+    cached = ptutil.read_json(path, None)
+    if isinstance(cached, dict) and cached:
+        return cached
+    return None
+
+
 def _load_templates_for_hub(hub_id: str) -> dict:
     """Return the template dict for *hub_id*.
 
@@ -74,9 +86,8 @@ def _load_templates_for_hub(hub_id: str) -> dict:
     """
     # --- cache hit ---
     cache_file = _cache_path_for_hub(hub_id)
-    if os.path.isfile(cache_file):
-        with open(cache_file) as f:
-            cached = json.load(f)
+    cached = _load_templates_from_cache(cache_file)
+    if cached is not None:
         ptutil.log(f"{CMD_NAME} Templates loaded from cache for hub {hub_id}")
         return cached
 
@@ -137,9 +148,7 @@ def _load_templates_for_hub(hub_id: str) -> dict:
     sorted_dict = dict(sorted(unsorted.items()))
 
     # Write cache so subsequent opens skip the API call.
-    os.makedirs(config.CACHE_PATH, exist_ok=True)
-    with open(cache_file, "w") as f:
-        json.dump(sorted_dict, f, indent=2)
+    ptutil.write_json_atomic(cache_file, sorted_dict)
 
     ptutil.log(f"{CMD_NAME} Templates fetched and cached for hub {hub_id}")
     return sorted_dict

@@ -58,3 +58,31 @@ def test_rejects_wrong_type_for_section() -> None:
     payload = {"general": [], "groups": {}, "commands": {}}
 
     assert settings_store.validate(payload) is False
+
+
+# ── First-run load() on a read-only install ──────────────────────────────────
+
+
+def test_load_returns_defaults_when_first_run_save_is_denied(
+    tmp_path, monkeypatch
+) -> None:
+    """A PermissionError writing preferences.json must not escape load().
+
+    On a read-only install the first-run save fails; load() keeps the defaults
+    in memory and returns them so commands.start() can still register commands.
+    """
+    prefs = tmp_path / "settings" / "preferences.json"
+    monkeypatch.setattr(settings_store.config, "SETTINGS_PREFS_FILE", str(prefs))
+    monkeypatch.setattr(settings_store, "_cache", None)
+
+    def _deny(path, data, **kwargs):
+        raise PermissionError(13, "Permission denied", path)
+
+    monkeypatch.setattr(settings_store.ptutil, "write_json_atomic", _deny)
+
+    data = settings_store.load()
+
+    assert settings_store.validate(data) is True
+    assert data == settings_store._migrate_legacy(settings_store._defaults())
+    assert settings_store.load() is data  # memoized, no second write attempt
+    assert not prefs.exists()

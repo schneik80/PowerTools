@@ -118,7 +118,7 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
             safe_name = re.sub(r'[<>:"/\\|?*]', "_", os.path.basename(parentOcc))
             filepath = os.path.join(folderDlg.folder, safe_name + ".mmd")
             # Write the results to the file
-            with open(filepath, "w") as f:
+            with open(filepath, "w", encoding="utf-8") as f:
                 f.write(resultString)
             ui.messageBox("Graph saved at: " + filepath, parentOcc, 0, 2)
 

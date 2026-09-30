@@ -24,14 +24,26 @@ def next_business_day(dt: datetime) -> datetime:
     return dt
 
 
-def compute_quick_dates() -> list:
-    """Pre-calculate quick-date options relative to *now*.
+def later_label(dt: datetime) -> str:
+    """Return ``'3:07 pm'`` style text for *dt*: 12-hour clock, no leading zero.
+
+    The am/pm marker is derived from ``dt.hour`` rather than ``strftime('%p')``,
+    which is locale-dependent and empty on e.g. de_DE / fr_FR.
+    """
+    hour_12 = dt.hour % 12 or 12
+    ampm = "am" if dt.hour < 12 else "pm"
+    return f"{hour_12}:{dt.strftime('%M')} {ampm}"
+
+
+def compute_quick_dates(now: datetime | None = None) -> list:
+    """Pre-calculate quick-date options relative to *now* (default: current time).
 
     Returns a list of (display_label, date_value) tuples where date_value is
     either 'YYYY-MM-DD' (date-only) or 'YYYY-MM-DD HH:MM' (for Later).
     Weekend adjustments are applied where appropriate.
     """
-    now = datetime.now()
+    if now is None:
+        now = datetime.now()
 
     def _fmt(dt):
         """'Mon 9 Mar' style — no leading zero on day."""
@@ -49,11 +61,9 @@ def compute_quick_dates() -> list:
 
     # 2. Later (now + 2 hours) — carries a time component for ClickUp
     later = now + timedelta(hours=2)
-    hour_12 = int(later.strftime("%I"))  # 12-hour without leading zero
-    ampm = later.strftime("%p").lower()
     results.append(
         (
-            f"Later \u2014 {hour_12}:{later.strftime('%M')} {ampm}",
+            f"Later \u2014 {later_label(later)}",
             later.strftime("%Y-%m-%d %H:%M"),
         )
     )
