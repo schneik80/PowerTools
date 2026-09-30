@@ -139,3 +139,41 @@ def test_intent_labels_read_as_intents():
     }
     for value in schemes.INTENT_LABELS.values():
         assert value.endswith(" Intent"), value
+
+
+def _inverted_delete_guards(tree: ast.AST):
+    """Yield ``if not X: ... X.deleteMe()`` -- the guard is inverted: the body
+    runs only when X is None and then dereferences it (C10, #17)."""
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If):
+            continue
+        test = node.test
+        if not (
+            isinstance(test, ast.UnaryOp)
+            and isinstance(test.op, ast.Not)
+            and isinstance(test.operand, ast.Name)
+        ):
+            continue
+        guarded = test.operand.id
+        for inner in node.body:
+            for call in ast.walk(inner):
+                if (
+                    isinstance(call, ast.Call)
+                    and isinstance(call.func, ast.Attribute)
+                    and call.func.attr == "deleteMe"
+                    and isinstance(call.func.value, ast.Name)
+                    and call.func.value.id == guarded
+                ):
+                    yield node.lineno, guarded
+
+
+def test_no_inverted_delete_guards():
+    """``if not cmd_def: cmd_def.deleteMe()`` leaks the definition on every
+    normal stop and raises when it is already gone (#17). Only datatoggle
+    had it; the set must stay empty."""
+    offenders = {
+        f"{_rel(path)}:{line} ({name})"
+        for path in _command_sources()
+        for line, name in _inverted_delete_guards(_parse(path))
+    }
+    assert offenders == set()

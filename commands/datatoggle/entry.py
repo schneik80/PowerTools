@@ -86,7 +86,7 @@ def stop():
         cntrl.deleteMe()
 
     navBarBtnCmdDef = _ui.commandDefinitions.itemById(_navBarBtnID)
-    if not navBarBtnCmdDef:
+    if navBarBtnCmdDef:
         navBarBtnCmdDef.deleteMe()
 
 
