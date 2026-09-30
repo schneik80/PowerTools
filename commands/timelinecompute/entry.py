@@ -437,7 +437,7 @@ def _get_html_header(document_name: str, total_time: float) -> str:
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>{document_name} Timeline Compute Report</title>
+    <title>{_escape_html(document_name)} Timeline Compute Report</title>
 {HTML_CSS_TEMPLATE}</head>
 <body>
     <div class="report-header">

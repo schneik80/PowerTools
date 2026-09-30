@@ -50,13 +50,15 @@ def start():
     # Get the Sketch tab
     sketchTab = ui.allToolbarTabs.itemById(TAB_ID)
     if not sketchTab:
-        ui.messageBox(f"{TAB_ID} tab not found")
+        ptutil.log(f"{CMD_NAME}: {TAB_ID} tab not found; control not added")
         return
 
         # Get the Modify panel in the Sketch tab
     modifyPanel = sketchTab.toolbarPanels.itemById(PANEL_ID)
     if not modifyPanel:
-        ui.messageBox(f"{PANEL_ID} panel not found in {TAB_ID} tab")
+        ptutil.log(
+            f"{CMD_NAME}: {PANEL_ID} panel not found in {TAB_ID} tab; control not added"
+        )
         return
 
     # Create the command control, i.e. a button in the UI.

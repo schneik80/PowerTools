@@ -82,8 +82,8 @@ def stop():
         command_definition.deleteMe()
 
 
-# Function that is called when a user clicks the corresponding button in the UI.
-# This defines the contents of the command dialog and connects to the command related events.
+# Called when the user clicks the control. There is no dialog: the work runs
+# here so it still happens with no document open (rule 1, #16).
 def command_created(args: adsk.core.CommandCreatedEventArgs):
     # General logging for debug.
     ptutil.log(f"{CMD_NAME} Command Created Event")
