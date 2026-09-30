@@ -1,61 +1,50 @@
 # Assembly Statistics
 
-[Back to PowerTools Assembly](../README.md)
+[Back to README](../README.md)
 
-The Assembly Statistics command displays a summary of the structure, component counts, and joint configuration of the active Autodesk Fusion design. Use this command to quickly evaluate the complexity of an assembly without manually inspecting the browser tree.
+## Overview
 
-## What you can do
+Assembly Statistics reports component counts, nesting depth and joint counts for the active design in one dialog.
 
-- View the total number of components in the active assembly, including all nested occurrences.
-- View the total number of unique component definitions (local and external).
-- View the number of external document references.
-- View the number of out-of-date references.
-- View the maximum depth (nesting levels) of the assembly hierarchy.
-- View the number of document contexts in the timeline.
-- View assembly constraints, tangent relationships, and rigid group counts.
-- View joint totals broken down by joint type.
+SolidWorks' Performance Evaluation for assemblies opens with the numbers that describe how heavy an assembly is: how many components, how many unique, how deep. Fusion has no such summary; you count in the browser. Assembly Statistics gives the same figures in a message box, so a large or slow assembly can be sized up before you decide what to do about it.
 
 ## Prerequisites
 
-- An Autodesk Fusion 3D Design must be active.
-- The active document must be saved.
+- A design document saved to a hub. Otherwise the command asks you to save first.
 
-## How to use Assembly Statistics
+## Where to find it
 
-1. Open the Autodesk Fusion Design workspace.
-2. On the **Utilities** tab, in the **Power Tools** panel, select **Assembly Statistics**.
-3. Review the statistics displayed in the dialog.
-4. Select **Close** to dismiss the dialog.
+**Utilities** tab › **Power Tools** panel › **Assembly Statistics**, in the Design workspace.
 
-The dialog reports the following values:
+![Assembly Statistics on the Power Tools panel](./assets/assemblystats_002.png)
 
-| Statistic | Description |
-|---|---|
-| Total component instances | Total number of occurrences across all levels of the assembly |
-| Unique component definitions | Number of distinct component definitions, excluding the root |
-| Out-of-date references | Components whose referenced document has a newer version available |
-| Maximum assembly depth | Number of nesting levels from the root to the deepest component |
-| Document contexts | Number of assembly context entries in the timeline |
-| Assembly constraints | Count of positional constraints on the root component |
-| Tangent relationships | Count of tangent relationships on the root component |
-| Rigid groups | Count of rigid group constraints on the root component |
-| Total joints | All joints defined at the root level |
-| Joints by type | Count per joint type (Rigid, Revolute, Slider, Cylindrical, Pin-Slot, Planar, Ball) |
+## How to use
+
+1. Select **Assembly Statistics**.
+2. Read the dialog, titled with the root component's name, and select **OK**.
 
 ![Assembly Statistics dialog](./assets/assemblystats_001.png)
 
-## Access
+## What it reports
 
-The **Assembly Statistics** command is located on the **Utilities** tab, in the **Power Tools** panel of the Autodesk Fusion Design workspace.
+| Figure | Meaning |
+|---|---|
+| Total component instances | Occurrences across every level of the assembly |
+| Unique components | Distinct component definitions, excluding the root |
+| Out-of-date components | References in the document with a newer version available |
+| Maximum assembly depth | Nesting levels from the root to the deepest component |
+| Document contexts | Assembly-context entries in the timeline |
+| Constraints, tangent relationships, rigid groups | Counts on the root component |
+| Joints, total and by type | Rigid, Revolute, Slider, Cylindrical, Pin-Slot, Planar, Ball |
 
-![Toolbar access](./assets/assemblystats_002.png)
+## Limitations
+
+- The figures are read from the design as it is in memory; update references first if the counts should reflect the latest versions.
 
 > **Developers:** see the [architecture notes](./arch/Assembly%20Statistics.md).
 
 ---
 
-[Back to PowerTools Assembly](../README.md)
-
----
+[Back to README](../README.md)
 
 *Copyright © 2026 IMA LLC. All rights reserved.*

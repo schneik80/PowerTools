@@ -1,79 +1,67 @@
-# Export Mermaid Diagram
+# Export Mermaid Diagram...
 
 [Back to README](../README.md)
 
 ## Overview
 
-The **Export Mermaid Diagram** command exports the component hierarchy of the active Autodesk Fusion assembly as a [Mermaid](https://mermaid.js.org/) diagram file. The resulting `.mmd` file is a text-based, left-to-right flowchart that represents the full parent-child component relationship tree. It can be rendered in any Mermaid-compatible viewer, including Visual Studio Code extensions, GitHub Markdown, and the Mermaid Live Editor.
+Export Mermaid Diagram writes the component hierarchy of the active assembly as a [Mermaid](https://mermaid.js.org/) flowchart file and opens it in the Mermaid Live viewer.
+
+A browser tree is hard to paste into a wiki, a review document or a chat. A Mermaid diagram is plain text that GitHub, GitLab, Notion, VS Code and the Mermaid Live Editor render as a diagram, so the structure of an assembly can be shared and versioned like any other text.
 
 ## Prerequisites
 
-- An Autodesk Fusion design document must be active and open.
-- The design must contain at least one component with child components or sub-assemblies.
-- To render the exported `.mmd` file, use one of the following:
-  - [Mermaid Live Editor](https://mermaid.live/) (online, no installation required)
-  - The [Markdown Preview Mermaid Support](https://marketplace.visualstudio.com/items?itemName=bierner.markdown-mermaid) extension for Visual Studio Code
-  - Any Markdown renderer that supports Mermaid (such as GitHub, GitLab, or Notion)
+- A design document must be active.
 
-## How to use this command
+## Where to find it
 
-1. Open an assembly design in Autodesk Fusion.
-2. From the **File** drop-down menu in the Quick Access Toolbar, select **Export Mermaid Diagram...**.
-3. In the folder browser dialog, navigate to the destination folder for the output file.
-4. Click **OK**. Power Tools traverses the assembly and writes the file.
-5. A confirmation dialog displays the full path of the exported file.
+**File › Export Mermaid Diagram...** on the Quick Access Toolbar, directly before **Export**.
 
-## Output
+![Export Mermaid Diagram in the File menu](./assets/exportmermaid_002.png)
 
-Power Tools creates a Mermaid file named `{DocumentName}.mmd` in the folder you selected. The file uses the `graph LR` (left-to-right) flowchart type and includes a theme configuration block at the top.
+## How to use
 
-### Theme
+1. Open the assembly.
+2. Select **File › Export Mermaid Diagram...**.
+3. Choose the destination folder and select **OK**.
+4. A dialog reports `Graph saved at: <path>`, and the diagram opens in your web browser at [mermaid.live](https://mermaid.live/).
 
-The exported diagram uses the following built-in theme variables:
+## What it produces
 
-| Variable | Value | Description |
-|---|---|---|
-| `theme` | `base` | Uses the Mermaid base theme as a starting point. |
-| `primaryColor` | `#f0f0f0` | Light gray fill for component nodes. |
-| `primaryBorderColor` | `#454F61` | Dark blue-gray node borders. |
-| `lineColor` | `#59cff0` | Light blue connector lines. |
-| `tertiaryColor` | `#e1ecf5` | Pale blue background for cluster nodes. |
-| `fontSize` | `14px` | Node label font size. |
+A UTF-8 file named `<document name>.mmd` in the chosen folder. Characters that are not valid in a file name are replaced with `_`. The file is a `graph LR` (left-to-right) flowchart with a theme block at the top:
 
-### Character sanitization
+| Variable | Value |
+|---|---|
+| `theme` | `base` |
+| `primaryColor` | `#f0f0f0` (node fill) |
+| `primaryBorderColor` | `#454F61` (node border) |
+| `lineColor` | `#59cff0` (connectors) |
+| `tertiaryColor` | `#e1ecf5` |
+| `fontSize` | `14px` |
+| `look` | `classic` |
+| `layout` | `elk` |
 
-Mermaid diagram syntax does not support certain special characters in node identifiers. Power Tools automatically replaces or removes the following characters in component names before writing:
+Each parent-child relationship is one line, `Parent-->Child`, written for every occurrence, so a component used in several places gets an arrow for each use. The root node is the document name.
+
+Mermaid does not accept every character in a node name, so occurrence names are cleaned before writing:
 
 | Character | Replacement |
 |---|---|
 | `-` | `_` |
-| `"` | *(removed)* |
-| `=` | *(removed)* |
-| `(` or `)` | *(removed)* |
 | `<` or `>` | `_` |
-| ` ` (space) | *(removed from relationship strings)* |
+| `"`, `=`, `(`, `)` | removed |
+| space | removed |
 
-### Component relationships
+![Rendered diagram](./assets/exportmermaid_001.png)
 
-Each parent-child component relationship is written as a Mermaid arrow: `Parent-->Child`. The diagram is built by recursively traversing the assembly tree from the root component downward. If a component appears in multiple locations in the assembly, an arrow is written for each usage.
+## Rendering the file elsewhere
 
-## Rendering the output
+- **GitHub, GitLab, Notion:** paste the file contents inside a ` ```mermaid ` fenced block in any Markdown file.
+- **Visual Studio Code:** install a Mermaid preview extension and open the `.mmd` file, or paste it into a Markdown file as above.
 
-Use one of the following options to view the exported diagram:
+## Limitations
 
-- **Online:** Open [Mermaid Live](https://mermaid.live/), paste the file contents, and the diagram renders immediately.
-- **Visual Studio Code:** Install the [Markdown Preview Mermaid Support](https://marketplace.visualstudio.com/items?itemName=bierner.markdown-mermaid) extension. Rename the `.mmd` file to `.md`, wrap the content in a `mermaid` fenced code block, and open the Markdown preview.
-- **GitHub / GitLab:** Paste the Mermaid content inside a `mermaid` fenced code block in any Markdown file. The diagram renders automatically in the web UI.
-
-## Example output
-
-![Mermaid diagram](./assets/exportmermaid_001.png)
-
-## Access
-
-From the design document's **File** drop-down menu in the Quick Access Toolbar, select **Export Mermaid Diagram...**.
-
-![Access](./assets/exportmermaid_002.png)
+- Node names are occurrence names, so they carry Fusion's `:1`, `:2` instance suffixes.
+- An empty design produces a file with only the theme block.
 
 > **Developers:** see the [architecture notes](./arch/Export%20Mermaid.md).
 

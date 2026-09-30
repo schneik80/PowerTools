@@ -1,217 +1,131 @@
-# Bottom-Up Update
+# Bottom-up Update
 
-[Back to PowerTools Assembly](../README.md)
+[Back to README](../README.md)
 
-The Bottom-Up Update command traverses the active assembly hierarchy, then opens, updates, and saves each referenced component document in dependency order — from the deepest leaf components upward to the root. This bottom-up sequence ensures that every component's references are current before the components that depend on it are processed.
+## Overview
 
-## What you can do
+Bottom-up Update saves and updates every referenced document in the open assembly from the bottom up, with options to rebuild, apply design intent, hide reference geometry and log the run.
 
-- Automatically process all components in a complex assembly in correct dependency order.
-- Update out-of-date assembly contexts in every component before it is rebuilt and saved.
-- Force a complete rebuild of every component to verify they are up to date.
-- Apply design document intent (Part, Assembly, or Hybrid) to each component automatically based on its content.
-- Enable the timeline on direct-modeling documents by converting them to parametric.
-- Hide origins, joints, sketches, joint origins, canvases, and user coordinate systems before saving to produce cleaner component files.
-- Skip standard library components to avoid unnecessary processing overhead.
-- **Smart upload confirmation** — the command confirms that each component's cloud upload has completed before opening the next document, instead of using a fixed pause timer.
-- **Resume an interrupted run** — on launch the command inspects the temp log; if the run did not finish and the component list has not changed, it picks up after the last confirmed save+upload checkpoint.
-- **Live log viewer** — automatically opens Console.app (macOS) or PowerShell (Windows) to stream log output while the command runs.
-- Writes structured progress log with timestamps and checkpoint markers to the OS temp folder.
+Migrating an assembly after a Fusion update, or bringing every component of a distributed design to a clean current version, means opening each document, updating its references, rebuilding, saving, and doing it in the right order so nothing is saved against a stale child. SolidWorks and Inventor hand this to their Task Schedulers. Fusion has nothing, so Bottom-up Update is the batch job: it walks the assembly, sorts the documents so leaves come first, and opens, updates, rebuilds, saves and confirms the upload of each one, resuming from a checkpoint if the run is interrupted.
 
 ## Prerequisites
 
-Before running the Bottom-Up Update command, confirm the following:
+- A design document saved to a hub, with external references.
+- Write access to every referenced document.
 
-- An Autodesk Fusion 3D Design is active.
-- The active document is saved to an Autodesk Hub.
-- The active document contains external references to other components.
-- You have write access to all component files that will be processed.
+## Where to find it
 
-## How to use Bottom-Up Update
+**Utilities** tab › **Power Tools** panel › **Bottom-up Update**, in the Design workspace.
 
-1. Open the Autodesk Fusion Design workspace with an active saved assembly that contains external references.
-2. On the **Utilities** tab, in the **Power Tools** panel, select **Bottom-up Update**.
-3. Review the **Run status** field on the Main tab. If a previous incomplete run is detected and the component list matches, the command will offer to resume from the last checkpoint.
-4. Configure the options in the three-tab dialog (see [Command options](#command-options) below).
-5. Select **OK** to begin processing.
-6. Monitor progress in the Autodesk Fusion Text Commands window or the automatically opened live log viewer. Do not interrupt the operation.
-7. When the command completes, a summary message confirms the number of components processed and the elapsed time.
-8. If logging is enabled, review the log file at the path shown in the completion message.
+## How to use
 
-## Command options
+1. Open the assembly and select **Bottom-up Update**.
+2. Read **Run status** on the **Main** tab; it says whether this run starts fresh or resumes.
+3. Set the options on the three tabs.
+4. Select **OK**. Do not work in Fusion while the run proceeds; watch the live log viewer.
+5. When it finishes, a dialog reads *Bottom-up Update complete.* with the log path. The count of documents saved and the elapsed time are in the log.
 
-The Bottom-Up Update dialog is organized into three tabs.
+## Options
 
 ### Main tab
 
-| Option | Default | Description |
+| Option | Default | Effect |
 |---|---|---|
-| **Run status** | Auto | Read-only. Reports whether this run will start fresh, resume from a checkpoint, or start fresh due to a changed component list or different Fusion client version. |
-| **Update Contexts** | Enabled | Updates out-of-date assembly contexts in each document before it is rebuilt and saved. Applies to the root assembly as well as the referenced documents. See [Update Contexts](#update-contexts) below. |
-| **Rebuild all** | Enabled | Forces a complete rebuild (`computeAll()`) of each component to ensure it is current. Disable only when you need to preserve the existing computed state. |
-| **Skip standard components** | Enabled | Skips Standard Components library documents (such as McMaster-Carr or Misumi parts) to avoid unnecessary processing. |
-| **Skip already saved documents** | Disabled | Skips components whose document version already matches the current Fusion client build string. |
-| **Apply Design Doc Intent** | Enabled | Automatically determines and applies the appropriate Fusion document intent to each component. See [Design intent logic](#design-intent-logic) below. |
-| **Enable Timeline** | Disabled | Switches any direct modeling (history off) document to parametric so it captures a timeline. Applies to the root assembly as well as the referenced documents. See [Enable Timeline](#enable-timeline) below. |
-
-#### Advanced group (collapsed by default)
-
-| Option | Default | Description |
-|---|---|---|
-| **Upload check interval (seconds)** | `0.5` | How often to poll upload status after each save. Lower values react faster; higher values reduce API call frequency. |
+| **Update Contexts** | On | Runs Fusion's **Update Contexts** in each document, and in the root, before the rebuild and save |
+| **Rebuild all** | On | Forces a full compute of each document. Turn off only to preserve the existing computed state |
+| **Skip standard components** | On | Skips documents in the **Standard Components** project (the fastener library) |
+| **Skip already saved Documents** | Off | Skips documents already saved by the running Fusion build |
+| **Skip configured designs** | On | Skips configured designs and configuration members |
+| **Apply Design Doc Intent** | On | Sets each document's design intent from its content (see below) |
+| **Enable Timeline** | Off | Converts direct-modeling documents to parametric (see below) |
+| **Run status** | — | Read-only: fresh run or resume |
+| **Upload check interval (seconds)** (Advanced) | 0.5 | How often the upload is polled after each save |
 
 ### Visibility tab
 
-These options hide specific element types in each component before saving. Each option also configures the corresponding folder visibility so that new elements of that type show or hide correctly in future sessions.
+Each option hides that geometry in the root component of every document before it is saved, and sets the folder's light bulb so new items of that type behave the same way.
 
-| Option | Default | Effect on folder visibility |
-|---|---|---|
-| **Hide origins** | Disabled | Hides coordinate system origins. |
-| **Hide joints** | Disabled | Hides all joints. Sets the Joints folder to **hidden** so new joints do not appear automatically. |
-| **Hide sketches** | Disabled | Hides all sketches. Sets the Sketches folder to **visible** so new sketches appear automatically. |
-| **Hide joint origins** | Disabled | Hides all joint origin markers. Sets the Joint Origins folder to **visible** so new joint origins appear automatically. |
-| **Hide canvases** | Disabled | Hides all canvases. Sets the Canvases folder to **visible** so new canvases appear automatically. |
-| **Hide user coordinate systems** | Disabled | Hides all user coordinate systems. Fusion exposes no folder visibility switch for these, so each one is hidden individually and new ones appear as created. Requires a Fusion build with user coordinate system support; on older builds the option is a logged no-op. |
+| Option | Default |
+|---|---|
+| **Hide origins** | Off |
+| **Hide joints** | Off |
+| **Hide sketches** | Off |
+| **Hide joint origins** | Off |
+| **Hide canvases** | Off |
+| **Hide user coordinate systems** | Off (hidden one by one; skipped on a Fusion build without them) |
 
 ### Logging tab
 
-| Option | Default | Description |
+| Option | Default | Effect |
 |---|---|---|
-| **Log Progress** | Enabled | Writes detailed processing events to a plain-text `.log` file (UTF-8). |
-| **Log file path** | Auto-generated | Defaults to `[DocumentName].log` in the OS temp folder (`/tmp` on macOS, `%TEMP%` on Windows). Select **Browse…** to choose a different location and filename. |
-| **Open live log viewer** | Enabled | Automatically launches a native log viewer when the command starts — **Console.app** on macOS, a **PowerShell Get-Content -Wait** window on Windows. |
+| **Log Progress** | On | Writes a plain-text log |
+| **Log file path** | Blank, meaning `<document name>.log` in your system's temporary folder | **Browse…** to choose another location |
+| **Open live log viewer** | On | Opens Console.app (macOS) or a PowerShell tail window (Windows) when the run starts |
 
-## Processing sequence
+## What a run does
 
-When you select **OK**, the command performs the following steps:
+1. **Resume check.** The existing log, if any, is read: the Fusion version and the document list are compared with the current ones to decide between a fresh run and a resume.
+2. **Traversal and sort.** The assembly is walked into a dependency graph and sorted so every document is processed after the documents it references.
+3. **Per document**, in that order: open; update its references; enable the timeline if asked; apply the visibility options; apply design intent; run Update Contexts; rebuild; save with the comment `Auto save in Fusion: <version>, by rebuild assembly.`; wait for the upload to complete; close; write a `CHECKPOINT|SAVE_UPLOAD_COMPLETE` line.
+4. **Root.** **Get All Latest** and **Update All From Parent** run on the root, then its contexts are updated, and it is saved and its upload confirmed.
+5. **Report.** The completion dialog and the log's summary.
 
-1. **Resume check** — Reads the existing temp log (if present), verifies the recorded Fusion client version matches the running client, compares the logged component list to the current assembly DAG, and determines whether to start fresh or resume from a previous checkpoint. See [Resume behavior](#resume-behavior).
-2. **Assembly traversal** — Recursively walks the entire assembly and records all component dependencies as a directed acyclic graph (DAG).
-3. **Topological sort** — Sorts the dependency graph in bottom-up order so that leaf components are processed before the assemblies that use them.
-4. **Component processing** — For each component in order (starting at the resume index if resuming):
-   - Opens the component document.
-   - Calls `updateAllReferences()` to bring references up to date.
-   - Activates the Fusion Solid Environment workspace.
-   - Enables the timeline if **Enable Timeline** is enabled and the document is direct modeling.
-   - Applies selected visibility options.
-   - Applies design intent if enabled.
-   - Updates out-of-date assembly contexts if **Update Contexts** is enabled.
-   - Calls `computeAll()` to rebuild if **Rebuild all** is enabled.
-   - Saves the document with a timestamp comment.
-   - Waits for the cloud upload to confirm completion before advancing.
-   - Closes the component document (the starting root assembly is never closed).
-   - Writes a `CHECKPOINT|SAVE_UPLOAD_COMPLETE` entry to the log.
-5. **Final assembly update** — Executes **Get All Latest** and **Update All From Parent** on the root assembly, updates the root's own contexts if **Update Contexts** is enabled, then saves and confirms the root document upload.
-6. **Completion report** — Displays a summary with the number of components processed and total elapsed time, and writes the final log entry.
+Fusion's automatic recovery saves are suspended for the run and restored afterwards, and documents Fusion opened on its own during the run are closed at the end.
 
-## Resume behavior
+### Design intent
 
-Each time the command runs under logging is enabled, the log header includes:
-
-- The current Fusion client version string.
-- The full bottom-up component list.
-- `CHECKPOINT|SAVE_UPLOAD_COMPLETE|component=<name>|saved_index=<n>|total=<N>|timestamp=<T>` for every confirmed save.
-
-When the command dialog opens, it automatically inspects the temp log:
-
-| Condition | Behavior shown in Run status |
+| Intent applied | When |
 |---|---|
-| No temp log exists | "No previous log found. A full run will start." |
-| Log is from a different Fusion client version | "Previous temp log is from a different Fusion client version. A full run will start." |
-| Prior run completed successfully | "Previous run completed successfully. Log will be reset for a new run." (log is cleared) |
-| Prior run incomplete, component list has changed | "Previous run did not complete, but the component save list has changed. A full run will start." |
-| Prior run incomplete, component list matches | "Resume available. Next component after '`<name>`' will be processed." |
+| **Part** | The document has no child components |
+| **Assembly** | It has children but no sketches or bodies of its own |
+| **Hybrid** | It has children and sketches or bodies |
 
-When resuming, the progress counter and component loop start at the index immediately after the last confirmed checkpoint. The saved-document count is pre-seeded from the checkpoint so final statistics remain accurate.
+### Enable Timeline
 
-## Design intent logic
+A direct-modeling document (*Do not capture design history*) is switched to parametric; Fusion captures the existing geometry as a base feature at the top of the new timeline. A parametric document is left alone. The switch is one-way and is saved as a new version, so try it on a small assembly first.
 
-When **Apply Design Doc Intent** is enabled, the command analyzes each component and applies one of the following intents:
+### Update Contexts
 
-| Intent | Criteria | Fusion command applied |
-|---|---|---|
-| **Part** | Component has no child occurrences (leaf node) | `Fusion.setDocumentExperience Part` |
-| **Assembly** | Component has child occurrences but no sketches or bodies | `Fusion.setDocumentExperience xrefAssembly` |
-| **Hybrid Assembly** | Component has child occurrences AND contains sketches or bodies | `Fusion.setDocumentExperience xrefAssembly hybridAssembly` |
+An assembly context is the parent design a component was edited inside; when the parent changes, the context goes out of date. Fusion's **Update Contexts** command is started in each document; the log records that it was *started*, and a short pause lets it land before the save. A failure is logged and the run continues.
 
-## Enable Timeline
+### Upload confirmation
 
-When **Enable Timeline** is enabled, each document is checked before its visibility and intent options are applied:
+After each save the run waits for the cloud upload to complete before closing the document, up to 300 seconds. A timeout is logged as an error and the run continues. The final **Get All Latest** and **Update All From Parent** each have a 120-second limit; if either fails the run stops with an error.
 
-| Document design type | Action |
+### Resuming
+
+The log records the Fusion version, the document list and a checkpoint line for every confirmed save. When the dialog opens, **Run status** says one of:
+
+| Status | Meaning |
 |---|---|
-| Direct modeling (**Do not capture design history**) | Switched to parametric. Fusion captures the existing geometry as a base feature at the top of the new timeline. Logged as `Timeline enabled (direct modeling converted to parametric)`. |
-| Parametric (timeline already present) | Left untouched. Logged as `Timeline already enabled`. |
+| *No previous log found. A full run will start.* | Nothing to resume |
+| *Previous temp log is from a different Fusion client version. A full run will start.* | The log came from another build |
+| *Previous run completed successfully. Log will be reset for a new run.* | The last run finished |
+| *Previous run did not complete, but the document save list has changed. A full run will start.* | The assembly changed |
+| *Resume available. Processing will continue after the last saved document.* | The run picks up after the last checkpoint |
 
-The root assembly is saved at the end of the run rather than in the component loop, so it is converted separately just before its final save.
+Resume detection reads the default log location. To force a fresh start, delete the log file from your temporary folder.
 
-The switch is one-way — this option never turns a timeline off, and the resulting base feature cannot be unwound by re-running the command. Because the conversion is saved as a new version of the document, run it on a small assembly first if you have not used it before.
+## Limitations
 
-## Update Contexts
-
-An *assembly context* is the parent design a component was edited inside. When the parent changes, the context goes out of date and the component keeps showing the geometry it was edited against until the context is refreshed.
-
-Fusion exposes no API for assembly contexts, so **Update Contexts** starts Fusion's own **Update Contexts** command (`EIPContextsUpdateCmd`) against each document while it is open, after the design intent step and before the rebuild — so `computeAll()` and the save both capture the refreshed geometry. The root assembly gets the same treatment just before its final save.
-
-| Outcome | Log entry |
-|---|---|
-| The command was started | `Update contexts started for <name>` |
-| The command could not be started | `Update contexts failed for <name>: <error>` |
-
-The command reports no completion event, so Bottom-Up Update gives its cloud round-trips a short pause to land before saving rather than claiming the update finished. The log line means the update was **started**, not that it completed — confirm a run against `Workflow start: UpdateEIPContext` in Fusion's own application log if you need proof.
-
-A failure is logged and the run continues to the next document; it never aborts the run.
-
-This is separate from the **Update All From Parent** step in the final assembly update, which is unchanged and still runs on the root at the end of every run.
-
-## Upload confirmation
-
-After each `document.save()` call the command waits for the cloud upload to complete before closing the document or moving to the next component. The mechanism adapts to the Fusion API build in use:
-
-- **`DataFileFuture` returned** — polls `future.isComplete` at the configured upload check interval; reports `future.errorDescription` on failure.
-- **`bool` returned (older Fusion builds)** — reads the document's current Hub version via `app.data.findFileById()`, waits for a version bump, then verifies a stable `isSaved == True` / `isModified == False` state for at least one second before advancing.
-
-A 300-second timeout applies in both cases. If the timeout is reached the component is recorded as an error and the run continues.
-
-## Log file content
-
-When logging is enabled, the log file records:
-
-- **Header**: Fusion client version, active document name/project/ID, all selected options, full bottom-up processing order.
-- **Per component**: open/close events, reference update confirmations, visibility changes, intent application details, context update result, rebuild status, save result, upload confirmation result, and a `CHECKPOINT|SAVE_UPLOAD_COMPLETE` line on success.
-- **Final assembly**: `GetAllLatestCmd` and `ContextUpdateAllFromParentCmd` results, the root assembly's own context update result, root assembly save and upload confirmation, final `CHECKPOINT|SAVE_UPLOAD_COMPLETE` line.
-- **Summary**: total components saved, total elapsed time, completion status.
-
-Default log location is the OS temp folder: `/tmp` (macOS) or `%TEMP%` (Windows).
-
-## Best practices
-
-- Save all open documents before running the command.
-- Close documents that are not part of the assembly to reduce resource contention.
-- Confirm that you have write access to all component files before starting.
-- For very large assemblies, consider processing smaller sub-assemblies separately.
-- Enable **Log Progress** when troubleshooting to capture detailed error information.
-- Leave the default log location (OS temp folder) in place if you want resume detection to work automatically.
+- Visibility options act on the root component of each document, not on nested components inside it.
+- Skipping standard components is by project name (**Standard Components**), not by vendor.
+- Save every open document before starting, close documents that are not part of the assembly, and process very large assemblies as smaller sub-assemblies where you can.
 
 ## Troubleshooting
 
-| Symptom | Likely cause | Resolution |
+| Symptom | Cause | What to do |
 |---|---|---|
-| "No document references found" error | Active document has no external references | Confirm you are running the command on an assembly with linked components |
-| Component skipped unexpectedly | File is locked or write-protected | Check Hub permissions; ensure no other user has the document open |
-| Run status shows full run after an interruption | Log was from a different Fusion client build, or the component list changed | Accept the full run; all components will be processed |
-| Run status offers resume but you want a fresh start | Previous checkpoint exists | Delete the temp log file shown in the Logging tab before clicking OK |
-| Upload wait times out | Slow network or large file | Increase the upload check interval and ensure no Hub connectivity issues |
-| Design intent not applied | Component is read-only | Ensure the document is not locked; review the log for intent-specific errors |
-| Live log viewer does not open | Console.app not found (macOS) or PowerShell unavailable (Windows) | Open the log file manually from the path shown in the Logging tab |
+| *No document references found* | The document has no external references | Run it on an assembly with linked components |
+| A document is skipped | It is locked or read-only, or in the Standard Components project | Check hub permissions and whether another user has it open |
+| Run status offers a full run after an interruption | Different Fusion build, or the document list changed | Accept the full run |
+| Upload wait times out | Slow network or large file | Increase the interval; check connectivity |
+| The live log viewer does not open | Console.app or PowerShell unavailable | Open the log file from your temporary folder |
 
 > **Developers:** see the [architecture notes](./arch/Bottom-Up%20Update.md).
 
 ---
 
-[Back to PowerTools Assembly](../README.md)
-
----
+[Back to README](../README.md)
 
 *Copyright © 2026 IMA LLC. All rights reserved.*
-

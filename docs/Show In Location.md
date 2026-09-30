@@ -4,39 +4,47 @@
 
 ## Overview
 
-By default in Fusion, the Data Panel does not always track the document currently in focus. The **Show In Location** automation runs Fusion's built-in **Show In Location** text command whenever a document opens or when you switch to a different open document tab.
+Show In Location reveals the active document's location in the Data Panel automatically when a document is opened or activated.
 
-This keeps the Data Panel synchronized with the active document without any manual action.
+Fusion's Data Panel does not follow the document you are working in: open a design from a search result or a link, or switch tabs, and the panel stays wherever you last left it. Show In Location runs Fusion's own **Show In Location** action for you at those two moments, so the folder that holds the active document is always the one on screen. It is the same "reveal in folder" convenience every desktop file browser offers, applied to Fusion's cloud data.
 
-## Capabilities
-
-| Capability | Details |
-|---|---|
-| Automatic document tracking | Runs in the background whenever the add-in is loaded |
-| Open-event sync | Triggers after each `documentOpened` event |
-| Tab-switch sync | Triggers after each `documentActivated` event |
-| Safe fallback behavior | Skips unsaved documents and logs errors without interrupting workflow |
-| Enable / Disable toggle | A toggle command in the **PowerTools Settings** dropdown lets you turn the automation on or off without unloading the add-in |
-| Persistent toggle state | The enabled/disabled state is saved to `cache/settings.json` and restored on next startup |
+There is no button. The automation ships turned off and is controlled entirely from **PowerTools Preferences**.
 
 ## Prerequisites
 
-- The add-in must be loaded.
-- The active document must be saved to Fusion cloud data to provide a valid `dataFile.id` URN.
+- The active document must be saved to a hub. An unsaved document has no location to reveal and is skipped silently.
 
-## Notes
+## Where to find it
 
-- Unsaved documents are skipped because they do not expose a valid cloud `dataFile` reference.
-- The toggle label updates dynamically: it reads **Disable Show In Location** when the feature is active and **Enable Show In Location** when it is inactive.
-- The enabled/disabled state persists between Fusion sessions via `cache/settings.json`.
+Show In Location has no toolbar entry. Turn it on under **File › PowerTools Preferences › Document Tools › Show In Location**.
 
-## Access
+## How to use
 
-This feature runs automatically in the background whenever the add-in is loaded.
+1. Open **PowerTools Preferences** from the **File** menu on the Quick Access Toolbar.
+2. In the **Document Tools** group, tick **Show In Location** to enable the command, then tick one or both triggers beneath it.
+3. Restart Fusion. Enabling or disabling a command takes effect on the next start; the two trigger checkboxes take effect immediately once the command is enabled.
 
-To enable or disable the automation, select **Disable Show In Location** (or **Enable Show In Location**) from the **PowerTools Settings** sub-menu in the **File** dropdown on the **Quick Access Toolbar (QAT)**.
+From then on the Data Panel moves to the active document's folder at the moments you selected.
+
+## Preferences
+
+| Setting | Default | Effect |
+|---|---|---|
+| **Show In Location** (Commands list) | Off | Loads the automation at all. Applies on the next Fusion restart. |
+| **Reveal location when a document is opened** | Off | Reveal after each document open. |
+| **Reveal location when a document is activated** | Off | Reveal each time you switch to a different open document tab. |
+
+With the command enabled but both triggers off, nothing happens.
+
+## Limitations
+
+- Unsaved documents are skipped; they have no cloud location.
+- The Data Panel must be visible for the reveal to be seen. Use [Toggle Data Pane](./Toggle%20Data%20Pane.md) to open it.
+- Errors are logged and never interrupt opening or switching documents.
 
 > **Developers:** see the [architecture notes](./arch/Show%20In%20Location.md).
+
+---
 
 [Back to README](../README.md)
 

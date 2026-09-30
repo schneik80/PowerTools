@@ -1,216 +1,96 @@
 # Flatten Surface
 
-Lays **curved faces flat**, shows **where the material has to stretch or gather**
-to get there, and creates a **sketch of the flat pattern**.
+[Back to README](../README.md)
 
-Fusion can already unfold sheet metal, because a bend is single-curvature: it
-rolls out with no distortion at all. A doubly-curved face — a dome, a saddle, a
-boat hull, a shoe upper — has no such flat form. It can only be *approximated*
-by one, and what matters is knowing by how much, and where. That is what this
-command reports.
+## Overview
 
-**Location:** the **Power Tools** panel, on the design **Tools** tab.
+Flatten Surface flattens curved faces into a flat pattern, previews how far the material has to stretch or gather, and creates a sketch of the result.
 
-> **Beta.** Enable it under **Part Modeling** in PowerTools Preferences.
+Fusion can already unfold sheet metal, because a bend is single-curvature and rolls out with no distortion. A doubly-curved face, a dome, a saddle, a boat hull, a shoe upper, has no exact flat form; it can only be approximated, and what matters is by how much and where. SolidWorks offers this as the Premium-tier **Flatten Surface** feature with its deformation plot; ExactFlat sells it as a dedicated product. Flatten Surface brings the same strain map into Fusion and finishes with real sketch geometry: lines, arcs and circles you can dimension and machine to, not a spline that merely looks like one.
 
----
+> **Beta.** Tick **Show beta commands** under **General** in **File › PowerTools Preferences**, then enable **Flatten Surface** under **Part Modeling**, and restart Fusion.
 
-## Using it
+## Prerequisites
 
-1. Pick a plane or planar face to **Place on**. Nothing can be previewed until
-   there is somewhere to draw the pattern, so this comes first; the
-   **manipulator** appears on that plane once it is picked.
-2. Pick the **Faces** to flatten. Tick **Tangent chain** first if you want one
-   click to take the whole smooth run with it.
+- A design document must be open.
+
+## Where to find it
+
+**Utilities** tab › **Power Tools** panel › **Flatten Surface**, in the Design workspace.
+
+## How to use
+
+1. Pick a plane or planar face to **Place on**. The manipulator appears on that plane once it is picked.
+2. Pick the **Faces** to flatten. Tick **Tangent chain** first if one click should take a whole smooth run.
 3. Drag the manipulator to position the pattern on the plane.
-4. Read the strain figures, adjust **Mesh quality** and **Relax pattern** to taste.
-5. **OK** creates the sketch.
+4. Read the strain figures; adjust **Mesh quality** and **Relax pattern** to taste.
+5. Select **OK** to create the sketch.
 
-Faces that touch are flattened **together as one piece**, so a shape spanning
-several faces keeps its shared edges the right length. Faces that do not touch
-are laid out side by side as separate pieces.
+Faces that touch are flattened together as one piece, so a shape spanning several faces keeps its shared edges the right length. Faces that do not touch are laid out side by side as separate pieces. Each piece is squared up before it is placed, so a rectangular panel lands straight and landscape.
 
-### Tangent chain
+## Options
 
-With it ticked, picking one face also picks every face joined to it by a smooth
-edge, following the run as far as it goes — a filleted panel comes in with a
-single click instead of one click per fillet. Picking stops at any sharp edge,
-so a chain never spills onto the far side of a crease.
-
-It only ever adds. Deselecting a face leaves it deselected, and unticking the
-box stops further chaining rather than undoing what is already picked, so you
-can chain a run and then trim a face or two off it.
-
-Each piece is squared up before it is placed, so a rectangular panel lands
-straight and landscape rather than at whatever angle the solver happened to
-finish at.
+| Option | Default | Effect |
+|---|---|---|
+| **Place on** | — | The plane or planar face the pattern is drawn on |
+| **Faces** | — | The faces to flatten, one or more |
+| **Tangent chain** | Off | Picking one face also picks every face joined to it by a smooth edge, stopping at any sharp edge. It only ever adds: unticking it stops further chaining without undoing what is picked |
+| **Mesh quality** | Medium | Coarse, Medium or Fine; finer locates distortion more precisely and follows the outline more closely, coarser previews faster |
+| **Relax pattern** | On | Balances the error between shape and size, which is what a cut pattern usually wants. Off makes the flattening angle-true: every corner keeps its angle and all the error goes into size. It previews faster and typically doubles the average strain |
+| **Show mesh** | Off | Draws the triangles the strain was measured on, to judge whether the mesh is fine enough to trust |
+| **Export SVG** | — | Saves the strain map, outline, colour scale and headline figures to an SVG file (default name `<document name> flat pattern.svg`) without closing the dialog |
 
 ## Which shapes flatten exactly
 
-A plane flattens exactly. So does a cylinder, a cone, and any number of them
-joined edge to edge — an extruded profile with filleted corners comes out with
-no strain at all, and the dialog says **"Flattens exactly."**
+A plane flattens exactly. So does a cylinder, a cone, and any number of them joined edge to edge: an extruded profile with filleted corners comes out with no strain at all and the dialog says **Flattens exactly.**
 
-The exception is a **point where three or more faces meet**, like the corner of
-a box. The faces there enclose less than a full turn — three square corners give
-270 degrees, so 90 are missing — and that shortfall is curvature. No flat
-pattern can hold it and no software can remove it, so the dialog names how many
-such corners there are and how much curvature they hold. A strain map on a shape
-like that is reporting geometry, not a fault.
+The exception is a point where three or more faces meet, like the corner of a box. The faces there enclose less than a full turn, and that shortfall is curvature no flat pattern can hold. The dialog names how many such corners there are and how much curvature they hold; a strain map on a shape like that is reporting geometry, not a fault. Strain from a corner is spread across the whole piece; turning **Relax pattern** off concentrates it instead.
 
-Strain from a corner is spread across the whole piece rather than piled up at
-the corner, so flat faces near one show some too. Turning **Relax pattern** off
-concentrates it instead, which is sometimes easier to interpret.
-
-Neighbouring faces are meshed independently, so where they sample a shared edge
-differently the pieces would meet at only a few points. Those gaps are closed
-before flattening and the dialog reports how many were closed.
+Neighbouring faces are meshed independently, so where they sample a shared edge differently the pieces would meet at only a few points. Gaps up to 50 microns are closed before flattening and the dialog reports how many.
 
 ## Tubes and other closed shapes
 
-A closed tube — a full cylinder or cone wall — has **no flat form at all** until
-it is cut, the same reason you slit a paper towel roll to flatten it. Select one
-and it is slit automatically along the shortest seam between its two ends, and
-the dialog says so. Once slit it unrolls **exactly**, with no distortion,
-because a tube is developable.
-
-**A hole is never cut open.** A washer, or a formed boss with a bore through it,
-is a closed ring in exactly the same topological sense as a tube — but its rim
-goes round something, and a tube's does not. Rings keep their holes and carry
-whatever strain that costs, which is reported like any other. Only a genuinely
-open-ended shape is slit.
-
-A fully closed shell such as a sphere has no open end to cut between and is not
-handled: expect a poor pattern and no usable outline. Split it into faces first.
+A closed tube, a full cylinder or cone wall, has no flat form until it is cut. When cutting would reduce the strain, the tube is slit along the shortest seam between its two ends and the dialog says so; once slit it unrolls exactly. A hole is never cut open: a washer or a bossed bore is a closed ring too, but its rim goes round something, so rings keep their holes and carry whatever strain that costs. A fully closed shell such as a sphere has no open end to cut between and is not handled; split it into faces first.
 
 ## Reading the strain map
 
-The preview is shaded by **strain**: how much the local size has to change
-between the surface and the flat pattern.
+The preview is shaded by strain: how much the local size has to change between the surface and the flat pattern.
 
 | Colour | Meaning |
 |---|---|
-| Blue | The material has to **gather** — the flat pattern is smaller here |
-| Near-white | No distortion; this part flattens truthfully |
-| Red | The material has to **stretch** — the flat pattern is larger here |
+| Blue | The material has to gather; the flat pattern is smaller here |
+| Near-white | No distortion |
+| Red | The material has to stretch; the flat pattern is larger here |
 
-A **developable** face — a cylinder, a cone, an extruded profile — comes out
-white all over, because it genuinely flattens with no distortion, and the dialog
-says **"Flattens exactly"** rather than quoting a row of zeroes. Colour means
-double curvature, and the strength of the colour is how much of it there is.
-Otherwise the dialog reports the worst stretch, the worst gather, and the
-average.
+A developable face comes out white all over and the dialog says **Flattens exactly** rather than quoting zeros. Otherwise it reports the worst stretch, the worst gather and the average. The colour scale adapts to the part, so colours show where distortion is concentrated; it stops adapting below a tenth of a percent, which no material notices, so a part that flattens perfectly is not shown with its rounding error magnified.
 
-The scale adapts to the part, so the colours show where distortion is
-concentrated rather than how it measures against a fixed range. It stops
-adapting below a tenth of a percent, which no material notices; that floor is
-what keeps a part which flattens perfectly from having its rounding error
-magnified into a full-strength map.
-
-When there is distortion to find, two labelled spheres mark the extremes:
-**Max** in red at the worst stretch, **Min** in blue at the worst gather, each
-carrying its percentage. On a large pattern with a gentle gradient those spots
-are hard to find by eye and they are what decides whether the pattern is usable.
-Both labels turn to face you from any viewpoint and hold their size as you zoom.
-On a shape that flattens exactly they are not drawn at all — there is no worst
-spot to mark.
-
-Grey lines across the preview are the **seams**: the joins between the faces you
-selected.
-
-**Show mesh** draws the triangles the strain was actually measured on. Turn it
-on to judge whether the mesh is fine enough to trust — a strain map is only as
-detailed as the mesh under it.
-
-Whether those numbers are acceptable is a material question, not a geometric
-one. Woven fabric and leather absorb a few percent without complaint; sheet
-steel and carbon-fibre prepreg do not.
+When there is distortion, two labelled spheres mark the extremes: **Max** in red at the worst stretch and **Min** in blue at the worst gather, each with its percentage. Grey lines are the seams between the faces you selected. Whether the numbers are acceptable is a material question: woven fabric and leather absorb a few percent, sheet steel and carbon-fibre prepreg do not.
 
 ## What the sketch contains
 
+A sketch named **Flatten Surface pattern**, on the plane you picked and positioned where you left the manipulator, in the active component:
+
 | Geometry | What it is |
 |---|---|
-| Lines, arcs, circles and splines | The outline of the pattern, and of any holes in it |
+| Lines, arcs, circles and splines | The outline of the pattern and of any holes in it |
 | Construction geometry | The seams between selected faces |
 | Two sketch points | The worst stretch and the worst gather |
 
-The outline is **cut at its corners** first, so a corner stays sharp — fitting
-one curve around a whole outline would average every corner away.
+The outline is cut at its corners first, so a corner stays sharp. Each run then becomes the geometry it actually is: straight runs become lines, circular runs arcs, and a round hole a real circle, but only when the fit is exact, so the outline of a doubly-curved panel stays one spline rather than a chain of little arcs. Refining the mesh does not change which is which. Nothing else in the design is touched.
 
-Each run is then drawn as **the geometry it actually is**. Straight runs become
-lines, circular runs become arcs, and a round hole becomes a real circle rather
-than a spline that merely looks like one. That matters downstream: you can
-dimension a circle, machine to it, and constrain to it.
+## Limitations
 
-A run only becomes a line, arc or circle when it fits that shape **exactly** —
-far more closely than the tolerance alone would allow. Real geometry does: the
-mesh points along a machined edge are genuinely collinear, and those around a
-hole genuinely lie on a circle. Curves that are smooth but not circular — the
-outline of a doubly-curved panel, or an ellipse — stay as one spline rather than
-being chopped into a chain of little pieces that each fit and none of which is
-the shape. Refining the mesh does not change which is which.
+- The pattern is an approximation wherever the strain map is not white; that is the nature of the problem.
+- If the layout folds back on itself the dialog warns with the count. Usually it means too many faces at once; flatten fewer at a time or refine the mesh.
+- Faces must touch to be flattened together; coincidence is judged within 1 micron.
+- The sketch outline follows the meshed boundary, not the exact edge; finer mesh, closer fit.
+- The mesh is capped at about 4000 triangles: above that it is coarsened automatically, up to three times, and the dialog says so. For more detail, flatten fewer faces at a time.
+- Placing onto a plane inside a component instance may land the pattern somewhere unexpected; place it on a top-level plane if so.
 
-The sketch is created on the plane you picked, positioned where you left the
-manipulator. Nothing else in the design is touched.
-
-## Mesh quality
-
-The faces are meshed before being flattened, and that mesh is what gets
-measured. **Finer** locates the distortion more precisely and follows the
-outline more closely; **coarser** previews faster.
-
-The solver runs inside Fusion's Python, so cost rises steeply with triangle
-count. Past a working budget the mesh is coarsened automatically and the dialog
-says so — a coarser answer beats a frozen dialog. If you need more detail than
-that allows, flatten fewer faces at a time.
-
-## Relax pattern
-
-**On** (the default) balances the error between shape and size, which is what a
-cut pattern usually wants.
-
-**Off** makes the flattening **angle-true**: every corner keeps its angle, and
-all of the error is pushed into size instead. It previews faster, and it is the
-better choice when angles matter more than areas.
-
-Relaxing typically halves the average strain on a doubly-curved face. It cannot
-remove it — no method can, because the distortion is a property of the surface
-rather than of the algorithm.
-
-## Export SVG
-
-Saves the strain map — the shaded pattern, its outline, a colour scale and the
-headline figures — to a file you choose. SVG opens in any browser and prints
-without going fuzzy at any size.
-
-The button works whenever faces are selected, so you can export without
-committing a sketch. It does not close the dialog.
-
-## Notes and limits
-
-- **The pattern is an approximation** wherever the strain map is not white. That
-  is the nature of the problem, not a defect — see the colour table above.
-- **Folded patterns are reported, not hidden.** If the layout turns back on
-  itself the dialog warns and gives the count. Usually it means too many faces
-  at once, or a face with a slit in it; flatten fewer at a time.
-- **Faces must touch to be flattened together.** Coincidence is judged within 1
-  micron (0.0001 cm), the same tolerance Measure Path uses.
-- The sketch outline is fitted through the meshed boundary, so it follows the
-  mesh rather than the exact edge. Finer mesh, closer fit.
-- **Placing onto a plane inside a component instance** is the least-tested
-  path; if a pattern lands somewhere unexpected, place it on a top-level plane
-  instead.
-- Nothing is added to the timeline except the sketch.
-
-## Preferences
-
-Listed under **Part Modeling** in **PowerTools Preferences**. As a beta command
-it appears only when beta commands are enabled.
+> **Developers:** see the [architecture notes](./arch/Flatten%20Surface.md).
 
 ---
 
-*Developers: [architecture note](arch/Flatten%20Surface.md) ·
-[solver internals](dev/Flatten%20Surface%20solver.md) ·
-[method background and sources](dev/Flatten%20Surface%20research.md).*
+[Back to README](../README.md)
 
 *Copyright © 2026 IMA LLC. All rights reserved.*

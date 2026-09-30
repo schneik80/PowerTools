@@ -4,50 +4,32 @@
 
 ## Overview
 
-**Select Related Data Folder** is a setup command that registers the cloud folder where your start parts and templates are located. It records the selected folder — along with its owning Autodesk Fusion Team Hub and project — with the Power Tools add-in. After the folder is selected, the **Create Related Data** command can read templates from that hub automatically.
+Select Related Data Folder records the cloud folder where your related-data templates are kept, so [Create Related Data](./Related%20Data.md) knows where to copy them from.
 
-The folder must be configured **once for each Team Hub**, on each machine. The command opens Fusion's cloud folder picker so you can browse to your templates folder directly. The hub and project that own the selected folder are resolved automatically. No manual ID lookup or JSON editing is required.
-
----
-
-## When to run Select Related Data Folder
-
-Run **Select Related Data Folder** in the following situations:
-
-- The **first time** you install the add-in on a machine.
-- When you **connect to a new hub** that has not been configured on that machine yet — the folder must be selected once per hub.
-- When you want to **re-point an existing hub entry** to a different templates folder (for example, after a team administrator moves or renames the folder).
-
-If the active hub is already configured, the command shows the current location and lets you cancel out or pick a new folder to overwrite the existing entry.
-
----
+The folder is chosen once per hub, per machine, in Fusion's own cloud folder picker. The hub and project that own the selected folder are resolved automatically; there is no ID to look up and no file to edit.
 
 ## Prerequisites
 
-Before running **Select Related Data Folder**, ensure the following are in place in your Team Hub:
+- A project in the hub that every team member can read (recommended name **Templates**), with a folder directly under the project root holding your `.f3d` templates (recommended name **Related Data** or **Start Parts**). See [Create Related Data](./Related%20Data.md#setting-up-templates).
+- You must be signed in to the hub.
 
-1. A **project** accessible to all team members — recommended name: **Templates**.
-2. A **folder** inside that project containing your `.f3d` template documents — recommended name: **Related Data** or **Start Parts**. This is the folder you will select, and it is where all start parts and templates must be located.
+## Where to find it
 
-See [Create Related Data — Step 1](./Related%20Data.md#step-1--create-the-templates-project-and-folder-in-fusion-team) for instructions on creating the templates project and folder.
+**File › PowerTools Preferences › Related Data › Hub Settings › Select Related Data Folder…**. The Hub Settings card shows the active hub and whether it is configured, and the project and folder when it is.
 
-> This setup step is best performed by a Fusion Team administrator, but any team member can run it.
+## How to use
 
----
+1. Open **PowerTools Preferences** from the **File** menu and go to **Related Data › Hub Settings**.
+2. Select **Select Related Data Folder…**. If the active hub is already configured, a **Hub Already Configured** dialog shows the current location: **Cancel** keeps it, **OK** picks a new folder.
+3. Read the prompt and select **OK**. Fusion's cloud folder picker opens, titled **Select Templates Folder**, starting at the active document's folder if that document is saved.
+4. Browse to the templates folder and confirm.
+5. A **Hub Configured** message confirms the hub was added or updated.
 
-## How to select the related data folder
+The entry takes effect immediately; no restart is needed.
 
-1. **Run Select Related Data Folder.** Select **Select Related Data Folder** from the **Quick Access Toolbar → File menu → PowerTools Settings** flyout.
+## What it stores
 
-2. **Acknowledge the prompt.** A short message tells you to browse to the cloud folder that contains your start parts or templates. Click **OK**.
-
-3. **Pick the templates folder.** Fusion's cloud folder picker opens. Navigate to the folder that contains your template `.f3d` files and confirm the selection. If a saved document is currently open, the picker starts in that document's parent folder as a convenience.
-
-4. **Confirm the result.** A success message confirms the hub was added (or updated) and lists the resolved hub name, project, and folder.
-
-If the active hub is already in `hub.json`, you are asked first whether to keep the existing entry or pick a new folder. Choosing a new folder overwrites the entry in place.
-
-The hub entry is written to `hub.json` in the add-in's `cache/` folder in the following format:
+The hub entry is written to `cache/hub.json` in the add-in folder:
 
 ```json
 {
@@ -64,26 +46,20 @@ The hub entry is written to `hub.json` in the add-in's `cache/` folder in the fo
 }
 ```
 
-Multiple hubs are supported. Run **Select Related Data Folder** once per hub. Re-running on a hub that is already configured upserts the entry — the existing record is replaced in place rather than duplicated.
+Several hubs can be configured; run the command once on each. Re-running on a configured hub replaces its entry. To remove a hub, delete its entry from the `hubs` array.
 
-To remove a hub, open `hub.json` and delete the corresponding entry from the `hubs` array.
+## Limitations
 
----
+- The templates folder must sit directly under the project root. A deeper folder, or the project root itself, makes Create Related Data report **Folder Not Found**.
+- Create Related Data caches the template list per hub in `cache/<hub id>.json`. After re-pointing a hub to a different folder, delete that file so the list is rebuilt.
+- The "already configured" check looks at the active hub, while the entry written belongs to the hub that owns the folder you picked. Pick a folder in the hub you are signed in to.
 
 ## Troubleshooting
 
-| Message | Cause | Resolution |
+| Message | Cause | What to do |
 |---|---|---|
-| *Hub Already Configured* | The active hub already has an entry in `hub.json` | Click **Cancel** to keep the existing configuration, or **OK** to pick a new folder and overwrite the entry |
-| *Hub Not Found* | The selected folder could not be matched to a hub the user has access to | Confirm you are signed in to the correct Autodesk account and that the folder lives in a project you can read; then re-run the command |
-
----
-
-## Access
-
-**Select Related Data Folder** is in the **Quick Access Toolbar → File menu → PowerTools Settings** flyout.
-
----
+| **Hub Already Configured** | The active hub has an entry | **Cancel** to keep it, **OK** to pick a new folder |
+| **Hub Not Found** | The selected folder could not be matched to a hub you can access | Sign in to the right account, check the folder is in a project you can read, and try again |
 
 > **Developers:** see the [architecture notes](./arch/Select%20Related%20Data%20Folder.md).
 

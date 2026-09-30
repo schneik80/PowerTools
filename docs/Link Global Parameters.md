@@ -1,61 +1,53 @@
 # Link Global Parameters
 
-[Back to PowerTools Assembly](../README.md)
+[Back to README](../README.md)
 
-The Link Global Parameters command derives a parameter set from a shared parameters document into the active Autodesk Fusion document. It reads the parameter set created by the **Global Parameters** command from the `_Global Parameters` folder of the active project and inserts those parameters as a Derive feature in the active design.
+## Overview
 
-## What you can do
+Link Global Parameters derives a shared parameter set from the project's `_Global Parameters` folder into the active design.
 
-- Browse all parameter sets available in the active project's `_Global Parameters` folder.
-- Preview the parameters in a selected parameter set before committing.
-- Derive the selected parameter set into the active document as favorite parameters so they are immediately available in Fusion's Favorites panel and in design expressions.
-- Use cached project discovery data for faster startup, with lazy Hub scan fallback when needed.
+A set created with [Global Parameters](./Global%20Parameters.md) is only useful once a design can use its numbers. This command lists the sets in the active project, previews the one you pick, and derives it into the design so its parameters appear in the Parameters dialog as favorites and can be used in any expression. The derive stays linked, so a later edit to the set flows into the design when its references update.
 
 ## Prerequisites
 
-- An Autodesk Fusion 3D Design must be active and saved to an Autodesk Hub project.
-- At least one parameter set must exist in the project (created with the **Global Parameters** command).
+- The active design must be saved to a hub; the command refuses an unsaved document.
+- A project must be active in the Data Panel, with at least one set in its `_Global Parameters` folder.
 
-## How to use Link Global Parameters
+## Where to find it
 
-1. Open the Autodesk Fusion Design workspace with the target document active.
-2. On the **Power Tools** panel, select **Link Global Parameters**.
-3. In the **Parameter Set** dropdown, select the parameter set you want to link.
-4. The preview table updates to show the parameters in the selected set:
+**Utilities** tab › **Power Tools** panel › **Link Global Parameters**, in the Design workspace, next to **Global Parameters**.
 
-   | Column | Description |
-   | --- | --- |
-   | Name | Parameter name as defined in the parameter set document |
-   | Expression | Stored expression (e.g. `25.4 mm`) |
-   | Unit | Unit string |
-   | Comment | Optional comment (the `PT-globparm` sentinel prefix is stripped from the display) |
+## How to use
 
-5. Confirm the parameters look correct, then select **OK**.
+1. Open the design that should use the parameters.
+2. Select **Link Global Parameters**. The project's `_Global Parameters` folder is scanned and its sets listed in **Parameter Set**.
+3. Choose a set. The preview table shows its parameters:
 
-The command derives the parameter set document into the active design. All parameters marked as favorites in the parameter set document are inserted into the active document and appear in its Favorites panel.
+   | Column | Content |
+   |---|---|
+   | **Name** | Parameter name |
+   | **Expression** | Stored expression, for example `25.4 mm` |
+   | **Unit** | Unit |
+   | **Comment** | Comment, if any |
 
-> **Note:** The derive operation temporarily opens the parameter set document in the background and closes it when done. Focus returns to the active document automatically.
+4. Select **OK**. The set document is derived into the design at the start of the timeline; the timeline marker is then returned to the end. Parameters new to the design are marked as favorites.
 
-## Access
+The set document is opened briefly in the background for the derive and closed again; focus returns to your design.
 
+## Preferences
 
-The **Link Global Parameters** command is located on the **Utilities** tab, in the **Power Tools** panel of the Autodesk Fusion Design workspace.
+Shares one checkbox with Global Parameters under **File › PowerTools Preferences › Assembly**. Changes apply after a Fusion restart.
 
-## Refresh Global Parameters Cache
+## Limitations
 
-If parameter sets appear missing or out of date in the Link Global Parameters dialog, use the **Refresh Global Parameters Cache** command. This command forces a full scan of the Autodesk Hub project and rewrites the local caches for the active project, ensuring that all available parameter sets are discovered and up to date.
-
-- **Location:** File → PowerTools Settings
-- **When to use:** If you add, remove, or rename parameter sets outside of the add-in, or if the dropdown in Link Global Parameters does not show the latest sets.
-
-After running this command, re-open the Link Global Parameters dialog to see the refreshed list of parameter sets.
+- The **Parameter Set** list comes from a fresh scan of the hub each time the dialog opens; the preview comes from a sidecar file written by Global Parameters and does not reflect edits made to the set document outside the add-in.
+- With no sets in the project the dialog says so and suggests creating one with Global Parameters.
+- If the `_Global Parameters` folder has been deleted and recreated, run [Refresh Global Parameters Cache](./Refresh%20Global%20Parameters%20Cache.md) so the folder is found again.
 
 > **Developers:** see the [architecture notes](./arch/Link%20Global%20Parameters.md).
 
 ---
 
-[Back to PowerTools Assembly](../README.md)
-
----
+[Back to README](../README.md)
 
 *Copyright © 2026 IMA LLC. All rights reserved.*

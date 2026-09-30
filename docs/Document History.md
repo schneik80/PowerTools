@@ -1,37 +1,34 @@
-# Document History
+# History
 
 [Back to README](../README.md)
 
 ## Overview
 
-The **Document History** command adds a **History** button to the Autodesk Fusion Quick Access Toolbar (QAT) and opens a palette that shows the active document's version history as a stack of day rows, newest at the top.
+History shows the active document's version history as a stack of day rows in a palette: one row per day, a track per author, saves placed on a clock axis, and the elapsed time called out between days.
 
-Each row is one calendar day. Inside a day, every person who saved gets their own track, and each save is a dot placed at the time of day it happened, on a clock that runs from midnight on the left to midnight on the right. Between two rows, a label says how much time passed &mdash; "Next day", "3 days later", "1 year, 2 months and 3 days later".
-
-That layout answers questions a single version list cannot: who was working on this design, how a working day was shaped, whether two people were saving over each other, and how long the design sat untouched between bursts of work.
-
-Reaching Fusion's own history panel otherwise means right-clicking the root component in the browser panel &mdash; a non-obvious interaction that is easy to overlook.
+Every CAD data manager lists versions as a table: number, date, user, comment. Onshape's history and SolidWorks PDM's History tab are good examples, and Fusion's own version panel, reached by right-clicking the root component in the browser, is another. A table answers "what is version 12?". It does not answer who was working on this design, how a working day was shaped, whether two people were saving over each other, or how long the design sat untouched between bursts of work. History draws the versions on time so those questions are answered at a glance.
 
 ## Prerequisites
 
-- A document must be open in Autodesk Fusion.
-- The document must be saved to an Autodesk Hub. Version history is cloud data, so an unsaved document has none.
+- A document must be open and saved to a hub. Version history is cloud data; an unsaved document has none, and the command asks you to save first.
 
-## Access
+## Where to find it
 
-Select **History** from the **Quick Access Toolbar (QAT)**, immediately to the left of **Save**.
+**History** on the Quick Access Toolbar, immediately to the left of **Save**.
 
-![access](./assets/dochistory.PNG)
+![History on the Quick Access Toolbar](./assets/dochistory.PNG)
+
+The palette, titled **Document History**, docks on the right. Fusion shows a busy indicator while the history is read from the cloud; a document with hundreds of versions takes a moment.
 
 ## Reading the view
 
 ### Day rows
 
-Rows run newest first. Each row's heading gives the date &mdash; **Today** and **Yesterday** are named rather than dated &mdash; and the number of saves that day. Rows alternate between a plain and a shaded band so a long history stays countable.
+Rows run newest first. Each row's heading gives the date, with **Today** and **Yesterday** named rather than dated, and the number of saves that day. Rows alternate between a plain and a shaded band so a long history stays countable.
 
-The column of circles down the left is the author gutter: one identity disc per track, coloured from the person's Autodesk user id so the same person is the same colour in every row. The gutter is frozen against the left edge, so it still says who no matter how far the view is scrolled.
+The column of circles down the left is the author gutter: one identity disc per track, colored from the person's Autodesk user ID so the same person is the same color in every row. The gutter stays against the left edge however far the view is scrolled.
 
-Where a day has more than six people, the remaining tracks merge into a single track marked **+N**. Nothing is dropped &mdash; every save still has its own dot and its own hover card.
+A day holds at most six tracks. Where more than six people saved on one day, five keep their own track and the rest merge into a single track marked **+N**. Nothing is dropped; every save still has its own dot and its own hover card.
 
 ### The clock axis
 
@@ -39,26 +36,23 @@ By default a row is a 00:00 to 24:00 clock fitted to the palette width, so noon 
 
 Saves closer together than the dots are wide are nudged apart so a burst does not collapse into a blob. When a dot has been moved, a faint hairline marks the time it actually happened, and the hover card always carries the exact timestamp.
 
-Where a day is too crowded for that nudging to keep the dots on the right side of the hour markers &mdash; a morning save pushed past **12 PM** would read as an afternoon one &mdash; the row drops its interior markers and keeps only midnight at each end. It then says what order the day's events came in rather than what time they happened, which is all the drawing can honestly support. Narrowing the palette makes this more likely, since there is less width for the same day.
+Where a day is too crowded for that nudging to keep the dots on the right side of the hour markers, the row drops its hour markers and shows the order the day's events came in rather than the time they happened. Narrowing the palette makes this more likely.
 
 ### The markers
 
 | Marker | Meaning |
 |---|---|
 | Plain grey dot | An ordinary save. |
-| Small open ring | An edit that made no new version &mdash; a property change, a part number, a marker &mdash; only shown with **Show other changes** on. Creating a milestone or a release is not shown this way; it marks the save it was made against, on the dot. |
+| Small open ring | An edit that made no new version: a property change, a part number, a component update. Shown only with **Show other changes** on. Creating a milestone or a release is not shown this way; it marks the save it was made against. |
 | Grey dot with a blue ring | A milestone. |
-| Blue dot with a blue ring | A release &mdash; a milestone you gave a revision name, such as "A" or "Rev B". Milestones Fusion names for itself ("Milestone V7", "Item Update") are shown as milestones, not releases. |
+| Blue dot with a blue ring | A release: a milestone you gave a revision name, such as "A" or "Rev B". Milestones Fusion names for itself ("Milestone V7", "Item Update") are shown as milestones. |
 | Outer ring | The version a public share link points at. |
 
-The legend below the view lists only the markers that occur in this document's history.
+The legend below the view always lists saves, and adds the other markers only when they occur in this document's history.
 
 ### The index
 
-Every dot can carry a small three-part number above it, counted from the oldest event forward. There are two ways to see them:
-
-- **Rest the pointer on a track.** That person's numbers appear for as long as the pointer is in their row, and nothing else moves. Each number is drawn on a small patch of the row's own background, so it stays readable where it crosses the track above.
-- **Turn on Index** to show all of them at once. The day rows open up while it is on, so that every number sits inside its own author's track rather than drifting over the one above, and close again when it is off. They open by only as much as the longest number in the history needs, which on most documents is less than the widest the numbering allows for.
+Every dot can carry a small three-part number above it, counted from the oldest event forward:
 
 | Event | What it counts up |
 |---|---|
@@ -78,48 +72,42 @@ save        1.1.0
 milestone   1.2.0
 ```
 
-Because a save restarts the third figure, turning **Show other changes** on and off never renumbers a save &mdash; the other changes fill in around them and the saves keep the numbers they had.
+Because a save restarts the third figure, turning **Show other changes** on and off never renumbers a save.
 
-The numbers lean at an angle above their dots, each ending at the mark it names. That is what lets every event carry one: printed flat, a number needs as much clear width as it is wide, and a busy day does not have it. Only where a day holds more saves than the row can separate at all do some numbers drop out, and the hover card still carries those.
-
-A release's number is drawn in the accent its dot is filled with, so the releases stand out when scanning a long history; every other number is plain text.
+There are two ways to see the numbers. Rest the pointer on a track and that person's numbers appear for as long as the pointer is in their row. Or turn on **Index** to show all of them: the day rows open up so every number sits inside its own author's track, and close again when it is off. A release's number is drawn in the accent its dot is filled with, so releases stand out when scanning a long history. On a day with more saves than the row can separate, some numbers are left off the plot; the hover card still carries them.
 
 ### The elapsed-time labels
 
-Between two day rows, a rule and a phrase say how long the design was untouched. The weight of the rule scales with the gap &mdash; a hairline for the next day, a dashed rule for a week or more &mdash; so a long silence is felt before it is read.
+Between two day rows, a rule and a phrase say how long the design was untouched: "Next day", "3 days later", "1 year, 2 months and 3 days later". The rule is a hairline for the next day and becomes dashed for a week or more, so a long silence is felt before it is read.
 
 ### The hover card
 
-Rest the pointer on an open ring to see what the change was &mdash; "Property change", the property and its new value, when, and who. There is no thumbnail or version number, because no version was made.
+Rest the pointer on a dot to see that version's thumbnail, version number, milestone and release markers, the description typed at save time, the exact local timestamp, who saved it, and its index number. Rest it on an open ring to see what the change was, the property and its new value, when, and who; there is no thumbnail or version number because no version was made.
 
-Rest the pointer on a dot to see that version's thumbnail, version number, milestone and release markers, the description typed at save time, the exact local timestamp, and who saved it.
+Thumbnails are fetched from the cloud only for the version you rest on and cached on disk, so scanning across a busy day costs nothing.
 
-Both carry the event's [index](#the-index) number, whether or not **Index** is on &mdash; so pointing at an event always tells you its number, including the ones a crowded day had to leave off the plot.
+## Options
 
-The thumbnail is fetched from the cloud only for the version you actually rest on, and cached for the rest of the session, so scanning across a busy day costs nothing.
+| Option | Default | Effect |
+|---|---|---|
+| **Show other changes** | Off | Adds the edits that produced no version, each as a small open ring on its author's track. This can add people: someone who edited a property but never saved does not appear otherwise. The toggle is hidden when the history holds no such changes. |
+| **Show thread across days** | Off | Switches the horizontal axis from the clock to the version's position in the history: every save is one column apart and a line threads them in order across the day rows. Empty time costs no width, so a long history scrolls sideways, with a dashed seam wherever the axis crosses from one day to the next. |
+| **Index** | Off | Numbers every event and opens the day rows up to fit the numbers. |
+| **Show all N days** | — | Appears when the history has more than 60 days with activity. The view draws the most recent 60 by default; this draws the rest. |
 
-## Layout options
+The clock view is the default because it never scrolls sideways and keeps every row on the same scale. Turn the thread on when the question is "what order did these happen in" rather than "when in the day".
 
-| Option | What it does |
-|---|---|
-| **Show other changes** | Adds the edits that did not produce a version &mdash; property changes, part numbers, markers &mdash; each as a small open ring on its author's track. This can add people: someone who edited a property but never saved does not appear at all with this off. Creating a milestone or a release is left out, because the save it was made against already carries it; the consequence is that someone who only named a release, and never saved, is credited on neither. Hidden entirely for a document whose history could not be read from the cloud, since those edits are not visible there. |
-| **Show thread across days** | Switches the horizontal axis from the clock to the version's position in the history: every save is one column apart, and a line threads them in order across the day rows. Empty time then costs no width, so a long history scrolls sideways inside the box, with a dashed seam wherever the axis crosses from one day into the next. |
-| **Index** | Numbers every event with a version of its own, and opens the day rows up to fit them. Leave it off and rest the pointer on a track to read one person's numbers without the view growing. See [The index](#the-index) below. |
-| **Show all N days** | Appears when a history runs past 60 days. The view renders the most recent 60 by default; this draws the rest. |
+## Limitations
 
-The clock view is the default because it is the one that never scrolls sideways and keeps every row on the same scale. Turn the thread on when the question is "what order did these happen in", rather than "when in the day".
-
-## Notes
-
-- The palette takes a moment to open while it reads the history from Fusion's cloud; Fusion shows a busy indicator in the status bar meanwhile.
-- The palette shows a snapshot taken when it was opened. Select **History** again to re-read the history after saving.
-- The palette closes when the active document changes &mdash; switching tabs, opening a document, or creating a new one. It was only ever a reading of the document that was active when it opened, and a history left on screen under a different document's name reads as that document's own. Select **History** again for the one you have moved to.
-- Authorship comes from Fusion's cloud data. If the design is not in a hub, or you are offline, the palette still draws the history but every save is attributed to the document's creator, because that is all the desktop API can tell it.
-- The history is read from the cloud, so a document with hundreds of versions takes a moment to open. Fusion shows a busy indicator while it reads.
+- The palette shows a snapshot taken when it was opened. Select **History** again to re-read after saving; this also resets the toggles.
+- The palette closes when the active document changes, since a history left on screen under a different document's name would read as that document's own. Select **History** again for the one you have moved to.
+- Authorship comes from Fusion's cloud data. Offline, or for a document that is not in a hub, every save is attributed to the document's creator, because that is all the desktop API can report.
 - Fusion exposes a public share link on the document rather than on a specific version, so the public-share ring marks the current version.
-- Where Fusion could not resolve who saved a version, the track is drawn as an unknown author rather than dropped, and a version with no usable date collects in a trailing **Date unknown** row.
+- Where the person who saved a version cannot be resolved, the track is drawn as an unknown author rather than dropped, and a version with no usable date collects in a trailing **Date unknown** row.
 
 > **Developers:** see the [architecture notes](./arch/Document%20History.md).
+
+---
 
 [Back to README](../README.md)
 

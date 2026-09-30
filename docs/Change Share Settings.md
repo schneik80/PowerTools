@@ -1,62 +1,43 @@
 # Change Share Settings
 
-**Opens the Autodesk Fusion share settings dialog for the active document.**
+[Back to README](../README.md)
 
-Use this command to view and modify the sharing options for the active document. You can control whether the document is publicly shared, whether recipients can download it, and whether a password is required to access the share link — all without navigating away from the Share Menu.
+## Overview
 
----
+Change Share Settings opens Fusion's share settings dialog for the active document, where you control whether the share link allows download and whether it needs a password.
 
-## When to use this command
+The dialog is Fusion's own; this command puts it one click away on the Share Menu next to [Get a Share Link](./Get%20a%20Share%20Link.md), so turning download off or adding a password after you have sent a link does not mean hunting for the setting.
 
-| Scenario | Recommendation |
+| Scenario | Use |
 |---|---|
-| Enable or disable the public share link | Use **Change Share Settings** |
-| Restrict or allow recipient document downloads | Use **Change Share Settings** |
-| Add or remove a share link password | Use **Change Share Settings** |
-| Generate a new share link for the first time | Use [Get a Share Link](get-a-share-link.md) instead |
+| Turn the public share link on or off | **Change Share Settings** |
+| Allow or prevent download from the link | **Change Share Settings** |
+| Add or remove a link password | **Change Share Settings** |
+| Create and copy the link | [Get a Share Link](./Get%20a%20Share%20Link.md) |
 
----
+## Prerequisites
 
-## How to use this command
+- The active document must be saved to a hub. Otherwise the command asks you to save first.
 
-1. Open a document that has been saved to an Autodesk Team Hub.
-2. Select **Share Menu** in the right Quick Access Toolbar.
-3. Select **Change Share Settings**.
-4. The Autodesk Fusion share settings dialog opens.
-5. Adjust the settings as required and confirm your changes.
+## Where to find it
 
----
+**Share Menu › Change Share Settings** on the right-hand Quick Access Toolbar.
 
-## Available settings
+## How to use
 
-The native Fusion share settings dialog exposes the following options:
+1. Open the document.
+2. Select **Share Menu › Change Share Settings**. Fusion's share settings dialog opens.
+3. Adjust the settings and confirm.
 
-| Setting | Description |
-|---|---|
-| **Sharing on/off** | Enable or disable the public share link for the document. Disabling sharing removes public access immediately. |
-| **Allow download** | Allow or prevent recipients from downloading a local copy of the document. When disabled, recipients can only view the document in their browser and cannot export it. |
-| **Password protection** | Add a password that recipients must enter before they can access the share link. Clear the password to remove protection. |
+## Limitations
 
----
-
-## Requirements and limitations
-
-- The document must be saved to an Autodesk Team Hub.
-- If the Team Hub administrator has disabled sharing for the Hub, this command displays a message and exits. The settings dialog is not opened.
-- Changing share settings for a document that has never been shared does not automatically enable sharing. Use [Get a Share Link](get-a-share-link.md) to enable sharing first.
-
----
-
-## Related commands
-
-- [Get a Share Link](get-a-share-link.md) — Enable sharing and copy the share link to the clipboard.
-- [Get Open on Desktop Link](get-open-on-desktop-link.md) — Generate a link that opens the document for editing in Fusion.
-- [Get Open in Team Link](get-open-in-team-link.md) — Generate a link that opens the document in the Fusion Team web viewer.
-
----
+- If Fusion's share command is unavailable, usually because the hub administrator has disabled sharing, a **Share Settings** message says so and the dialog is not opened.
+- Everything inside the dialog is Fusion's behavior, not PowerTools'.
 
 > **Developers:** see the [architecture notes](./arch/Change%20Share%20Settings.md).
 
 ---
+
+[Back to README](../README.md)
 
 *Copyright © 2026 IMA LLC. All rights reserved.*

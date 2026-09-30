@@ -4,57 +4,56 @@
 
 ## Overview
 
-The **Export BOM as CSV** command exports the bill of materials (BOM) for the active Autodesk Fusion assembly to a comma-separated values (CSV) file. Use this command to share component data with procurement, manufacturing, or project management tools that accept CSV input.
+Export BOM as CSV writes the flat bill of materials of the active assembly to a CSV file.
+
+SolidWorks and Inventor export a bill of materials straight from the assembly. In Fusion the built-in route is to make a drawing, place a parts list, and export that table. This command skips the drawing: one click from the File menu, one file, ready for procurement, a spreadsheet, or an ERP import.
 
 ## Prerequisites
 
-- An Autodesk Fusion design document must be active and open.
-- The design must contain at least one component.
+- A design document must be active.
 
-## How to use this command
+## Where to find it
 
-1. Open an assembly design in Autodesk Fusion.
-2. From the **File** drop-down menu in the Quick Access Toolbar, select **Export BOM as CSV**.
-3. In the folder browser dialog, navigate to the destination folder for the output file.
-4. Click **OK**. Power Tools traverses the assembly and writes the file.
-5. A confirmation dialog displays the full path of the exported file.
+**File › Export BOM as CSV** on the Quick Access Toolbar, directly before **Export**.
 
-## Output
+![Export BOM as CSV in the File menu](./assets/exportbom_002.png)
 
-Power Tools creates a CSV file named `{DocumentName}.csv` in the folder you selected. The file uses the following columns:
+## How to use
 
-| Column | Description |
-|---|---|
-| **Display Name** | The component display name as shown in the Fusion browser. For external reference (xref) components, the Fusion version suffix is removed so the name stays consistent across design revisions. |
-| **Part Number** | The part number property defined on the component. |
-| **Material** | The material assigned to the first solid body of the component. If the component has no solid bodies, this field is empty. |
-| **Count** | The total number of instances of this component in the assembly. |
-| **Unit** | Always `EA` (each). |
+1. Open the assembly.
+2. Select **File › Export BOM as CSV**. The assembly is traversed and a folder dialog opens.
+3. Choose the destination folder and select **OK**.
+4. A dialog reports `BOM saved at: <path>`.
 
-### Flat BOM behavior
+## What it produces
 
-By default, the BOM includes only **leaf components** — components that contain geometry but have no child sub-assemblies. Sub-assembly nodes are excluded from the output rows, but their child leaf components are included and counted. This behavior produces a flat BOM that is suitable for procurement and manufacturing.
-
-### Version handling
-
-For components that are external references, Power Tools automatically removes the Fusion version suffix from the display name. For example, `Bracket v3` is written as `Bracket`. This keeps the exported names stable across design revisions without requiring manual edits to the CSV.
-
-## Example output
+A UTF-8 file named `<document name>.csv` in the chosen folder. Characters that are not valid in a file name are replaced with `_`. The first line is `<document name> BOM`, followed by the header row and one row per unique leaf component:
 
 ```
+Bracket v7 BOM
 Display Name,Part Number,Material,Count
 "Bracket","BRK-001","Steel",4,EA
 "Cap Screw M6","HDW-010","Stainless Steel",16,EA
 "Base Plate","PLT-002","Aluminum",1,EA
 ```
 
-![CSV file](./assets/exportbom_001.png)
+| Field | Content |
+|---|---|
+| **Display Name** | The component name as shown in the browser, including any version suffix on external references |
+| **Part Number** | The component's part number property |
+| **Material** | The material of the component's solid bodies; empty when it has none |
+| **Count** | Total number of occurrences of that component across the whole assembly |
+| (fifth field) | Always `EA` (each); this field has no column header |
 
-## Access
+The BOM is flat: only leaf components, those with no child components, are listed. Sub-assemblies are not rows, but their leaf components are counted.
 
-From the design document's **File** drop-down menu in the Quick Access Toolbar, select **Export BOM as CSV**.
+![Exported CSV opened in a spreadsheet](./assets/exportbom_001.png)
 
-![Access](./assets/exportbom_002.png)
+## Limitations
+
+- Cells beginning with `=`, `+`, `-` or `@` are prefixed with `'` so a spreadsheet does not evaluate them as formulas.
+- A component with several solid bodies of different materials has their names written run together.
+- There are no options; the flat form and the columns are fixed.
 
 > **Developers:** see the [architecture notes](./arch/Export%20BOM.md).
 

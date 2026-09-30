@@ -1,37 +1,35 @@
-# Toggle Data Pane
+# Toggle Data
 
 [Back to README](../README.md)
 
 ## Overview
 
-The **Toggle Data Pane** command adds a button to the Fusion Navigation Toolbar that opens or closes the Data Pane with a single click. By default, toggling the Data Pane requires navigating a nested menu or using a keyboard shortcut that many users are unaware of. This command surfaces that action directly on the Navigation Toolbar for fast, discoverable access.
+Toggle Data opens or closes the Data Panel with a single click from the Navigation Toolbar.
 
-## Capabilities
-
-| Capability | Details |
-|---|---|
-| Open the Data Pane | Shows the Data Pane if it is currently hidden |
-| Close the Data Pane | Hides the Data Pane if it is currently visible |
-| Single-click toggle | Automatically detects the current state and takes the correct action |
-| Persistent toolbar button | Button is always visible in the Navigation Toolbar while the add-in is active |
+Fusion shows and hides the Data Panel from the grid button at the far left of the Quick Access Toolbar, or with a keyboard shortcut most people never find. Toggle Data puts the same action on the Navigation Toolbar at the bottom of the canvas, next to the view controls, where your hand already is. The button reads the Data Panel's current state and does the opposite, so one button serves both directions.
 
 ## Prerequisites
 
-- A Fusion document must be open.
-- The PowerTools add-in must be active.
+- None. The button works with or without a document open.
 
-## Notes
+## Where to find it
 
-- The command uses the current `app.data.isDataPanelVisible` state to decide whether to open or close the Data Pane.
-- The toolbar button is available while the add-in is running.
+**Toggle Data** is the last button on the **Navigation Toolbar** at the bottom of the Fusion canvas.
 
-## Access
+![Toggle Data on the Navigation Toolbar](./assets/toggledata.png)
 
-Select **Toggle Data** on the **Navigation Toolbar** at the bottom of the Fusion canvas.
+## How to use
 
-![access](./assets/toggledata.png)
+1. Select **Toggle Data** on the Navigation Toolbar.
+2. If the Data Panel was hidden it opens; if it was visible it closes.
+
+## Limitations
+
+- The button is present only while PowerTools is running.
 
 > **Developers:** see the [architecture notes](./arch/Toggle%20Data%20Pane.md).
+
+---
 
 [Back to README](../README.md)
 

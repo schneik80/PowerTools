@@ -4,26 +4,29 @@
 
 ## Overview
 
-**Team Add-ins** keeps a team's private Fusion add-ins in step through a shared folder in your Fusion Team hub. Someone drops an add-in `.zip` into that folder; everyone else running Power Tools picks it up shortly after Fusion starts, with no restart and nothing to publish, register, or maintain.
+Team Add-ins checks the hub's `Shared Addins` folder and installs any add-in that is new or updated, automatically shortly after Fusion starts or on demand from the toolbar.
 
-There is no index file, no manifest to write, and no folder to browse for. The folder listing *is* the catalogue, and the folder is always in the same place:
+Deploying an in-house add-in to a team usually means a shared drive, an email with a zip, and a manual install on every machine, then the same again for every update. Team Add-ins replaces that with one folder in your Fusion Team hub: someone uploads an add-in `.zip`; everyone else running PowerTools picks it up shortly after their next Fusion launch, with nothing to publish, register or maintain. The folder listing *is* the catalogue, and the folder is always in the same place:
 
 ```
 <active hub> / Assets / Shared Addins /
 ```
 
-the same convention Power Tools already uses for `Assets / Pn-Cache`.
-
 Two commands make up the feature:
 
 | Command | Where | Purpose |
-| ------- | ----- | ------- |
-| [Set Up Shared Add-ins Folder](./Set%20Up%20Shared%20Add-ins%20Folder.md) | PowerTools Preferences → Team Add-ins | Find or create the folder, once per hub |
-| **Team Add-ins** | Design → **Tools** tab → **Power Tools** panel | Check now, and show what the last check did |
+|---|---|---|
+| [Set Up Shared Add-ins Folder](./Set%20Up%20Shared%20Add-ins%20Folder.md) | PowerTools Preferences › Team Add-ins | Find or create the folder, once per hub |
+| **Team Add-ins** | **Utilities** tab › **Power Tools** panel | Check now, and show what the last check did |
 
-Until that folder exists, Team Add-ins is completely dormant: no network calls, no UI, nothing at launch.
+## Prerequisites
 
----
+- A Fusion Team hub with an **Assets** project and a `Shared Addins` folder in it. See [Set Up Shared Add-ins Folder](./Set%20Up%20Shared%20Add-ins%20Folder.md).
+- Read access to that folder. Only whoever shares add-ins needs write access.
+
+## Where to find it
+
+**Utilities** tab › **Power Tools** panel › **Team Add-ins**, in the Design workspace. Hover the button for the last check's result, for example *Last checked 2026-09-30 09:14 — up to date.*
 
 ## Sharing an add-in
 
@@ -37,118 +40,93 @@ Until that folder exists, Team Add-ins is completely dormant: no network calls, 
        └── ...
    ```
 
+   A zip of the folder's contents, with the manifest at the root, is accepted too.
+
 2. Upload it to `Assets / Shared Addins` in Fusion Team.
 
-That is the whole workflow. The filename minus its extension becomes the add-in's folder name under Fusion's AddIns directory, so `PowerTools-PlusProject.zip` installs as `PowerTools-PlusProject`.
+That is the whole workflow. The filename minus its extension becomes the add-in's folder name in Fusion's add-ins directory, so `PowerTools-PlusProject.zip` installs as `PowerTools-PlusProject`. To publish an update, upload the new zip over the old one; Fusion's own file versioning is what Team Add-ins watches, so nothing has to be renamed or bumped.
 
-To publish an update, upload the new zip over the old one. Fusion keeps its own version history per file, and that is what Team Add-ins watches — you do not need to rename anything, bump anything, or touch a manifest.
+> **The zip name and the manifest filename must match.** Fusion pairs an add-in folder with its manifest by name, so a mismatch would install a folder Fusion ignores. Team Add-ins refuses such a package and names both sides in the report.
 
-> **The folder name, the manifest filename and the manifest `id` must all match.** Fusion pairs an add-in folder with its manifest by name, so a mismatch would install a folder Fusion silently ignores. Team Add-ins refuses the package and names both sides rather than let that happen.
-
-`.ptaddin` is accepted as well as `.zip`. It is an ordinary zip with an opaque extension, useful if a hub ever starts treating archives as something to expand. Anything else in the folder — a readme, a spreadsheet — is ignored.
-
----
+`.ptaddin` is accepted as well as `.zip`; it is an ordinary zip with a different extension. Package names may contain letters, digits, `.`, `_` and `-`. Anything else in the folder, a readme or a spreadsheet, is ignored.
 
 ## What you see, and when
 
-The rule the feature is built around: **if nothing changed, you see nothing.** A dialog on every Fusion launch would be worse than no feature at all.
+If nothing changed, you see nothing.
 
 | Situation | What happens |
-| --------- | ------------ |
-| Nothing changed | Nothing. The toolbar button's tooltip reads *"Last checked 09:14 — up to date."* |
+|---|---|
+| Nothing changed | Nothing. The button's tooltip reports the time of the check. |
 | Add-ins installed or updated | The **Team Add-ins** palette opens listing each one |
-| A restart is needed | The same palette, with an amber banner naming how many |
-| A package is corrupt or unusable | The same palette, with that add-in in a **Not installed** section. Everything else still installs |
+| A restart is needed | The same palette, with a banner: *Restart Fusion to finish updating N add-in(s).* |
+| A package could not be installed | The same palette, with that add-in under **Not installed** and a banner saying some add-ins could not be installed. Everything else still installs |
+| A file has a bad name, or a `.zip` and a `.ptaddin` share a name | Listed under **Folder problems** |
 | An add-in disappears from the folder | Listed once as **No longer published**, and left installed |
-| No folder yet, or not signed in | Nothing at all |
-| You click the button and nothing changed | The palette opens anyway saying you are up to date — a click always gets an answer |
-
-A package that is broken at the source is reported once, not on every launch. Clicking the toolbar button always re-reports it.
+| Not signed in, or no folder yet | Nothing at launch; the tooltip says there is no folder yet |
+| You select the button and nothing changed | The palette opens anyway and says everything is up to date |
 
 ### Versions in the report
 
-Each row shows the add-in's declared version when it has one. Because plenty of add-ins never update the version in their own manifest, the palette falls back to Fusion's file revision, which moves on every upload regardless:
+Each row shows the add-in's declared version when it has one. Because many add-ins never update the version in their manifest, the report falls back to Fusion's file revision, which advances on every upload:
 
 | Case | Shown |
-| ---- | ----- |
+|---|---|
 | Install, version declared | `1.0.0` |
 | Install, no version | `rev 1` |
 | Update, version bumped | `1.0.0 → 2.0.0` |
 | Update, version not bumped | `1.0.0 · rev 3 → 4` |
 | Update, no version at all | `rev 2 → 3` |
 
-The declared version is **display only**. It never decides whether something is an update.
-
----
+The declared version is display only. It never decides whether something is an update.
 
 ## How the check works
 
-### It does not slow down Fusion's launch
+The check does not slow Fusion's launch: it is deferred by the delay set in Preferences (25 seconds by default) and runs after start-up has finished. If you are not signed in at that moment, it retries once a minute later.
 
-Fusion's Data API can only be called from the main thread, so a background thread cannot read the hub on its own. Instead the work is *deferred*:
-
-1. `start()` registers the command and returns immediately — Fusion's launch is untouched.
-2. A daemon timer waits 25 seconds on a worker thread.
-3. The worker fires a Fusion custom event, the one call that is safe off the main thread.
-4. Fusion dispatches the handler on the main thread, on a turn long after start-up has finished.
-
-### It is tiered, so the normal case is nearly free
+It is tiered, so the normal case is nearly free:
 
 | Tier | Cost | What happens |
-| ---- | ---- | ------------ |
-| 1 | One folder listing | Fingerprint the folder as `{filename: revision}`. Identical to last time → stop. **This is the entire cost of a typical launch**, and it catches additions, removals and re-uploads together |
+|---|---|---|
+| 1 | One folder listing | Fingerprint the folder as file names and revisions. Identical to last time: stop. This is the entire cost of a typical launch, and it catches additions, removals and re-uploads together. A manual check from the button always goes on to tier 2. |
 | 2 | One download per changed file | Only packages whose revision moved, or that are new |
-| 3 | One hash per download | If the bytes are unchanged, record the new revision and install nothing — a re-upload of identical content never restarts a working add-in |
+| 3 | One hash per download | If the bytes are unchanged, record the new revision and install nothing, so a re-upload of identical content never restarts a working add-in |
 
-Nothing in that chain reads a version number written by a human.
+Installed add-ins go to Fusion's add-ins directory (`%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns` on Windows, `~/Library/Application Support/Autodesk/Autodesk Fusion 360/API/AddIns` on macOS) and are set to run on startup.
 
----
+## Preferences
 
-## Settings
-
-**PowerTools Preferences → Team Add-ins**:
+**File › PowerTools Preferences › Team Add-ins**:
 
 | Setting | Default | Effect |
-| ------- | ------- | ------ |
-| Check the shared folder shortly after Fusion starts | On | Turn off to make the feature manual-only |
-| Wait this many seconds after launch before checking | 25 | Clamped to 5–600 |
-| Load updates immediately | On | Turn off to write updates to disk but leave them for the next Fusion restart |
+|---|---|---|
+| **Enable Team Add-ins commands** | On | Turn off to remove the button and the launch check. Applies after a Fusion restart. |
+| **Check the shared folder shortly after Fusion starts** | On | Turn off to check only from the button. Updates staged for a restart are still applied. |
+| **Wait this many seconds after launch before checking** | 25 | Clamped to 5–600. |
+| **Load updates immediately (otherwise they wait for a Fusion restart)** | On | Turn off to write updates to disk and load them at the next restart. |
 
-Disabling the **Team Add-ins** group in the Commands list removes the toolbar button and the launch check entirely.
+The **Shared folder** card in the same section shows whether the folder exists, how many packages are in it, how many are installed on this machine, and when it last checked.
 
-The status card in the same section reports live state: whether the folder exists, how many packages are in it, how many are installed on this machine, and when it last checked.
+## What Team Add-ins never does
 
----
-
-## What Team Add-ins will not do
-
-- **It never uninstalls anything.** A package removed from the folder is reported once and left alone — a hub hiccup or a permissions change can make a file look absent, and silently stripping working add-ins over that is worse than leaving something stale. Remove it yourself via **Utilities → Scripts and Add-Ins**.
-- **It never creates the shared folder on its own.** Only the Preferences button does that, and it asks first.
-- **It never overwrites Power Tools itself.** A package whose name resolves to the running add-in's folder is refused.
-- **It never extracts outside the install folder.** Archive members that would escape via `..` are rejected before anything is written.
-
----
+- **It never uninstalls anything.** A package removed from the folder is reported once and left alone; a hub hiccup or a permissions change can make a file look absent, and silently stripping working add-ins over that is worse than leaving one stale. Remove it yourself through **Utilities › Scripts and Add-Ins**.
+- **It never creates the shared folder without asking.** Both **Create shared folder…** buttons confirm first.
+- **It never overwrites PowerTools itself.** A package whose name resolves to the running add-in's folder is refused.
+- **It never writes outside the add-ins folder.** Archive entries that would escape it are rejected before anything is written.
 
 ## Troubleshooting
 
-**Nothing happens at launch.** Open Preferences → Team Add-ins and check the status card. Create a `.debug` marker file in the add-in root to enable logging, then watch Fusion's text-commands log for `Team Add-ins:` lines.
+| Symptom | What it means |
+|---|---|
+| Nothing happens at launch | Open **PowerTools Preferences › Team Add-ins** and read the **Shared folder** card. |
+| *This hub has no 'Assets' project.* | The project has to exist first; creating one needs Fusion Team administrator rights, so PowerTools will not do it. |
+| *Restart Fusion to finish updating…* | The add-in could not be loaded live, or **Load updates immediately** is off. The new files are on disk and are loaded on the next launch. |
+| A package appears under **Not installed** with a name mismatch | Its manifest filename does not match the zip name. Rename one to match and upload again. |
+| A second `Shared Addins` folder appeared | The lookup adopts existing folders regardless of case and spacing, so this should not happen; if it does, the two folders are in different projects. |
 
-**"This hub has no Assets project."** The project has to exist first, and creating one needs Fusion Team admin rights, so Power Tools deliberately will not do it for you.
-
-**"Restart Fusion to finish updating."** The add-in was in use and its files could not be replaced in place. The new version is staged and applied automatically at the start of the next Fusion session.
-
-**An add-in installs but does not appear.** Its `<id>.manifest` does not match its filename. Team Add-ins reports this rather than installing it, so check the palette message.
-
-**A second "Shared Addins" folder appeared.** It should not — the lookup matches loosely, so `Shared AddIns`, `shared add-ins` and `SharedAddins` are all adopted rather than duplicated. If it happens anyway, the two folders are in different projects.
-
----
-
-## Open questions
-
-Confirmed on a live build: the folder convention, `.zip` round-tripping through Fusion Team intact, first-time install with dynamic load, and updating an already-installed add-in.
-
-Still unverified: whether registering a path already inside the standard AddIns directory leaves a duplicate entry in **Utilities → Scripts and Add-Ins** after the next Fusion launch, once Fusion's own start-up scan also finds the folder.
+> **Developers:** see the [architecture notes](./arch/Team%20Add-ins.md).
 
 ---
 
-[Architecture reference](./arch/Team%20Add-ins.md) · [Back to README](../README.md)
+[Back to README](../README.md)
+
+*Copyright © 2026 IMA LLC. All rights reserved.*

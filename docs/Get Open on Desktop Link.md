@@ -1,81 +1,53 @@
 # Get Open on Desktop Link
 
-**Copies a deep link to the system clipboard that opens the active document directly in Autodesk Fusion on the recipient's computer.**
+[Back to README](../README.md)
 
-Use this command to generate a `fusion360://` protocol link for the active document. When a team member receives and selects this link, Autodesk Fusion launches on their computer and loads the document automatically — ready for editing. This link is most effective when sharing with design team members who work in Autodesk Fusion and are members of the same Hub.
+## Overview
 
----
+Get Open on Desktop Link copies a link to the clipboard that opens the active document directly in Fusion on a teammate's computer.
 
-## When to use this command
+A public share link opens a viewer; a Fusion Team link opens a web page. When the person you are writing to is a hub member who is going to *edit* the design, neither is what they want. This `fusion360://` link launches Fusion on their machine and loads the document, ready to work on.
 
-| Scenario | Recommendation |
+| Scenario | Use |
 |---|---|
-| Share with a team member who needs to open the document in Fusion for editing | Use **Get Open on Desktop Link** |
-| Share with someone who needs browser-based review without installing Fusion | Use [Get Open in Team Link](get-open-in-team-link.md) instead |
-| Share with people outside your organization who may not have Fusion | Use [Get a Share Link](get-a-share-link.md) instead |
+| A hub member will open the document in Fusion to edit it | **Get Open on Desktop Link** |
+| A hub member will review it in a browser | [Get Open in Team Link](./Get%20Open%20in%20Team%20Link.md) |
+| Someone outside the hub, with or without Fusion | [Get a Share Link](./Get%20a%20Share%20Link.md) |
 
----
+## Prerequisites
 
-## How to use this command
+- The active document must be saved to a hub. Otherwise the command asks you to save first.
+- The recipient must have Fusion installed, be signed in to the same hub, and have access to the document.
 
-1. Open a document that is saved to an Autodesk Team Hub.
-2. Select **Share Menu** in the right Quick Access Toolbar.
-3. Select **Get Open on Desktop Link**.
-4. A progress indicator appears briefly while the link is generated.
-5. A confirmation dialog reports that the link was copied to the clipboard and notes any external references present in the design.
-6. Paste the link into an email, chat message, or other communication channel.
+## Where to find it
 
-When the recipient selects the link, Autodesk Fusion opens on their computer and loads the document.
+**Share Menu › Get Open on Desktop Link** on the right-hand Quick Access Toolbar.
 
----
+## How to use
 
-## Link format
+1. Open the document.
+2. Select **Share Menu › Get Open on Desktop Link**. A progress indicator appears briefly.
+3. A **Share Document** dialog confirms that an **Open on Desktop** link for the document is on the clipboard. For a design with external references it adds: *This design has external references. Sharing this design may share the referenced designs depending on the team member's permissions.*
+4. Paste the link into an email or chat message.
 
-The generated link uses the `fusion360://` custom URI scheme. It encodes three parameters:
-
-| Parameter | Description |
-|---|---|
-| `lineageUrn` | The unique document identifier (`dataFile.id`), URL-encoded |
-| `hubUrl` | The Hub's Fusion Team URL, URL-encoded (trailing characters are normalized to uppercase) |
-| `documentName` | The document name, URL-encoded |
-
-Example structure (values abbreviated):
+## What the link contains
 
 ```
-fusion360://lineageUrn=<encoded-id>&hubUrl=<encoded-hub-url>&documentName=<encoded-name>
+fusion360://lineageUrn=<document id>&hubUrl=<hub url>&documentName=<document name>
 ```
 
----
+All three values are URL-encoded; the hub URL is written in upper case.
 
-## External references note
+## Limitations
 
-If the active design contains external component references, the confirmation dialog adds the following note:
-
-> *This design has external references. Sharing this design may share the referenced designs depending on the team member's permissions.*
-
-The recipient must have access to all referenced designs through their Hub membership for the complete assembly to open correctly.
-
----
-
-## Requirements and limitations
-
-- The document must be saved to an Autodesk Team Hub.
-- The recipient must have Autodesk Fusion installed on their computer and be signed in to the same Hub.
-- The `fusion360://` protocol handler must be registered on the recipient's computer (this happens automatically when Fusion is installed).
-- The recipient must have access permission to the document in the Hub.
-
----
-
-## Related commands
-
-- [Get Open in Team Link](get-open-in-team-link.md) — Generate a browser link for review without requiring a Fusion installation.
-- [Get a Share Link](get-a-share-link.md) — Generate a public share link suitable for external reviewers.
-- [Change Share Settings](change-share-settings.md) — Control download permissions and password protection for the public share link.
-
----
+- The `fusion360://` link is handled by the Fusion installation on the recipient's computer. It does nothing in a browser on a machine without Fusion.
+- The recipient needs access to every referenced design for the full assembly to open.
+- The external-reference note appears only for design documents.
 
 > **Developers:** see the [architecture notes](./arch/Get%20Open%20on%20Desktop%20Link.md).
 
 ---
+
+[Back to README](../README.md)
 
 *Copyright © 2026 IMA LLC. All rights reserved.*

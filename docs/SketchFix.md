@@ -4,45 +4,34 @@
 
 ## Overview
 
-The **Sketch Repair** command attempts to automatically fix common issues in the active Autodesk Fusion sketch, including tiny gaps between endpoints and disconnected curve segments. Use this command when a sketch fails to form the closed profiles that solid body operations such as Extrude or Revolve require.
+Sketch Repair attempts to repair the active sketch by removing tiny segments and closing small gaps between endpoints.
 
-> **Note:** Results vary depending on the number and type of issues present in the sketch. The command cannot repair large gaps or fundamentally disconnected geometry.
+SolidWorks users know this as **Repair Sketch**: the tool you reach for when a traced or imported profile refuses to extrude because two endpoints are a hair apart. Fusion has the same repair built in but not on any menu; Sketch Repair runs it from the **Modify** panel.
 
 ## Prerequisites
 
-- A design document must be open in Autodesk Fusion.
-- A sketch must be in active edit mode.
+- A design document must be open.
+- A sketch must be in edit mode.
 
-## Access
+## Where to find it
 
-The **Sketch Repair** command is available in Fusion's **Sketch** tab, in the **Modify** panel, at the bottom of the panel menu.
-
-1. Open a design document in Autodesk Fusion.
-2. Double-click a sketch in the browser or on the canvas to enter sketch edit mode.
-3. On the **Sketch** tab, select the **Modify** panel.
-4. Select **Sketch Repair** from the panel menu.
+**Sketch** tab › **Modify** panel › **Sketch Repair**, while editing a sketch.
 
 ## How to use
 
-1. Enter sketch edit mode by double-clicking the sketch you want to repair.
-2. Run **Sketch Repair** from the **Modify** panel.
-3. The command applies two sequential repair passes to the active sketch:
-   - **Pass 1:** Removes tiny segments at or below the geometry tolerance threshold.
-   - **Pass 2:** Merges disconnected endpoints and closes small gaps.
-4. A confirmation message box appears when the repair is complete.
-5. Inspect the sketch to verify the repair results. If open profiles remain, manual correction may be needed.
+1. Double-click the sketch in the browser or on the canvas to edit it.
+2. Select **Sketch Repair** from the **Modify** panel.
+3. A message reports that the sketch was repaired. Inspect the profiles; if some are still open, the gap was too large for an automatic repair.
 
-## Expected results
+## What it does
 
-- Tiny segments at or below the geometry tolerance threshold are removed.
-- Endpoints within tolerance are snapped together, closing small gaps.
-- A message box confirms that the repair completed successfully.
+Two of Fusion's own repair passes run in sequence: the first removes segments at or below the geometry tolerance, the second merges endpoints within tolerance.
 
 ## Limitations
 
-- The command cannot repair large gaps or fundamentally disconnected geometry.
-- Complex sketches with many issues may require multiple repair passes or manual correction.
-- Repair quality depends on sketch geometry tolerance settings configured in Autodesk Fusion.
+- Large gaps and geometry that was never connected are not repaired.
+- The completion message is shown regardless of whether anything needed repair.
+- Repair quality depends on Fusion's sketch tolerance settings.
 
 > **Developers:** see the [architecture notes](./arch/SketchFix.md).
 

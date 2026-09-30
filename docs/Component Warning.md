@@ -1,48 +1,49 @@
 # Component Warning
 
-[Back to PowerTools Assembly](../README.md)
+[Back to README](../README.md)
 
-The Component Warning command is a passive guard that warns you before a new feature is created in the wrong place in an assembly. When enabled, it watches for feature-creation commands (sketches, solids, work geometry, patterns, and surfaces) and prompts you when the feature would be created directly in the root component, in a non-leaf component, or while a selection references a different component than the one you are editing. This helps keep assembly designs organized by ensuring features are authored inside the component they belong to.
+## Overview
 
-The command is a toggle: turn it on to monitor placement, turn it off to work without prompts.
+Component Warning warns before a feature is created outside a component: directly in the root component, or referencing a component other than the one being edited.
 
-## What you can do
+In an assembly, a sketch or extrusion made while the root is active ends up belonging to nobody, and geometry referenced across components creates dependencies you did not mean to make. Fusion lets both happen silently. Component Warning watches the feature-creation commands (sketches, primitives, work geometry, extrude, revolve, sweep, loft, rib, web, emboss, hole, thread, patterns, mirror and the surface commands) and asks before the feature lands in the wrong place.
 
-- Catch features that would be created directly in the root component, outside of any component.
-- Catch features that reference a component other than the one currently being edited.
-- Optionally catch features created in a non-leaf component (a component that still has child occurrences).
-- Choose, per warning, to create the feature anyway, cancel the command, or silence the warning for the active document.
-- Enable or disable the guard from **PowerTools Settings** in the QAT File menu.
+> **Off by default.** Enable it under **File › PowerTools Preferences › Assembly › Component Warning** and restart Fusion.
 
 ## Prerequisites
 
-- An Autodesk Fusion 3D Design must be active.
-- The guard is active only in the **Design** (Solid) workspace; it automatically detaches in other workspaces.
-- The active design must use **Assembly** or **Hybrid** design intent. Designs with **Part** intent are skipped, because features there are meant to be built directly in the root component.
+- A design document with Assembly or Hybrid intent. Part-intent designs are skipped, because features there belong in the root.
+- The guard is active in the Design workspace only.
 
-## How to use Component Warning
+## Where to find it
 
-1. Open the **QAT File menu** (the file icon at the top-left of Fusion) and expand **PowerTools Settings**.
-2. Click **Enable Component Warning**. The menu item changes to **Disable Component Warning** while the guard is active.
-3. Continue modeling as usual. If you start a feature-creation command while editing the root component (or referencing another component), a warning dialog appears.
-4. In the warning dialog, choose one of the following:
-   - **Yes** — create the feature anyway. To avoid a duplicate prompt, the guard pauses briefly after this choice.
-   - **No** — stop warning for the active document for the rest of the session.
-   - **Cancel** — cancel the command so no feature is created.
-5. To turn the guard off entirely, open **PowerTools Settings** again and click **Disable Component Warning**.
+Component Warning has no button. It is switched on in **PowerTools Preferences** and works in the background.
 
-> **Note:** Documents silenced with **No** are remembered only for the current Fusion session. Reopening the document restores warnings.
+## How to use
 
-## Access
+1. Model as usual. Starting a feature command while the root component is active, or with a selection in another component, opens a **Component Warning** dialog.
+2. Choose:
+   - **Yes**: create the feature anyway. The guard pauses for three seconds so it does not ask twice for the same action.
+   - **No**: stop warning for this document for the rest of the session.
+   - **Cancel**: cancel the command; nothing is created.
 
-**Component Warning** is accessed from the **QAT File menu › PowerTools Settings**. The menu item label reflects the current state: **Enable Component Warning** when the guard is off, **Disable Component Warning** when it is on. The PowerTools Settings submenu is shared with other PowerTools add-ins and is created automatically on first use.
+## Preferences
+
+Under **File › PowerTools Preferences › Assembly › Component Warning settings**:
+
+| Setting | Default | Effect |
+|---|---|---|
+| **Also warn when creating a feature in a non-leaf component** | Off | Also warns when the active component still has child components. Read when the guard attaches on entering the Design workspace |
+
+## Limitations
+
+- A document silenced with **No** is remembered only for the session; reopening it restores the warnings.
+- Enabling or disabling the command applies after a Fusion restart.
 
 > **Developers:** see the [architecture notes](./arch/Component%20Warning.md).
 
 ---
 
-[Back to PowerTools Assembly](../README.md)
-
----
+[Back to README](../README.md)
 
 *Copyright © 2026 IMA LLC. All rights reserved.*

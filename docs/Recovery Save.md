@@ -4,34 +4,40 @@
 
 ## Overview
 
-The **Local Recovery Save** command adds a **Local Recovery Save** entry to the Fusion File dropdown on the Quick Access Toolbar (QAT). When you select it, Fusion writes a local recovery checkpoint for the active document to disk without creating a new cloud version. This protects work in progress between formal saves.
+Local Recovery Save writes a local recovery checkpoint for the active document without creating a new cloud version.
 
-In team environments, each cloud save can trigger out-of-date notifications for collaborators. Local Recovery Save lets you checkpoint local work frequently without generating that version noise.
-
-## Capabilities
-
-| Capability | Details |
-|---|---|
-| Create a local recovery checkpoint | Writes a recovery file to disk for the active document |
-| Avoid version increment | Does not create a new cloud version or notify collaborators |
-| Quick access from the QAT | Available from the File dropdown on the Quick Access Toolbar |
+Every cloud save in Fusion makes a new version, and on a shared assembly every new version raises an out-of-date flag for everyone else who references the document. That discourages saving often. Local Recovery Save runs Fusion's own recovery save on demand: your work in progress is checkpointed on disk, recoverable from **File › Recover Documents** after a crash, and nobody else sees a thing. Desktop CAD systems autosave on a timer; this puts the same protection under your finger, for the moment just before a risky operation.
 
 ## Prerequisites
 
-- A Fusion design document must be open and active.
+- A document must be open.
 
-## Notes
+## Where to find it
 
-- This command delegates directly to Fusion's internal `AutoSaveFilesCommand`.
-- It creates a local recovery checkpoint without creating a new cloud version.
+**File › Local Recovery Save** on the Quick Access Toolbar.
 
-## Access
+![Local Recovery Save in the File menu](./assets/recoverysave.png)
 
-Select **Local Recovery Save** from the **File** dropdown on the **Quick Access Toolbar (QAT)**.
+## How to use
 
-![access](./assets/recoverysave.png)
+1. Open the **File** menu on the Quick Access Toolbar.
+2. Select **Local Recovery Save**.
+
+There is no dialog. Fusion writes the checkpoint and returns you to the design.
+
+## What it produces
+
+- A local recovery checkpoint, the same kind Fusion writes on its own autosave interval.
+- No new cloud version, no version comment, no notification to collaborators.
+
+## Limitations
+
+- The command delegates to Fusion's recovery save; what it covers (the active document or every open document) is Fusion's behavior, not PowerTools'.
+- A recovery checkpoint is not a substitute for a cloud save. Only a save creates a version you and your team can open later.
 
 > **Developers:** see the [architecture notes](./arch/Recovery%20Save.md).
+
+---
 
 [Back to README](../README.md)
 

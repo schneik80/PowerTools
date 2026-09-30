@@ -1,65 +1,59 @@
 # Get a Share Link
 
-**Enables sharing and copies the public share link to the system clipboard.**
+[Back to README](../README.md)
 
-Use this command to generate a publicly accessible URL for the active Autodesk Fusion document. You can paste the link into email messages, chat messages, or any other text to give colleagues or external reviewers browser-based access to the design — without requiring them to have Autodesk Fusion installed.
+## Overview
 
----
+Get a Share Link turns on public sharing for the active document and copies the share link to the clipboard.
 
-## When to use this command
+Fusion's own share dialog takes several clicks and a copy step every time you need the link. This command does the whole sequence at once and tells you the state of the share (download allowed, password set, external references included) in the same message, so you know what the recipient will be able to do before you paste the link.
 
-| Scenario | Recommendation |
+| Scenario | Use |
 |---|---|
-| Send design for review to someone outside your organization | Use **Get a Share Link** |
-| Share with someone who does not have Autodesk Fusion installed | Use **Get a Share Link** |
-| Share with a team member who needs edit access in Fusion | Use [Get Open on Desktop Link](get-open-on-desktop-link.md) instead |
-| Share for review through the Fusion Team web viewer | Use [Get Open in Team Link](get-open-in-team-link.md) instead |
+| Send a design for review to someone outside your organization | **Get a Share Link** |
+| Share with someone who does not have Fusion installed | **Get a Share Link** |
+| Share with a hub member who will edit in Fusion | [Get Open on Desktop Link](./Get%20Open%20on%20Desktop%20Link.md) |
+| Share for review in the Fusion Team web client | [Get Open in Team Link](./Get%20Open%20in%20Team%20Link.md) |
 
----
+## Prerequisites
 
-## How to use this command
+- The active document must be saved to a hub. Otherwise the command asks you to save first.
 
-1. Open the document you want to share. The document must be saved to an Autodesk Team Hub.
-2. Select **Share Menu** in the right Quick Access Toolbar.
-3. Select **Get a Share Link**.
-4. If sharing has not been enabled previously, a progress indicator appears momentarily while the add-in enables sharing and retrieves the link.
-5. A result dialog confirms that the link was copied to the clipboard and reports the current sharing state.
-6. Paste the link wherever you need it.
+## Where to find it
 
----
+**Share Menu › Get a Share Link** on the right-hand Quick Access Toolbar.
 
-## Result dialog
+## How to use
 
-The result dialog confirms that the share link was copied and includes status notes for the following conditions:
+1. Open the document you want to share.
+2. Select **Share Menu › Get a Share Link**. A progress indicator reads *Generating Share Link* while sharing is turned on and the link is fetched.
+3. A **Share Document** dialog confirms the link is on the clipboard and reports the share state.
+4. Paste the link wherever you need it.
 
-| Condition | Dialog note |
+## The result dialog
+
+| Line | When it appears |
 |---|---|
-| Document was already shared before this command ran | Reported in the result message |
-| Downloading from the link is disabled | Noted; directs you to **Change Share Settings** |
-| Share link is password protected | Noted in the result message |
-| External references present, download enabled | Recipients can download referenced designs |
-| External references present, download disabled | Referenced designs can be viewed but not downloaded |
+| The document was already shared | Sharing was on before this command ran |
+| Downloading the document from the share link is allowed | Download is on |
+| Downloading from the link is not turned on. To enable downloading, go to **Share Settings** | Download is off |
+| The share is password protected | A password is set |
+| The share does not have a password. To set a password, go to **Share Settings** | No password |
+| This design has external references. Sharing this design will also share the referenced designs. To avoid sharing referenced designs, either save this design as a new document and break link or disable download | Design with external references, download on |
+| This design has external references. Sharing this design will allow the referenced designs to be viewed but not downloaded | Design with external references, download off |
 
----
+Change download and password settings with [Change Share Settings](./Change%20Share%20Settings.md).
 
-## Requirements and limitations
+## Limitations
 
-- The document must be saved to an Autodesk Team Hub.
-- If the Team Hub administrator has disabled share links for the Hub, a private permalink is copied to the clipboard instead. The private permalink provides Hub members with access to the document details page only — it does not allow public access.
-- Enabling sharing requires a network round-trip to Autodesk Platform Services, which may take a few seconds. A progress indicator is shown during this operation.
-
----
-
-## Related commands
-
-- [Change Share Settings](change-share-settings.md) — Modify download permissions and password protection after sharing is enabled.
-- [Get Open on Desktop Link](get-open-on-desktop-link.md) — Generate a link that opens the document for editing in Fusion.
-- [Get Open in Team Link](get-open-in-team-link.md) — Generate a link that opens the document in the Fusion Team web viewer.
-
----
+- If Fusion's share command is unavailable, usually because the hub administrator has disabled sharing, a private link to the document's page in Fusion Team is copied instead, and the dialog says so. That link works only for hub members.
+- Turning sharing on is a cloud round-trip and can take a few seconds.
+- The external-reference lines appear only for design documents.
 
 > **Developers:** see the [architecture notes](./arch/Get%20a%20Share%20Link.md).
 
 ---
+
+[Back to README](../README.md)
 
 *Copyright © 2026 IMA LLC. All rights reserved.*

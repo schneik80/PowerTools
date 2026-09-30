@@ -4,38 +4,31 @@
 
 ## Overview
 
-The **Scripts and Add-ins** command adds a single entry to the Fusion **File**
-menu (on the Quick Access Toolbar), placed directly above **PowerTools
-Preferences**. Selecting it opens Fusion's built-in **Scripts and Add-Ins**
-manager — the same dialog reached with **Shift+S** or **Utilities › Add-Ins** —
-without leaving the File menu. It exists to put a frequently used tool one click
-away in a predictable location.
+Scripts and Add-ins opens Fusion's built-in Scripts and Add-Ins manager from the File menu.
 
-## Capabilities
-
-| Capability | Details |
-|---|---|
-| Open the Scripts and Add-Ins manager | Launches the built-in Fusion `ScriptsManagerCommand` |
-| Convenient placement | Lives in the QAT File menu, immediately above PowerTools Preferences |
-| Enable / disable | Can be turned on or off from the **Tools** section of PowerTools Preferences |
+It is the same dialog as **Shift+S** or **Utilities › Add-Ins**, placed directly above **PowerTools Preferences** in the **File** menu. The point is where it sits: the File menu is available with no document open, so you can reach the manager from Fusion's home tab, where the **Utilities** tab is not.
 
 ## Prerequisites
 
-- The PowerTools add-in must be active.
+- None.
 
-## Notes
+## Where to find it
 
-- This command is a launcher: it presents no dialog of its own and immediately
-  invokes the built-in manager.
-- If the command is disabled in Preferences, the menu item is not added on the
-  next Fusion restart.
+**File › Scripts and Add-ins** on the Quick Access Toolbar, directly above **PowerTools Preferences**.
 
-## Access
+## How to use
 
-Select **File ▸ Scripts and Add-ins** from the Quick Access Toolbar, directly
-above **PowerTools Preferences**.
+1. Open the **File** menu.
+2. Select **Scripts and Add-ins**. The manager opens; there is no dialog of PowerTools' own.
+
+## Limitations
+
+- On a Fusion build without the manager, a message says it is not available.
+- Disabling the command under **File › PowerTools Preferences › Tools** removes the entry on the next Fusion restart.
 
 > **Developers:** see the [architecture notes](./arch/Scripts%20and%20Add-ins.md).
+
+---
 
 [Back to README](../README.md)
 

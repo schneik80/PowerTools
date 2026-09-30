@@ -4,52 +4,36 @@
 
 ## Overview
 
-**Create Mirrored Design** derives all solid bodies from the active saved design into a brand-new document, saves the new document as `<active-name>-mirror` in the same Fusion data folder, and applies a uniform scale of `-1` to all derived bodies — producing a geometrically mirrored copy of the part without modifying the source ( this trick to use scale with a factor of -1 is known as the "Lockwood Manuever")
+Create Mirrored Design derives every body of the active design into a new document saved alongside it as `<name>-mirror`, then applies a uniform scale of −1 to produce a mirrored copy without touching the source.
 
-> **Note:** The source design must be saved to Fusion before running this command. Unsaved designs cannot be Mirrored.
+SolidWorks calls this **Mirror Part** and Inventor **Mirror Components › Create New**: the opposite-hand version of a part as its own file, derived from the original so the two always match. Fusion has Derive and Scale but no one-step opposite-hand part. This command chains them: the derive stays associative, so the mirror follows later changes to the source, and the scale features remain editable in the mirror's timeline. (Scaling by −1 to mirror is sometimes called the Lockwood maneuver.)
 
 ## Prerequisites
 
-- An Autodesk Fusion design is open and active.
-- The design has been saved to Fusion (it has a cloud data file).
-- The active workspace is the **Design** workspace (`FusionSolidEnvironment`).
+- A design document saved to a hub with no unsaved changes; the mirror is saved in the same folder.
+- The Design workspace must be active.
 
-## Access
+## Where to find it
 
-**Create Mirrored Design** is located in the Design workspace under **Solid &rsaquo; Create**, immediately after the built-in Derive command.
-
-1. Open a saved 3D design in Autodesk Fusion.
-2. Switch to the **Design** workspace if not already active.
-3. Click the **Solid** tab in the toolbar.
-4. Expand the **Create** panel.
-5. Click **Create Mirrored Design** (listed after **Derive**).
+**Solid** tab › **Create** panel › **Create Mirrored Design**, in the Design workspace, directly after **Derive** inside the Create dropdown.
 
 ## How to use
 
-1. Open the 3D design you want to mirror and make it the active document.
-2. Confirm the design has been saved to Fusion (a cloud icon with no unsaved indicator).
-3. Navigate to **Solid &rsaquo; Create** and click **Create Mirrored Design**.
-4. The command validates the active design, collects all solid bodies, and derives them into a new Fusion design document.
-5. The new document is saved automatically as `<source-name>-mirror` in the same Fusion data folder as the source.
-6. A scale feature (factor `1`) is created for each component's bodies using the component origin as the reference point.
-7. Each scale feature's parameter expression is immediately edited to `-1` via the ModelParameter API.
-8. The mirror document is saved a second time to commit the scale changes.
-9. A confirmation message displays the name of the mirrored design.
+1. Open the saved design to mirror.
+2. Select **Solid › Create › Create Mirrored Design**.
+3. Wait for the confirmation message naming the new document. The mirror document is left open and active.
 
-## Expected results
+## What it produces
 
-- A new document named `<source-name>-mirror` appears in the same Fusion project folder as the source design.
-- All solid bodies in the mirrored design are flipped — equivalent to a mirror through the world origin — via a parametric scale `-1` feature.
+- A new document `<document name>-mirror` in the source's folder, containing a Derive of every body of every component in the source, and one Scale feature per component, about that component's origin, with its factor set to −1.
 - The source design is not modified.
-- The parametric scale features in the mirror document remain editable in the timeline.
 
 ## Limitations
 
-- The source design **must be saved** to Fusion. Local/unsaved designs are rejected with an error message.
-- If a document named `<source-name>-mirror` already exists in the same folder, the Save As operation will fail. Rename or delete the existing document first.
-- Only **BRep solid bodies** are derived. Mesh bodies, sketch geometry, and construction geometry are not included in the derive operation.
-- The command must be run from the **Design workspace**. It is not available in Drawing, Simulation, or Manufacturing workspaces.
-- Multi-body components are each scaled independently using their own origin construction point.
+- Every body is derived, solid or surface. Sketches and construction geometry are not.
+- A uniform scale of −1 about a point is a point inversion, which is a mirror plus a 180° rotation; the shape is the opposite-hand part, its orientation may not be.
+- If `<document name>-mirror` already exists in the folder, the save fails; rename or delete the existing document first.
+- Not available in the Drawing, Simulation or Manufacture workspaces.
 
 > **Developers:** see the [architecture notes](./arch/MirrorDerive.md).
 

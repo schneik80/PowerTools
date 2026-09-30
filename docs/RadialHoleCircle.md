@@ -4,65 +4,51 @@
 
 ## Overview
 
-The **Radial Hole Circle** command places a construction circle in the active sketch by selecting an existing sketch point as the center, then dragging the mouse to the desired radius and clicking to commit. A diameter dimension and a vertically constrained sketch point are automatically added at the top of the circle.
+Radial Hole Circle places a construction circle in the active sketch by picking its centre point and dragging to set the diameter, then adds a sketch point constrained vertically above the centre.
 
-Use this command when you need a reference circle anchored to an existing sketch point with its diameter locked by a driven dimension.
+A bolt-circle pattern starts the same way every time: a construction circle on a centre, a diameter dimension, and one point on the circle at twelve o'clock to pattern from. Radial Hole Circle draws all of that, already constrained, in two clicks.
+
+> **Beta, and off by default.** Tick **Show beta commands** under **General** in **File › PowerTools Preferences**, then enable **Radial Hole Circle** under **Part Modeling**, and restart Fusion.
 
 ## Prerequisites
 
-- A design document must be open in Autodesk Fusion.
-- A sketch must be in active edit mode.
-- At least one sketch point or vertex must exist in the sketch to use as the circle center.
+- A design document must be open.
+- A sketch must be in edit mode, with a sketch point or vertex to use as the centre.
 
-## Access
+## Where to find it
 
-The **Radial Hole Circle** command is available in Fusion's **Sketch** tab, in the **Create** panel.
-
-1. Open a design document in Autodesk Fusion.
-2. Double-click a sketch in the browser or on the canvas to enter sketch edit mode.
-3. On the **Sketch** tab, select the **Create** panel.
-4. Select **Radial Hole Circle** from the panel.
+**Sketch** tab › **Create** panel › **Radial Hole Circle**, while editing a sketch.
 
 ## How to use
 
-1. Enter sketch edit mode by double-clicking the sketch you want to work in.
-2. Run **Radial Hole Circle** from the **Create** panel.
-3. Click a sketch point or vertex in the viewport to set the circle center.
-4. Move the mouse — a white preview circle and crosshair track the cursor in real time, showing the current diameter.
-5. Click again to commit the circle at the current diameter.
+1. Double-click the sketch to edit it and select **Radial Hole Circle**.
+2. Pick a sketch point or vertex for the centre. A white preview circle and crosshair follow the cursor, and the **Diameter** field shows the current value.
+3. Move the cursor to the diameter you want and click to commit, or type a value in **Diameter** and select **Create**.
 
-The command closes automatically after the circle is created.
+The command closes after one circle. Run it again for another.
 
-### Alternatively
+## Options
 
-You can type a specific diameter value into the **Diameter** field in the dialog, then press **Create** (or **Enter**) instead of clicking in the viewport.
+| Option | Default | Effect |
+|---|---|---|
+| **Circle Center** | — | The sketch point or vertex to centre on; the box hides once picked |
+| **Diameter** | 25 mm, in the document's units | Set by dragging or by typing |
 
-## What is created
+**Create** is enabled once a centre is picked and the diameter is greater than zero.
 
-Each time the command runs, five sketch objects are added to the active sketch:
+## What it produces
 
-| Object | Type | Notes |
-| --- | --- | --- |
-| Circle | Construction curve | Centered on the selected point |
-| Diameter dimension | Sketch dimension | Driven by the drag or typed value |
-| Coincident constraint | Geometric constraint | Locks the circle center to the selected point |
-| Sketch point | Sketch point | Placed on the circle directly above the center |
-| Vertical guide line | Construction line | Connects center to the top sketch point; vertical constraint applied |
-
-## Preview graphics
-
-While dragging, two temporary graphics appear in the viewport:
-
-- **White circle** — outline of the circle at the current radius
-- **White crosshair** — marks the exact cursor position on the sketch plane
-
-Both graphics are removed when the command closes.
+| Object | Notes |
+|---|---|
+| Construction circle | Centred on the picked point, with a coincident constraint holding it there |
+| Diameter dimension | A driving dimension you can edit later |
+| Sketch point | On the circle, directly above the centre, held by a coincident constraint |
+| Construction line | From the centre to that point, with a vertical constraint |
 
 ## Limitations
 
-- The command requires an existing sketch point or vertex as the center. It cannot place a free circle at an arbitrary location.
-- Only one circle can be created per command invocation. Run the command again to place additional circles.
-- The preview is not visible if the sketch is viewed edge-on (the cursor is parallel to the sketch plane).
+- The centre must be an existing point; the command cannot place a free circle.
+- The preview is not visible when the sketch plane is viewed edge-on.
 
 > **Developers:** see the [architecture notes](./arch/RadialHoleCircle.md).
 

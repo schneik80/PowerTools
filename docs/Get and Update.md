@@ -1,42 +1,39 @@
 # Get and Update
 
-[Back to PowerTools Assembly](../README.md)
+[Back to README](../README.md)
 
-The Get and Update command retrieves the latest versions of all child references and then immediately updates all out-of-date assembly contexts in a single operation. Use this command instead of the default Autodesk Fusion **Get Latest** button when you need to ensure that both document versions and their derived assembly contexts are current.
+## Overview
 
-## What you can do
+Get and Update gets any new versions of the referenced documents and then updates all out-of-date assembly contexts, in one click.
 
-- Retrieve the latest version of all referenced documents with a single click.
-- Automatically update all out-of-date assembly contexts immediately after getting the latest versions.
-- Replace the two-step (sometimes multi-step) manual process of getting latest and then updating contexts.
-- Access the command directly from the Quick Access Toolbar for fast, repeatable use.
+When a teammate saves a component you reference, Fusion shows a yellow triangle and offers **Get Latest**. That brings in the new versions but leaves any assembly contexts, the geometry a component was edited against, out of date; **Update All Contexts From Parent** is a second command in a second place. Get and Update runs both from one button on the Quick Access Toolbar, which is what you want every time the triangle appears.
+
+> **Off by default.** Enable it under **File › PowerTools Preferences › Assembly › Get and Update** and restart Fusion.
 
 ## Prerequisites
 
-- An Autodesk Fusion 3D Design with external references must be active.
-- The document must be saved to an Autodesk Hub.
+- A design document with external references, saved to a hub. The command runs Fusion's own two commands, which decide what to do otherwise.
 
-## How to use Get and Update
+## Where to find it
 
-1. On the Quick Access Toolbar (QAT), select the **Get and Update** button.
-2. Autodesk Fusion executes **Get All Latest** to download the newest versions of all child references.
-3. Autodesk Fusion then executes **Update All Contexts From Parent** to refresh all assembly contexts that depend on the updated references.
-4. Review the assembly to confirm references and contexts are current.
+**Get and Update** on the Quick Access Toolbar, directly before **Save**.
 
-> **Tip:** If Autodesk Fusion shows a yellow triangle indicator on the QAT, that signal means at least one child reference has a newer version. Run Get and Update to resolve the indicator and update all derived contexts in one step.
+![Get and Update on the Quick Access Toolbar](./assets/getandupdate.png)
 
-## Access
+## How to use
 
-The **Get and Update** command is located on the Autodesk Fusion **Quick Access Toolbar (QAT)**.
+1. Select **Get and Update**.
+2. Fusion's **Get All Latest** runs, then **Update All Contexts From Parent**.
+3. Check the browser: the yellow triangle should be gone and the contexts current.
 
-![QAT access](./assets/getandupdate.png)
+## Limitations
+
+- The two Fusion commands are started one after the other; their behavior and messages are Fusion's.
 
 > **Developers:** see the [architecture notes](./arch/Get%20and%20Update.md).
 
 ---
 
-[Back to PowerTools Assembly](../README.md)
-
----
+[Back to README](../README.md)
 
 *Copyright © 2026 IMA LLC. All rights reserved.*

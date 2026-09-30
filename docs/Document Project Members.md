@@ -1,62 +1,45 @@
-# Document Project Members
+# Document Project Members...
 
-**Opens the Autodesk Fusion Team web client to the Members page for the active document's project.**
+[Back to README](../README.md)
 
-Use this command to view and manage all users and groups that have access to the project containing the active document. From the Fusion Team Members page you can review current access levels, add collaborators, and modify or remove existing permissions — without manually navigating the Fusion Team web interface.
+## Overview
 
----
+Document Project Members opens your web browser at the Members page of the project that holds the active document, where you can see who has access and change or remove their roles.
 
-## When to use this command
+Before you send a link or ask "why can't they see it?", it helps to know who is actually in the project. This command takes you straight to that page from the document you have open.
 
-| Scenario | Recommendation |
+| Scenario | Use |
 |---|---|
-| View who has access to the current project | Use **Document Project Members** |
-| Modify or revoke an existing member's permissions | Use **Document Project Members** |
-| Add a new member to the project | Use [Invite to Project](invite-to-project.md) instead |
+| See who has access to the current project, and change roles | **Document Project Members...** |
+| Add someone new | [Invite to Project...](./Invite%20to%20Project.md) |
+| Share the document without project membership | [Get a Share Link](./Get%20a%20Share%20Link.md) |
 
----
+## Prerequisites
 
-## How to use this command
+- The active document must be saved to a hub project. Otherwise the command asks you to save first.
+- Changing roles needs a hub role that allows it, typically project admin. Viewing the list does not.
 
-1. Open a document that is saved to an Autodesk Team Hub project.
-2. Select **Share Menu** in the right Quick Access Toolbar.
-3. Select **Document Project Members**.
-4. Your default web browser opens directly to the **Members** page for the project.
-5. Review, add, modify, or remove member permissions as required.
+## Where to find it
 
-> **Note:** You must have sufficient Hub permissions to manage project members. If you do not have permission, contact your Fusion Hub administrator.
+**Share Menu › Document Project Members...** on the right-hand Quick Access Toolbar.
 
----
+## How to use
 
-## Capabilities available on the Members page
+1. Open a document in the project.
+2. Select **Share Menu › Document Project Members...**.
+3. Your default browser opens at the project's **Members** page in Fusion Team.
 
-From the Fusion Team Members page that this command opens, you can:
+There is no confirmation dialog in Fusion; the browser page is the result.
 
-- View all current members and their assigned roles (for example, **Admin**, **Contributor**, **Viewer**).
-- Add new members by entering their email addresses.
-- Change an existing member's role.
-- Remove a member's access to the project.
+## Limitations
 
----
-
-## Requirements and limitations
-
-- The document must be saved.
-- The document must be stored in an Autodesk Hub project. Local files or unsaved documents do not have a project context.
-- You must have the Hub role that permits managing members (typically **Admin** or **Project Admin**).
-- Your browser must be able to reach `autodesk.com` domains. If your browser blocks pop-ups from these domains, allow them in your browser settings.
-
----
-
-## Related commands
-
-- [Invite to Project](invite-to-project.md) — Send invitations to add new members to the project.
-- [Get a Share Link](get-a-share-link.md) — Share the document publicly without modifying project membership.
-
----
+- The page opens in your default browser, signed in as whoever that browser is signed in as.
+- If the browser cannot be opened, nothing is reported.
 
 > **Developers:** see the [architecture notes](./arch/Document%20Project%20Members.md).
 
 ---
+
+[Back to README](../README.md)
 
 *Copyright © 2026 IMA LLC. All rights reserved.*

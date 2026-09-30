@@ -1,65 +1,53 @@
 # Document References
 
-[Back to PowerTools Assembly](../README.md)
+[Back to README](../README.md)
 
-The Document References command displays a dialog that lists all documents related to the active Autodesk Fusion design, organized by relationship type. Use this command to understand how the active document fits into a larger project — for example, to identify which top-level root assemblies ultimately contain the active part, which assemblies directly use it, which drawings reference it, or which related discipline documents are linked to it.
+## Overview
 
-## What you can do
+Document References lists every document related to the active design, grouped by relationship: the top-level assemblies that ultimately contain it, the assemblies that use it directly, the documents it uses, its drawings, its fasteners, and its related-data documents.
 
-- **Find root assemblies** — recursively walk the full parent chain to identify every top-level assembly that has no further parents, across any depth of nesting.
-- View all immediate parent documents that reference the active document (where-used relationships).
-- View all child documents that the active document references (uses relationships).
-- View all drawings associated with the active document.
-- View all standard component (fastener) references used by the active document.
-- View all related data documents created with the PowerTools Related Data workflow, separated from structural assembly references.
-- Open any listed document directly in Autodesk Fusion by selecting the open button next to the document name.
-- Open any listed document in the Autodesk Fusion web browser by selecting the web button next to the document name.
-- See thumbnail previews of each referenced document.
+"Where is this part used?" is a PDM question. SolidWorks PDM answers it on a Where Used tab and Vault on a Uses/Where Used view; Fusion's desktop client shows only the references *inside* the open document. Document References walks the parent chain the other way, all the way to the root assemblies, and puts parents, children, drawings and related documents in one dialog you can open documents from.
 
 ## Prerequisites
 
-- An Autodesk Fusion 3D Design must be active.
-- The active document must be saved to an Autodesk Hub.
-- An internet connection is required. The command displays a message if you are offline.
+- A design document saved to a hub.
+- An internet connection. Offline, the command says so and stops.
 
-## How to use Document References
+## Where to find it
 
-1. Open the Autodesk Fusion Design workspace with an active saved design.
-2. On the **Utilities** tab, in the **Power Tools** panel, select **Document References**.
-3. The dialog opens and organizes references into the following groups:
+**Utilities** tab › **Power Tools** panel › **Document References**, in the Design workspace.
 
-   | Group | Description |
+![Document References on the Power Tools panel](./assets/docrefs_002.png)
+
+## How to use
+
+1. Select **Document References**.
+2. Read the groups. Each heading shows its count; an empty group is collapsed.
+
+   | Group | Contents |
    |---|---|
-   | **Roots** | Top-level assemblies that have no further parents, found by recursively walking the full parent chain. Drawings and Related Data documents are excluded from the chain. The active document itself is never listed here. |
-   | **Used In (Parents)** | Assemblies or other documents that directly reference (use) the active document |
-   | **Uses (Children)** | Documents that the active document references as components or links |
-   | **Drawings** | Drawing documents (`.f2d`) associated with the active document |
-   | **Fasteners** | Standard Components library references used in the active document |
-   | **Related Data** | Documents linked through the PowerTools related data relationship (identified by the `‹+›` name marker) |
+   | **Roots** | Top-level assemblies with no parents of their own, found by walking the full parent chain. Drawings and related-data documents are not followed, and the active document is never listed here |
+   | **Used In (Parents)** | Documents that reference the active document directly |
+   | **Uses (Children)** | Documents the active document references; a configuration is marked `(configuration)` |
+   | **Drawings** | Drawings of the active document |
+   | **Fasteners** | Components from Fusion's **Standard Components** library |
+   | **Related Data** | Documents created with [Create Related Data](./Related%20Data.md), recognised by the `‹+›` in their name |
 
-4. Each row in the dialog shows:
-   - A thumbnail preview of the document.
-   - The document name.
-   - An **Open in Fusion** button (folder icon) to open the document in a new tab.
-   - An **Open in browser** button (web icon) to open the document in Autodesk Fusion web.
-5. Select **Close** to dismiss the dialog.
-
-> **Note:** Each group heading shows the total count of documents in that group. If a group has no entries, it is shown collapsed and empty.
-
-## Access
-
-The **Document References** command is located on the **Utilities** tab, in the **Power Tools** panel of the Autodesk Fusion Design workspace.
-
-![Toolbar access](./assets/docrefs_002.png)
+3. Hover a row for its project and folder path and a thumbnail; a reference in another project is flagged **Cross Project Reference**.
+4. Select a row's folder button to open the document in Fusion (this closes the dialog), or its web button to open it in Fusion Team.
+5. Select **Close**.
 
 ![Document References dialog](./assets/docrefs_001.png)
+
+## Limitations
+
+- Thumbnails are downloaded while the dialog is open and discarded when it closes.
+- The command needs a design document; it does not run from a drawing.
 
 > **Developers:** see the [architecture notes](./arch/Document%20References.md).
 
 ---
 
-[Back to PowerTools Assembly](../README.md)
-
----
+[Back to README](../README.md)
 
 *Copyright © 2026 IMA LLC. All rights reserved.*

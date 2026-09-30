@@ -4,41 +4,50 @@
 
 ## Overview
 
-The **Document Information** command displays a summary of cloud data identifiers and metadata for the active Fusion design document. It presents hub, project, folder, and document-level IDs alongside version details in a single dialog. This is particularly useful when troubleshooting data management issues, verifying project structure, or sharing document references with team members.
+Document Information shows the hub, project, folder and version identifiers of the active document, and warns when saving it would migrate it to the running Fusion build.
 
-The command also detects whether the document was last saved by a different version of Fusion than the one currently running, and warns you that opening the document for edit will migrate it to the current schema—which may affect collaborators on older client versions.
-
-## Capabilities
-
-| Capability | Details |
-|---|---|
-| Display Team Hub information | Shows the hub name and Fusion Industry Cloud hub ID |
-| Display Project information | Shows the project name and project ID |
-| Display Folder information | Shows the parent folder name (or "Project Root") and folder ID |
-| Display document path | Shows the full folder path to the document within the project |
-| Display Document information | Shows the document name, document ID, and current version number |
-| Display version details | Shows version number, total version count, version comment, and Fusion build number |
-| Warn on schema migration | Alerts you when saving will migrate the document to the current Fusion build schema |
+When a reference will not resolve, a teammate cannot see a file, or support asks "which document exactly?", the answer is an identifier the Fusion UI never shows. This command puts them all in one dialog: hub, project, folder and document IDs, the full folder path, the version you have open and the latest version on the hub. It also compares the Fusion build that last saved the document with the one you are running, so you know before you save that the file will move to a new schema and that collaborators on an older client will no longer be able to open it.
 
 ## Prerequisites
 
-- A Fusion design document must be open and active.
-- The document must be saved to Fusion's cloud data. Unsaved documents are not supported.
+- A design document must be open and saved to a hub. An unsaved document has no identifiers, and the command asks you to save first.
 
-## Notes
+## Where to find it
 
-- If the document was saved by a different Fusion build than the currently running client, the dialog title changes and a migration warning is appended to the output. Collaborators must be on the same client version to open the document after a schema migration.
-- The document path is resolved by traversing the parent folder hierarchy up to the project root.
+**Utilities** tab › **Power Tools** panel › **Document Information**, in the Design workspace.
 
-## Access
+![Document Information on the Power Tools panel](./assets/docinfo_002.png)
 
-Select **Document Information** from the **Power Tools** panel on the **Tools** tab in a Fusion design document.
+## How to use
 
-![dialog](./assets/docinfo_001.png)
+1. Select **Document Information**.
+2. Read the dialog. Select **OK** to close it.
 
-![access](./assets/docinfo_002.png)
+![Document Information dialog](./assets/docinfo_001.png)
+
+## What it shows
+
+| Field | Meaning |
+|---|---|
+| Hub name and ID | The hub active in the Data Panel |
+| Project name and ID | The project that holds the document |
+| Folder name and ID | The document's parent folder, or the project root |
+| Path | Folder path from the project root to the document |
+| Document name and ID | The document's cloud identifier |
+| Version | `Version X of Y`: the version you have open and the latest on the hub |
+| Version comment | The comment typed at the last save |
+| Fusion build | The build that saved this version |
+
+If that build differs from the one you are running, the dialog title changes to say the document will migrate on save, the icon becomes a warning, and a line at the end explains it.
+
+## Limitations
+
+- The hub shown is the one active in the Data Panel, which is normally, but not necessarily, the document's own hub.
+- The command reads a design document; it is not available for drawings.
 
 > **Developers:** see the [architecture notes](./arch/Document%20Information.md).
+
+---
 
 [Back to README](../README.md)
 

@@ -1,81 +1,66 @@
 # Global Parameters
 
-[Back to PowerTools Assembly](../README.md)
+[Back to README](../README.md)
 
-The Global Parameters command creates and manages a shared parameter set for the active Autodesk Fusion project. Parameters are stored in a dedicated Fusion document inside the `_Global Parameters` folder at the project root, making them available to any document in the project via the **Link Global Parameters** command.
+## Overview
 
-## What you can do
+Global Parameters creates and manages shared parameter sets for the active project, stored as documents in the project's `_Global Parameters` folder.
 
-- Create a new named parameter set for the active project.
-- Edit an existing parameter set — add, modify, or remove parameters.
-- Define parameters with a name, numeric value, unit (in, ft, mm, cm, m), and optional comment.
-- Mark parameters as Fusion favorites so they appear in the Favorites panel of any consuming document.
-- Restore unsaved changes from a previous session if the dialog was cancelled before saving.
-- Use warm-start discovery caches to reduce project folder scanning and startup latency.
+Onshape has Variable Studios, SolidWorks links equations to an external file, Inventor links parameters to a spreadsheet; Fusion's user parameters live in one document only. A Global Parameters set is a small Fusion document that holds the numbers several designs share, an enclosure's wall thickness, a fastener pitch, a rail spacing, so they are defined once and derived wherever they are needed with [Link Global Parameters](./Link%20Global%20Parameters.md). Edit the set, and every design that links it picks up the change on its next update.
 
 ## Prerequisites
 
-- An Autodesk Fusion 3D Design must be active.
-- The active document must be saved to an Autodesk Hub project.
+- A project must be active in the Data Panel. Sets are stored and found in that project.
+- A document must be open.
 
-## How to use Global Parameters
+## Where to find it
 
-### Create a new parameter set
+**Utilities** tab › **Power Tools** panel › **Global Parameters**, in the Design workspace.
 
-1. Open the Autodesk Fusion Design workspace.
-2. On the **Power Tools** panel, select **Global Parameters**.
-3. The **Parameter Set** dropdown defaults to **Create New**. Leave it set to **Create New**.
-4. In the **Name** field, enter a descriptive name for the parameter set (for example, `Enclosure Constants`).
-5. Use the table to define your parameters:
+## How to use
 
-   | Column | Description |
-   | --- | --- |
-   | (checkbox) | Select a row to enable the **Delete** toolbar button |
-   | Name | Parameter name — must start with a letter; letters, digits, `_`, `"`, `$`, `°`, `µ` are allowed |
-   | Value | Numeric value |
-   | Unit | Unit from the dropdown (in, ft, mm, cm, m) |
-   | Comment | Optional free-text description |
+### Create a set
 
-6. Use the **Add** toolbar button to insert additional parameter rows.
-7. Use the **Delete** toolbar button to remove selected rows.
-8. Select **OK** to save.
+1. Select **Global Parameters**. The **Project** field shows the active project.
+2. Leave **Parameter Set** on **Create New** and enter a **Name** for the set; it defaults to the active document's name.
+3. Fill in the table. **Add** appends a row; tick rows and select **Delete** to remove them.
+4. Select **OK**. A new design document with the set's name is created in `_Global Parameters` (the folder is created if missing) and saved with the comment `Global Parameters — PowerTools`.
 
-The command creates a new Fusion design document with the parameter set name in the `_Global Parameters` folder of the active project, and also writes the parameters directly into the active document.
+### Edit a set
 
-### Edit an existing parameter set
+1. Select **Global Parameters**.
+2. Choose the set in **Parameter Set**. The table fills with its parameters, and the dropdown locks for this session so the loaded data cannot be switched out from under you.
+3. Change, add or delete rows and select **OK**. Parameters removed from the table are removed from the set document; one that is still referenced there is kept.
 
-1. Open the Autodesk Fusion Design workspace.
-2. On the **Power Tools** panel, select **Global Parameters**.
-3. In the **Parameter Set** dropdown, select the name of the parameter set you want to edit.
-4. The table populates with the existing parameters.
-5. Make your changes and select **OK** to save.
+### Unsaved edits
 
-> **Note:** Once you select an existing parameter set, the dropdown locks for that session to prevent accidental mode switching after data has been loaded.
+If you cancel with unsaved edits, the command asks whether to reopen the dialog and continue. Answer **No** and the edits are discarded; answer **Yes** and the dialog reopens with them. Edits are kept in a pending file until you save or discard them, so they also survive if Fusion closes first.
 
-### Restore unsaved changes
+## Options
 
-If you cancelled the dialog in a previous session before saving, the command detects the saved state and offers to restore it. Select **Yes** in the prompt to reload the previous table contents.
+| Column | Rule |
+|---|---|
+| (checkbox) | Selects the row for **Delete** |
+| **Name** | Must start with a letter; letters, digits, `_`, `"`, `$`, `°` and `µ` are allowed. Case-sensitive, unique within the set, and not a Fusion unit name (`mm`, `in`, `deg`, `kg`, `pi`, …) |
+| **Value** | A number |
+| **Unit** | `in`, `ft`, `mm`, `cm` or `m` |
+| **Comment** | Optional |
 
-## Access
+A status line under the table reads **Up to date**, **Unsaved changes**, or **Cannot save** with the reason. Every parameter in a set is marked as a favorite, so it appears in the Favorites section of the Parameters dialog in any design that links the set.
 
-The **Global Parameters** command is located on the **Utilities** tab, in the **Power Tools** panel of the Autodesk Fusion Design workspace.
+## Preferences
 
-## Parameter name rules
+Global Parameters, Link Global Parameters and Refresh Global Parameters Cache are one capability and share a single checkbox under **File › PowerTools Preferences › Assembly**. Changes apply after a Fusion restart.
 
-| Rule | Detail |
-| --- | --- |
-| Must start with a letter | Digits and symbols are not allowed as the first character |
-| Allowed characters | Letters, digits, `_`, `"`, `$`, `°`, `µ` |
-| Case-sensitive | `Width` and `width` are treated as different parameters |
-| Reserved names | Fusion unit names (`mm`, `in`, `ft`, `deg`, `rad`, `kg`, `s`, `pi`, etc.) are not allowed as parameter names |
-| Duplicate names | Each parameter name must be unique within the set |
+## Limitations
+
+- Units outside the five offered are shown as `mm` when a set is loaded, and only the numeric part of an expression is kept, so a set edited elsewhere can be changed by the next save here.
+- The set is written to its own document only; the active document is not modified. Use Link Global Parameters to bring the parameters into a design.
 
 > **Developers:** see the [architecture notes](./arch/Global%20Parameters.md).
 
 ---
 
-[Back to PowerTools Assembly](../README.md)
-
----
+[Back to README](../README.md)
 
 *Copyright © 2026 IMA LLC. All rights reserved.*

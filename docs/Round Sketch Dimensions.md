@@ -4,60 +4,61 @@
 
 ## Overview
 
-The **Round Sketch Dimensions** command snaps the length dimensions of the active Autodesk Fusion sketch to a clean, adjustable increment. It is useful after tracing, importing, or free-form modeling leaves dimensions with untidy values (for example `12.4837 mm` or `0.7431 in`).
+Round Sketch Dimensions rounds the length and angular dimensions of the active sketch to clean, adjustable increments, leaving formula-driven and reference dimensions untouched.
 
-By default the command rounds **every** eligible dimension in the active sketch. You can narrow this to only the dimensions you select, or round everything except the dimensions you select. A slider chooses the rounding increment, starting from a smart default sized to your sketch, and a live preview shows the result before you commit.
-
-Formula-driven dimensions (for example `width/2` or `d5`) and reference (driven) dimensions are **left untouched** so parametric relationships are preserved.
+Tracing, importing, auto-constraining or free-form modeling leaves dimensions like `12.4837 mm` or `0.7431 in`. Rounding them by hand means editing every one. This command does the whole sketch, or just the dimensions you pick, with a slider for the grid and a live preview so you see the result before committing.
 
 ## Prerequisites
 
-- A 3D design document — part, assembly, or hybrid, saved or unsaved — must be open in Autodesk Fusion.
-- A sketch must be in active edit mode.
+- A design document must be open.
+- A sketch must be in edit mode.
 
-## Access
+## Where to find it
 
-The command is available on Fusion's **Sketch** tab, in the **Modify** panel.
-
-1. Open a design document in Autodesk Fusion.
-2. Double-click a sketch in the browser or on the canvas to enter sketch edit mode.
-3. On the **Sketch** tab, open the **Modify** panel.
-4. Select **Round Sketch Dimensions**.
-
-## Dialog options
-
-- **Document units** — read-only; shows the active document's default length unit.
-- **Mode** — how the rounding is scoped:
-  - *Round all dimensions* (default) — round every eligible dimension in the sketch.
-  - *Only round selected dimensions* — round just the dimensions you pick.
-  - *Ignore selected dimensions* — round everything except the dimensions you pick.
-- **Dimensions** — appears in the two selection modes; pick the sketch dimensions the mode applies to.
-- **Value format** — appears only for inch/foot documents:
-  - *Fractions* (default) — round to a fractional-inch grid (1/64 in … 1 in).
-  - *Decimal* — round to a decimal-inch grid.
-- **Increment** — a slider that sets how coarsely values are rounded. The default is chosen to suit the size of the dimensions in your sketch. The current increment is shown next to **Rounds to** (for example `0.5 mm` or `1/16 in`).
-- **Preview** (default on) — updates the sketch live as you adjust the increment. The preview reverts if you cancel and commits if you click **Round**.
+**Sketch** tab › **Modify** panel › **Round Sketch Dimensions**, while editing a sketch.
 
 ## How to use
 
-1. Enter sketch edit mode and run **Round Sketch Dimensions**.
-2. Leave the mode on *Round all dimensions*, or choose a selection mode and pick the dimensions.
-3. Adjust the **Increment** slider until **Rounds to** shows the grid you want. For inch/foot documents, choose **Fractions** or **Decimal** first.
-4. With **Preview** on, watch the sketch update as you drag the slider.
-5. Click **Round** to commit, or **Cancel** to revert.
+1. Double-click the sketch to edit it and select **Round Sketch Dimensions**.
+2. Leave **Mode** on *Round all dimensions*, or choose a selection mode and pick dimensions in the **Dimensions** box.
+3. Move the **Length increment** slider until **Length rounds to** shows the grid you want. For inch and foot documents choose **Fractions** or **Decimal** first. Do the same with **Angle increment** if the sketch has angles.
+4. With **Preview** on, the sketch updates as you move the sliders.
+5. Select **Round** to commit, or **Cancel** to revert.
 
-## Expected results
+## Options
 
-- Every targeted, eligible length dimension is snapped to the nearest multiple of the chosen increment.
-- In **Fractions** mode the value lands on a fractional-inch grid; how it is displayed (fraction vs decimal) follows the document's own unit-precision settings.
-- Formula-driven and reference (driven) dimensions are unchanged.
-- The action is a single undoable step.
+| Option | Default | Effect |
+|---|---|---|
+| **Document units** | — | Read-only; the document's default length unit |
+| **Mode** | Round all dimensions | *Only round selected dimensions* rounds what you pick; *Ignore selected dimensions* rounds everything else |
+| **Dimensions** | — | Shown in the two selection modes; pick sketch dimensions |
+| **Value format** | Fractions | Inch and foot documents only: *Fractions* rounds on a fractional-inch grid, *Decimal* on a decimal-inch grid |
+| **Length increment** / **Length rounds to** | Sized to the sketch | Slider over the grid below; shown only when the sketch has eligible length dimensions |
+| **Angle increment** / **Angle rounds to** | Sized to the sketch | Slider over the angle grid below; shown only when the sketch has eligible angles |
+| **Preview** | On | Applies the rounding live; reverted on Cancel |
+
+The grids:
+
+| Units | Steps |
+|---|---|
+| Millimetre (also cm and m documents) | 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 25, 50 mm |
+| Inch or foot, Fractions | 1/64 in to 1 in |
+| Inch or foot, Decimal | 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1 in |
+| Angles | 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 15, 30, 45 deg |
+
+The default step is the largest that is no more than 5% of the median dimension in the sketch.
+
+## Results
+
+- Every targeted length dimension (distance, radius, diameter) and angle is snapped to the nearest multiple of its increment.
+- In **Fractions** mode the value lands on the fractional grid; whether it displays as a fraction or a decimal follows the document's unit settings.
+- Dimensions defined by a formula or by another parameter are unchanged. A plain numeric fraction such as `3/8` counts as a value and is rounded.
+- The **Round** button is disabled when there is nothing eligible, or a selection mode has no selection.
 
 ## Limitations
 
-- Angular dimensions are not rounded in this release; only length dimensions (distance, radius, diameter) are affected.
-- Dimensions whose value is defined by a formula or a reference to another parameter are intentionally skipped to preserve parametric intent.
-- The command operates on the active sketch only.
+- Only the active sketch is affected.
+- Centimetre and metre documents round on the millimetre grid, and the rewritten expressions are in `mm`.
 
 > **Developers:** see the [architecture notes](./arch/Round%20Sketch%20Dimensions.md).
 

@@ -1,105 +1,103 @@
-# Export SysML Architecture Document
+# Export SysML Architecture Document...
 
 [Back to README](../README.md)
 
 ## Overview
 
-The **Export SysML Architecture Document** command exports the active Autodesk Fusion assembly as a 4+1 architecture design document with a SysML physical view. Use this command to hand a mechanical design to a systems engineering team, or to a Model-Based Systems Engineering (MBSE) toolchain, without retyping the assembly structure by hand.
+Export SysML Architecture Document writes the active assembly as a 4+1 architecture design document with a SysML v2 physical view.
 
-Two files are written: an **Architecture Design Document (ADD)** in Markdown, organised on the [4+1 View Model](https://en.wikipedia.org/wiki/4%2B1_architectural_view_model), and a **SysML v2 model** in textual notation that the document references.
+Model-based systems engineering tools such as Cameo and Capella describe a product's physical architecture in SysML, and a mechanical team is usually asked to retype the assembly structure into them by hand. This command generates that view from the Fusion design itself: hierarchy, quantities, mass, envelope and joints, in SysML v2 textual notation, plus a Markdown design document organized on the [4+1 View Model](https://en.wikipedia.org/wiki/4%2B1_architectural_view_model) with the views a CAD model can populate filled in and the others left for a human.
 
-A Fusion design is the authoritative source for exactly one of the five 4+1 views — the Physical View — so that view is generated in full. Two more views are partly derivable and are populated with what the design actually records. The remaining two require human intent, and the document says so rather than leaving a heading empty.
-
-| View | Source | What the command does |
+| View | Source | What is written |
 |---|---|---|
-| **Logical** | — | Adds the heading and states that it must be authored by hand |
-| **Process** | Fusion joints | Derived: a table of joints — type, what they connect, origin, axis, and which permit motion |
-| **Development** | Fusion external references | Derived: a table of linked documents, versions and instance counts |
-| **Physical** | Fusion assembly structure | Generated: hierarchy, quantities, mass, envelope, interfaces, and the SysML model |
-| **Scenarios (+1)** | — | Adds the heading and states that it must be authored by hand |
+| **Logical** | — | Heading and a note that it must be authored by hand |
+| **Process** | Fusion joints | A table of joints: type, what they connect, origin, axis and state |
+| **Development** | External references | A table of linked documents, versions and instance counts |
+| **Physical** | Assembly structure | Hierarchy, quantities, mass, envelope, interfaces, and the SysML model |
+| **Scenarios (+1)** | — | Heading and a note that it must be authored by hand |
 
 ## Prerequisites
 
-- An Autodesk Fusion design document must be active.
-- The design must be an assembly or a hybrid — that is, the root component must contain at least one child component. A design with no child components has no physical decomposition to document, and the command declines to export one.
+- A design document must be active.
+- The root component must contain at least one child component. A design with no children has no physical decomposition, and the command says so and stops.
 
-## How to use this command
+## Where to find it
 
-1. Open an assembly design in Autodesk Fusion.
-2. From the **File** drop-down menu in the Quick Access Toolbar, select **Export SysML Architecture Document...**.
-3. In the folder browser dialog, navigate to the destination folder for the two output files.
-4. Click **OK**. Power Tools walks the assembly and writes both files. On a large assembly a progress dialog appears; you can cancel it, and nothing is written if you do.
-5. A confirmation dialog lists both filenames and the folder they were written to.
+**File › Export SysML Architecture Document...** on the Quick Access Toolbar, directly before **Export**, next to **Export BOM as CSV** and **Export Mermaid Diagram...**.
 
-## Output
+## How to use
 
-Two files are written directly into the folder you chose, both named after the active document:
+1. Open the assembly.
+2. Select **File › Export SysML Architecture Document...**.
+3. Choose the destination folder and select **OK**. Cancelling writes nothing.
+4. On an assembly of 25 or more components a progress dialog appears; cancelling it writes nothing.
+5. A dialog lists the two files and the folder.
+
+## What it produces
+
+Two files in the chosen folder, named after the document. Files of the same name are overwritten, so export into a new folder rather than over a document you have written into.
 
 | File | Contents |
 |---|---|
-| `{DocumentName}-ADD.md` | The architecture design document: document control, the five 4+1 views, a component inventory, and appendices |
-| `{DocumentName}-physical.sysml` | The Physical View as a SysML v2 textual model |
-
-Files of the same name in that folder are overwritten. Because the Logical View and Scenarios sections are meant to be written by hand, export into a new folder and copy your authored sections across rather than exporting over a document you have already written into.
+| `<document name>-ADD.md` | Document control, the five views, a component inventory, and appendices |
+| `<document name>-physical.sysml` | The Physical View as a SysML v2 textual model |
 
 ### What the Physical View records
 
-For every unique component in the assembly:
+For every unique component:
 
-- **Identity** — name, part number, description, and material.
-- **Classification** — `part` (bodies only), `subassembly` (children only), `hybrid` (bodies *and* children), or `empty` (neither).
-- **Quantity** — the total number of instances across the whole assembly, and the multiplicity under each parent.
-- **Mass, volume and surface area**, and the centre of mass. These include the component's children, so a subassembly's mass covers everything inside it.
-- **Bounding box** — the component's envelope, in millimetres. The box includes the component's children, so a subassembly's envelope is the envelope of everything inside it and the root's is the envelope of the whole assembly. A component that encloses nothing reports no envelope rather than a box of zeros.
-- **Interfaces** — joints, rendered as SysML connections.
+- **Identity**: name, part number, description, material, and whether it is an external reference.
+- **Classification**: `part` (bodies only), `subassembly` (children only), `hybrid` (bodies and children) or `empty` (neither).
+- **Quantity**: total instances across the assembly, and the multiplicity under each parent.
+- **Mass, volume, surface area** and centre of mass, including the component's children.
+- **Bounding box** in millimetres, largest side first, including children. A component that encloses nothing reports no envelope rather than zeros.
+- **Interfaces**: joints, rendered as SysML connections.
 
-A component is measured once no matter how many times it is used, so a fastener used two hundred times costs one measurement rather than two hundred.
+A component is measured once no matter how many times it is used. Physical properties are read at Fusion's low calculation accuracy (about ±1%).
 
-### Units
+### Units and missing values
 
-The output uses fixed units so that two exports of the same design can be compared directly: **length in millimetres, mass in kilograms, volume in cm³, area in cm²**. The document's own default length unit is recorded in the Document control table for reference, but it does not change the output.
+Output units are fixed so two exports compare directly: length in millimetres, mass in kilograms, volume in cm³, area in cm². The document's own unit is recorded in the Document control table but does not change the output.
 
-### Missing values
-
-Fusion cannot always evaluate a physical property. Where it could not, the document shows an em dash (—) and the SysML model omits the attribute entirely. Neither ever substitutes a zero, because a zero cannot be told apart from a real measurement. Every value that could not be read is listed in the document's **Collection notes** appendix.
+Where Fusion cannot evaluate a property, the document shows an em dash and the model omits the attribute. A zero is never substituted, because it cannot be told from a measurement. Every value that could not be read is listed in **Appendix A — Collection notes**.
 
 ### Figures include children, and do not add up
 
-Mass, volume, area and the bounding box all include a component's children. A subassembly's mass is the mass of everything inside it, and the root's is the assembly total — so the command reports that total directly rather than computing one.
+Mass, volume, area and the bounding box all include a component's children, so the inventory's Mass column does not sum: adding it over every row counts each subassembly's contents twice. The document says so under the table, with the figures for your design, and reports the root's total directly.
 
-The consequence is that **the component inventory's Mass column does not sum.** Adding it over every row counts each subassembly's contents twice; for one real espresso machine that gives 23.6 kg for a machine weighing 8.7 kg. The document says so under the table, with the figures for your own design.
+### Example
 
-## Example output
-
-The SysML model for a small assembly — a gearbox whose bearing block carries both its own body and two shafts:
+A gearbox whose bearing block carries its own body and two shafts:
 
 ```sysml
 package 'Gearbox Physical View' {
     private import ScalarValues::*;
 
-    connection def RevoluteJoint;
+    abstract part def FusionComponent;
+    abstract connection def FusionJoint { ... }
+    connection def RevoluteJoint :> FusionJoint {
+        attribute :>> rotationalDOF = 1;
+        attribute :>> translationalDOF = 0;
+    }
 
-    part def 'Housing' {
+    part def 'Housing' :> FusionComponent {
         attribute partNumber : String = "PN-1001";
         attribute classification : String = "part";
         attribute massKg : Real = 1.24;
         attribute bboxLengthMm : Real = 120;
+        attribute bboxWidthMm : Real = 80;
+        attribute bboxHeightMm : Real = 60;
     }
 
-    part def 'Shaft' {
-        attribute classification : String = "part";
-    }
-
-    part def 'Bearing Block' {
+    part def 'Bearing Block' :> FusionComponent {
         attribute classification : String = "hybrid";
         part shaft : 'Shaft'[2];
     }
 
-    part def 'Gearbox' {
+    part def 'Gearbox' :> FusionComponent {
         attribute classification : String = "subassembly";
         part housing : 'Housing';
         part bearingBlock : 'Bearing Block';
-
         connection 'Pivot' : RevoluteJoint connect housing to bearingBlock;
     }
 
@@ -107,66 +105,29 @@ package 'Gearbox Physical View' {
 }
 ```
 
-Each unique component becomes one `part def`, and composition lives inside the definitions — so a subassembly used three times is written once, and the model file stays proportional to the number of distinct components rather than the number of occurrences.
+Each unique component is one `part def`, and composition lives inside the definitions, so a subassembly used three times is written once and the file stays proportional to the number of distinct components.
 
-> **Tip:** The generated `.sysml` file can be read back in. [Assembly Builder](./Assembly%20Builder.md)'s **Import SysML** button reconstructs this hierarchy as a node graph, so an assembly exported from one design can be regenerated as external components in another.
+> **Tip:** [Assembly Builder](./Assembly%20Builder.md) reads this file back. Its **Import SysML** button reconstructs the hierarchy as a node graph, so an assembly exported from one design can be regenerated as external components in another.
 
-The accompanying document opens like this:
+### Joints
 
-```markdown
-# Gearbox — Architecture Design Document
+A joint becomes a SysML connection when both of its ends sit below the component that owns the joint and the joint is not suppressed. An end deeper than a direct child is named by a dotted path. Joints that do not meet that test, anchored to geometry outside any component or reaching outside the owning component, are still reported in the Process View table and as comments in the model, with the reason.
 
-> Generated file. Regenerate it with File › Export SysML Architecture
-> Document... in Autodesk Fusion rather than editing the generated sections.
-
-## Document control
-## Architectural representation
-## 1. Logical View
-## 2. Process View
-## 3. Development View
-## 4. Physical View
-## 5. Scenarios (+1)
-## Appendix A — Collection notes
-## Appendix B — Regeneration
-```
-
-### Joints that cannot be modelled
-
-A joint becomes a SysML connection when both of its ends sit somewhere below the component that owns the joint, and the joint is not suppressed. An end deeper than a direct child is named by a dotted path, so a joint between two different subassemblies is still expressed. Fusion also allows joints that do not meet that test — one anchored to geometry belonging to no component, or one reaching outside the owning component altogether. Those are still reported, in the Process View table and as comments in the model file, together with the reason they could not be expressed. A suppressed joint is never written as a connection, because it is not part of the built configuration.
-
-### What a connection records
-
-Each joint kind is written as a connection definition carrying the degrees of freedom that kind permits, so a revolute joint is distinguishable from a ball joint without opening Fusion. A kind whose motion its name does not fix — an inferred joint — omits the counts rather than claiming zero. The connection definition names its two ends `occurrenceOne` and `occurrenceTwo`, and each connection gives them **in Fusion's order** — the first named component is `occurrenceOne`, the one that moves relative to the second. Each connection also carries a comment giving the occurrence names Fusion gave those ends. Those names are the only record of *which* of two identical parts a joint holds, because the model file declares one usage per component.
-
-Each connection also records **where the joint is and which way it acts**, in the coordinate space of the component that owns the joint:
+Each joint kind is a connection definition carrying the degrees of freedom it permits. Each connection names its ends `occurrenceOne` and `occurrenceTwo` in Fusion's order, carries a comment with the occurrence names, and records where the joint is and which way it acts in the owning component's coordinate space:
 
 | Attribute | Meaning |
 |---|---|
 | `originXMm`, `originYMm`, `originZMm` | The joint's origin, in millimetres |
 | `axisX`, `axisY`, `axisZ` | A unit vector along the joint's primary axis |
-| `axisRole` | What that axis governs — `rotation`, `translation`, `normal` or `pitch` |
+| `axisRole` | What that axis governs: `rotation`, `translation`, `normal` or `pitch` |
 
-The frame matters. Fusion reads these joints *natively*, and a native object carries no assembly context — a component can sit in many places, so there is no single world position to report. That is what makes the coordinate correct for every instance of a component used more than once, which is what a `part def` attribute needs. It also means two origins under different definitions cannot be compared directly: getting both into a common frame means composing the occurrence transforms between them.
+A revolute or cylindrical joint reports its rotation axis, a slider its slide direction, a planar joint its normal, a ball joint its pitch direction. A rigid joint has no axis; nor does an inferred joint. An as-built joint records no origin, because Fusion has no picked point to report; the Process View says how many there are.
 
-The axis read depends on the kind: a revolute or cylindrical joint reports its rotation axis, a slider its slide direction, a planar joint its normal, a ball joint its pitch direction. A rigid joint has no axis and reports none; nor does an inferred joint, whose motion its kind does not fix. A pin-slot and a planar joint each have a second axis, and only the primary one is exported — `axisRole` says which it is.
+## Limitations
 
-Any of these may be absent, and an unset attribute is not zero: writing zeros would place the joint at the model origin pointing nowhere, indistinguishable from a measurement.
-
-**As-built joints record no origin.** An as-built joint is defined by the position its components were already in rather than by geometry someone picked, so Fusion has no point to report and the Origin column shows an em dash. This is normal, and often accounts for most of the joints in an assembly — in one real export, 29 of 52. The Process View says how many when there are any.
-
-```sysml
-connection 'Pivot' : RevoluteJoint connect housing to bearingBlock {
-    attribute :>> originXMm = 12;
-    attribute :>> originYMm = 0;
-    attribute :>> originZMm = 45;
-    attribute :>> axisZ = 1;
-    attribute :>> axisRole = "rotation";
-}
-```
-
-## Access
-
-From the design document's **File** drop-down menu in the Quick Access Toolbar, select **Export SysML Architecture Document...**. It sits alongside **Export BOM as CSV** and **Export Mermaid Diagram...**.
+- Nesting deeper than 64 levels is not documented; a note says so.
+- The Logical and Scenarios views are headings only.
+- Two joint origins under different definitions are in different frames and cannot be compared directly.
 
 > **Developers:** see the [architecture notes](./arch/Export%20SysML.md).
 

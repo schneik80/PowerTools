@@ -1,46 +1,42 @@
 # Insert STEP File
 
-[Back to PowerTools Assembly](../README.md)
+[Back to README](../README.md)
 
-The Insert STEP File command lets you browse your local computer for a STEP or F3D file and insert it directly as a component in the active Autodesk Fusion design document. Use this command when you want to incorporate a STEP model into an existing assembly without first uploading the file to an Autodesk Hub or opening it in a separate document tab.
+## Overview
 
-## What you can do
+Insert STEP File browses your computer for a STEP file and inserts it as a component in the active design.
 
-- Browse the local file system for STEP files (`.stp`, `.step`, `.STP`, `.STEP`) and Fusion archive files (`.f3d`).
-- Insert the selected file as a local inline component in the active design in a single step.
-- Skip the Hub upload or separate-tab workflow when you only need a STEP model as a component in the current design.
-- Use the command in ECAD workflows to load a mechanical STEP model into a PCB 3D package design tool directly.
+SolidWorks and Inventor insert a STEP file into an assembly straight from disk. In Fusion the file has to be uploaded to a project first, opened or converted, and then inserted from the Data Panel. Insert STEP File does it in one step: pick the file, and it arrives as a local component in the design you are working in. That is what an ECAD workflow needs when a mechanical model has to go into a PCB package design, and what any assembly needs when a vendor sends a STEP.
 
 ## Prerequisites
 
-- An Autodesk Fusion 3D Design must be active.
-- The STEP or F3D file must be accessible on the local file system.
+- A design document must be active.
+- The STEP file must be on your local file system.
 
-## How to use Insert STEP File
+## Where to find it
 
-1. Open the Autodesk Fusion Design workspace with an active 3D design.
-2. Locate the **Insert STEP file…** command using one of the access paths described in the [Access](#access) section below.
-3. In the file browser dialog, navigate to the STEP or F3D file you want to insert.
-4. Select the file and select **Open**.
-5. Autodesk Fusion inserts the file as a local component at the origin of the active design.
+Both of these, in the Design workspace:
 
-> **Note:** The inserted component is stored inline with the parent document. To make it an independent cloud document that can be shared or versioned separately, use the [Externalize](./Externalize.md) command after insertion.
+- **Assembly** tab › **Insert** panel › **Insert STEP File**
+- **Solid** tab › **Insert** panel › **Insert STEP File**
 
-## Access
+## How to use
 
-The **Insert STEP file…** command appears in one of two locations depending on whether the Assembly Tab preview feature is enabled in your Autodesk Fusion installation:
+1. Select **Insert STEP File**.
+2. Choose a `.stp` or `.step` file in the file dialog and select **Open**. The filter shows STEP files; *All files* is also offered.
+3. Fusion imports the file as a local component of the active design.
 
-| Condition | Panel location |
-|---|---|
-| Assembly Tab preview **enabled** | **Assembly** tab > **Assemble** panel |
-| Assembly Tab preview **not enabled** | **Solid** tab > **Insert** panel |
+> **Note:** The component is local to the parent document. To make it its own cloud document that can be versioned and shared separately, run [Externalize](./Externalize.md) on it afterwards.
+
+## Limitations
+
+- Placement is Fusion's import behavior; the component arrives at the origin of the design.
+- The command needs an active design; otherwise it reports *No active Fusion design*.
 
 > **Developers:** see the [architecture notes](./arch/Insert%20Step.md).
 
 ---
 
-[Back to PowerTools Assembly](../README.md)
-
----
+[Back to README](../README.md)
 
 *Copyright © 2026 IMA LLC. All rights reserved.*

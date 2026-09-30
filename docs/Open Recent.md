@@ -4,9 +4,9 @@
 
 ## Overview
 
-**Open Recent** adds a flyout submenu to Fusion's **File** menu, directly after **Open**, that lists your recently-used documents. Each entry shows the document's name; hovering over it reveals a tooltip with the document's Data Panel location and a thumbnail preview. Selecting an entry opens that document in Fusion.
+Open Recent adds a flyout to the File menu that lists your recently used documents, with the document's location and thumbnail on hover, and opens one on click.
 
-The list comes from the recents history Fusion already keeps for your signed-in account on the active hub, so it is populated from the first launch rather than having to be built up by using PowerTools. It is the same list that powers the **Recent** gallery in the [Assembly Palette](./Assembly%20Palette.md) quick-start palette. Open Recent simply surfaces it where you expect it: on the File menu, one click from anywhere in Fusion. Unlike that gallery — whose cards insert a component, so it lists designs only — this flyout lists every kind of document Fusion recorded, drawings included.
+SolidWorks has **File › Open Recent** and the **R** key; Inventor has the Recent Documents panel on its home screen. Fusion keeps its recents on the home tab and in the Data Panel, both of which mean leaving the design you are in. Open Recent puts the list where every other application keeps it: on the **File** menu, one click from anywhere, with a tooltip that tells you which folder the document lives in before you open it.
 
 ```text
 File ▾
@@ -16,40 +16,40 @@ File ▾
 ├─ Recover Documents…         Wort Pump ASSY
 ├─ Save                        Mash Tun ASSY
 ├─ Save As…                    MIP Large T Handle
-│  …                           …  (hover → location + thumbnail)
+│  …                           …  (hover: location and thumbnail)
 └─ PowerTools Preferences
 ```
 
-## What you can do
-
-- **Reopen a recent document fast** — the File **▸ Open Recent** flyout lists your most recently used Part/Hybrid/Assembly documents, newest first. Click one to open it — no Data Panel browsing required.
-- **See where it lives before you open it** — hover any entry to see a tooltip with the document's full folder location (`Project > Folder > Sub`) and a thumbnail rendered from the document itself.
-- **Always current** — the list refreshes as you open and switch between documents, so the most relevant files are always at the top.
-
-## How it works
-
-- The entries and their order come from Fusion's own recents history for the signed-in account on the active hub, which Fusion rewrites as you open documents. Switching hubs switches the list.
-- PowerTools keeps a small cache of its own (`cache/recent_docs.json`) alongside it. Every time you activate a **saved** Part, Hybrid, or Assembly document, it is recorded there together with its thumbnail and location. That cache supplies the two things Fusion's history does not carry — the thumbnail, and the design intent for documents Fusion recorded none for — and it becomes the whole list if Fusion's history cannot be read (for example when you are signed out).
-- Thumbnails are cached on disk, so they appear in the tooltip even after the document is closed. The cache is shared with the Assembly Palette, which downloads thumbnails from the cloud as you browse its galleries — so opening that palette also fills in tool-clips here. A document with no thumbnail from either route shows a name-and-location tooltip.
-- The currently-active document is omitted from the list (you already have it open); it reappears once you switch away from it.
-- The flyout shows up to the 15 most recent documents.
-
 ## Prerequisites
 
-- Recent documents must be **saved** to an Autodesk Hub — the list is keyed by each document's cloud `DataFile`. Unsaved documents are never listed.
-- To open a listed document you must be signed in to the hub it belongs to. If a document has been moved or deleted, Open Recent reports that it could not be found instead of failing silently.
+- Listed documents must be saved to a hub; the list is keyed by each document's cloud identity.
+- To open a listed document you must be signed in to the hub it belongs to.
 
-## Access
+## Where to find it
 
-| Method | Location |
-|---|---|
-| Menu | **File** menu ▸ **Open Recent** (directly after **Open**) |
+**File › Open Recent** on the Quick Access Toolbar, directly after **Open**. If Fusion's Open entry cannot be found, the flyout is placed after **New**, or before **PowerTools Preferences**.
 
-Open Recent is enabled by default. You can turn it off (or back on) in **File ▸ PowerTools Preferences**, under **Document Tools**. Changes apply on the next Fusion restart.
+## How to use
 
-> **Note:** Open Recent shares its list with **Assembly Palette**. The two are recorded together, so a document you use in one shows up in the other. Open Recent works independently, though — it keeps the list up to date on its own even if the Assembly commands are disabled.
+1. Open the **File** menu and hover **Open Recent**.
+2. Hover an entry to see its folder location (`Project › Folder › Subfolder`) and a thumbnail.
+3. Select an entry to open it. If it has been moved or deleted, a message says it could not be opened.
+
+## How the list is built
+
+- The entries and their order come from the recents history Fusion already keeps for your account on the active hub, so the list is full from the first launch, includes every document type Fusion recorded (drawings included), and switches when you switch hubs.
+- PowerTools keeps a small cache of its own (`cache/recent_docs.json`) that records every saved part, hybrid or assembly document you activate, with its thumbnail and location. It supplies what Fusion's history does not carry, the thumbnail and the design intent, and becomes the whole list when Fusion's history cannot be read (for example when you are signed out). In that fallback, drawings are not listed.
+- Thumbnails are cached on disk in `cache/thumbs`, so they show even after the document is closed. The cache is shared with the [Assembly Palette](./Assembly%20Palette.md), whose galleries download thumbnails from the cloud, so browsing there fills in thumbnails here.
+- The active document is omitted; it reappears once you switch away from it.
+- The flyout shows up to 15 documents. With none, it shows a disabled *No recent documents* entry.
+
+## Limitations
+
+- Enabling or disabling the command under **File › PowerTools Preferences › Document Tools** applies after a Fusion restart.
 
 > **Developers:** see the [architecture notes](./arch/Open%20Recent.md).
+
+---
 
 [Back to README](../README.md)
 

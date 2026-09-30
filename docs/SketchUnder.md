@@ -1,49 +1,33 @@
-# Sketch Under-Constrained
+# Sketch Under-constrained
 
 [Back to README](../README.md)
 
 ## Overview
 
-The **Sketch Under-Constrained** command highlights all sketch entities in the active sketch that lack sufficient constraints or dimensions. Use this command to quickly identify which lines, curves, or points still need constraints applied, especially in complex sketches with many entities.
+Sketch Under-constrained highlights the sketch objects in the active sketch that are not fully constrained.
 
-A fully constrained sketch is generally required before using sketch profiles to create solid features such as Extrude or Revolve.
-
-> **Note:** This command is read-only. It highlights under-constrained entities but does not automatically apply constraints.
+In a dense sketch it is hard to see which line or point still has a degree of freedom. This command asks Fusion's sketch solver for the list and highlights every under-constrained object on the canvas, so you can work through them rather than dragging things to find out.
 
 ## Prerequisites
 
-- A design document must be open in Autodesk Fusion.
-- A sketch must be in active edit mode.
+- A design document must be open.
+- A sketch must be in edit mode.
 
-## Access
+## Where to find it
 
-The **Sketch Under-Constrained** command is available in Fusion's **Sketch** tab, in the **Modify** panel, at the bottom of the panel menu.
-
-1. Open a design document in Autodesk Fusion.
-2. Double-click a sketch in the browser or on the canvas to enter sketch edit mode.
-3. On the **Sketch** tab, select the **Modify** panel.
-4. Select **Sketch Under-Constrained** from the panel menu.
+**Sketch** tab › **Modify** panel › **Sketch Under-constrained**, while editing a sketch.
 
 ## How to use
 
-1. Enter sketch edit mode by double-clicking the sketch you want to analyze.
-2. Run **Sketch Under-Constrained** from the **Modify** panel.
-3. The command queries the active sketch for entities that are not fully constrained.
-4. Under-constrained entities are highlighted directly on the canvas.
-5. A message box displays a summary of the analysis results.
-6. Apply dimensions, geometric constraints, or fix points to the highlighted entities as needed.
-7. Re-run the command after making changes to verify that all entities are now fully constrained.
-
-## Expected results
-
-- Under-constrained sketch entities are visually highlighted in the Fusion canvas.
-- A message box displays a summary of the under-constrained entity status.
+1. Double-click the sketch to edit it.
+2. Select **Sketch Under-constrained** from the **Modify** panel.
+3. Under-constrained objects are highlighted on the canvas and a message summarises the result.
+4. Add dimensions or constraints, then run the command again to check.
 
 ## Limitations
 
-- The command does not apply constraints automatically. All constraint changes must be made manually.
-- The command must be re-run after applying constraints to see updated results.
-- Fixed geometry and driven dimensions are not flagged as under-constrained.
+- The command only reports; it applies no constraints.
+- Run it again after each change to refresh the highlight.
 
 > **Developers:** see the [architecture notes](./arch/SketchUnder.md).
 
