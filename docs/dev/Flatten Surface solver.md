@@ -154,7 +154,13 @@ routinely lands at 45 degrees. The minimal bounding box always has a side flush
 with an edge of the convex hull (rotating calipers), so only the hull edges need
 testing rather than a sweep of angles. Four rotations share that box; the
 landscape one is chosen, because a pattern that lands portrait one time and
-landscape the next is a nuisance to nest and to compare.
+landscape the next is a nuisance to nest and to compare. That still leaves two
+candidates, theta and theta + pi, and on a rectangular hull they tie to within
+floating-point noise, so the winner used to flip between identical runs and
+the pattern came out upside down. The angle is therefore normalised into
+[-pi/2, pi/2) after the landscape step; rotations differing by pi give the
+same box, so non-degenerate shapes are unaffected
+(`test_tightest_box_is_stable_under_jitter_on_a_rectangle`, #12).
 
 ## Measuring
 

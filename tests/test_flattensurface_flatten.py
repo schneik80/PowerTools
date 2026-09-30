@@ -16,6 +16,7 @@ its internals.
 
 import importlib.util
 import math
+import random
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -683,6 +684,91 @@ def test_tightest_box_always_lands_landscape():
     ys = [p[1] for p in squared]
 
     assert (max(xs) - min(xs)) > (max(ys) - min(ys))
+
+
+def _tilted_rectangle(width, height, tilt):
+    cos_t, sin_t = math.cos(tilt), math.sin(tilt)
+    corners = [(0.0, 0.0), (width, 0.0), (width, height), (0.0, height)]
+    return [(x * cos_t - y * sin_t, x * sin_t + y * cos_t) for x, y in corners]
+
+
+def _old_tightest_box_angle(points):
+    """The body before the tie-break fix, kept as the equivalence reference."""
+    hull = flatten._convex_hull(points)
+    if len(hull) < 3:
+        return 0.0
+    best_area = None
+    best_angle = 0.0
+    best_extent = (0.0, 0.0)
+    for index, (x1, y1) in enumerate(hull):
+        x2, y2 = hull[(index + 1) % len(hull)]
+        angle = math.atan2(y2 - y1, x2 - x1)
+        cos_a, sin_a = math.cos(-angle), math.sin(-angle)
+        xs = [x * cos_a - y * sin_a for x, y in hull]
+        ys = [x * sin_a + y * cos_a for x, y in hull]
+        extent = (max(xs) - min(xs), max(ys) - min(ys))
+        area = extent[0] * extent[1]
+        if best_area is None or area < best_area:
+            best_area = area
+            best_angle = angle
+            best_extent = extent
+    if best_extent[1] > best_extent[0]:
+        best_angle += math.pi / 2.0
+    return best_angle
+
+
+def _extents(points, angle):
+    turned = flatten.rotate_points(points, angle)
+    xs = [p[0] for p in turned]
+    ys = [p[1] for p in turned]
+    return (max(xs) - min(xs), max(ys) - min(ys))
+
+
+def test_tightest_box_is_stable_under_jitter_on_a_rectangle():
+    # Every edge of a rectangular hull gives the same box up to FP noise, so
+    # noise used to pick the winner and the pattern came out rotated 180
+    # degrees from one run to the next. All trials must agree mod 2*pi.
+    rng = random.Random(20260930)
+    cases = {
+        "landscape": _tilted_rectangle(10.0, 4.0, 0.0),
+        "portrait": _tilted_rectangle(4.0, 10.0, 0.0),
+        "tilted": _tilted_rectangle(10.0, 4.0, math.radians(30.0)),
+    }
+    for name, rectangle in cases.items():
+        angles = []
+        for _ in range(300):
+            jittered = [
+                (x + rng.uniform(-1e-7, 1e-7), y + rng.uniform(-1e-7, 1e-7))
+                for x, y in rectangle
+            ]
+            angles.append(flatten.tightest_box_angle(jittered))
+        first = angles[0]
+        spread = max(
+            abs((a - first + math.pi) % (2.0 * math.pi) - math.pi) for a in angles
+        )
+        assert spread < 1e-4, f"{name}: angles split into two classes ({spread})"
+
+
+def test_tightest_box_matches_old_logic_modulo_pi_on_random_polygons():
+    # The fix only chooses a representative; on shapes with no tie it must
+    # give the same box as before, i.e. an angle differing by k*pi.
+    rng = random.Random(4242)
+    for _ in range(50):
+        cloud = [
+            (rng.uniform(-5.0, 5.0), rng.uniform(-3.0, 3.0))
+            for _ in range(rng.randint(6, 20))
+        ]
+        polygon = flatten._convex_hull(cloud)
+        new_angle = flatten.tightest_box_angle(polygon)
+        old_angle = _old_tightest_box_angle(polygon)
+
+        turns = (new_angle - old_angle) / math.pi
+        assert abs(turns - round(turns)) < 1e-9
+        assert -math.pi / 2.0 <= new_angle < math.pi / 2.0
+        new_extent = _extents(polygon, new_angle)
+        old_extent = _extents(polygon, old_angle)
+        assert abs(new_extent[0] - old_extent[0]) < 1e-12
+        assert abs(new_extent[1] - old_extent[1]) < 1e-12
 
 
 def test_tightest_box_leaves_a_squared_rectangle_alone():

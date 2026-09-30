@@ -1314,6 +1314,19 @@ def tightest_box_angle(points: list) -> float:
     # to nest and to compare.
     if best_extent[1] > best_extent[0]:
         best_angle += math.pi / 2.0
+
+    # That still leaves theta versus theta + pi. On a rectangular hull all four
+    # edges give the same box up to FP noise, so noise picks the "smallest"
+    # area and the pattern came out rotated 180 degrees from one run to the
+    # next. Rotating by theta or theta + pi yields point-reflected layouts with
+    # identical extents, so reducing to [-pi/2, pi/2) changes nothing for
+    # non-degenerate shapes and makes the tie deterministic. Angles within
+    # 1e-6 of the wrap at +pi/2 are folded onto the -pi/2 side so noise
+    # straddling the boundary lands in one class; only the representative
+    # moves, never the box.
+    best_angle = (best_angle + math.pi / 2.0) % math.pi - math.pi / 2.0
+    if best_angle > math.pi / 2.0 - 1e-6:
+        best_angle -= math.pi
     return best_angle
 
 
