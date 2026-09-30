@@ -308,11 +308,10 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
                 deadline = time.time() + 5.0
                 while future.state == 0:
-                    adsk.doEvents()
                     if time.time() > deadline:
                         ptutil.log(f"[Thumbnail] Timeout: {data_file.name}")
                         return THUMB_PLACEHOLDER
-                    time.sleep(0.05)
+                    ptutil.pump_events_for(0.05)
 
                 if future.state != 1:
                     ptutil.log(

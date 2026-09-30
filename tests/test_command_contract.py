@@ -99,12 +99,13 @@ KNOWN_NON_COMMAND_PT_LITERALS = {
 }
 
 # Rule 2 (f0ff1af): ``time.sleep`` parks the UI thread; use
-# ``ptutil.pump_events_for()``. These call sites predate the rule and are
-# recorded here, not fixed here: {relative path: number of sleep calls}.
+# ``ptutil.pump_events_for()``. The upload poll, commit backoff and thumbnail
+# poll were converted under #18. The one site left is deliberate: it sleeps
+# only after ``shutil.rmtree`` raises, waiting on another process's file lock,
+# which pumping cannot release, and pumping mid folder-swap would invite
+# re-entrancy. {relative path: number of sleep calls}.
 KNOWN_TIME_SLEEP_SITES = {
-    "commands/partnumber_shared/pn_cache.py": 2,  # upload poll, commit backoff
-    "commands/refrences/entry.py": 1,  # thumbnail future poll
-    "commands/teamaddins/installer.py": 1,  # rmtree retry backoff
+    "commands/teamaddins/installer.py": 1,  # rmtree retry backoff, off the happy path
 }
 
 # ``exit()`` / ``quit()`` / ``sys.exit()`` raise SystemExit, which is not an

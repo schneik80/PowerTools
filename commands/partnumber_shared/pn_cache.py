@@ -30,6 +30,7 @@ from typing import Dict, Optional
 
 import adsk.core
 
+from ...lib import ptAddInUtils as ptutil
 from . import hub_fs, schemes
 
 # Tuning: pn-cache.json is a few hundred bytes. A healthy hub upload
@@ -186,8 +187,10 @@ def _wait_for_upload(future, progress_label: str = "") -> None:
                 pass
             next_message_at = time.time() + UPLOAD_PROGRESS_EVERY_SECONDS
 
-        adsk.doEvents()
-        time.sleep(UPLOAD_POLL_INTERVAL_SECONDS)
+        # One pump then a 150 ms sleep starved the upload pipeline of the
+        # events it needs to advance (f0ff1af); pump_events_for keeps the same
+        # bound but pumps every <=30 ms.
+        ptutil.pump_events_for(UPLOAD_POLL_INTERVAL_SECONDS)
 
     raise PnCacheError(
         f"pn-cache.json upload did not complete within {UPLOAD_TIMEOUT_SECONDS}s."
@@ -318,7 +321,7 @@ def commit_assignments(
             last_error = exc
 
         if attempt < MAX_RETRIES:
-            time.sleep(backoff)
+            ptutil.pump_events_for(backoff)
             backoff *= 2
 
     raise PnCacheError(
