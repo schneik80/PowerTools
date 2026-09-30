@@ -673,6 +673,21 @@ copies of another command's icon. `tests/test_command_icons.py` checks
 presence, 8-bit RGBA, size-matches-filename and no duplicate art. Redraw the
 16 px variant instead of scaling. -- `e263d4e`
 
+**The per-command contract is enforced from the registry, not one command at a
+time.** Rules 9 (`_`-only IDs), 15 (registry entry, `CMD_Description`, docs
+pair, arch index, README row) and 20 (no `doExecute` in `commandCreated`) were
+each asserted for a single command -- `tests/test_exportsysml_entry.py` -- or
+filtered on the function name `command_created`, which left the five
+differently named `commandCreated` handlers (assemblypalette, favorites,
+openrecent) unguarded. `tests/test_command_contract.py` now iterates
+`command_registry.iter_commands()` and `tests/test_command_abort.py` derives
+the guarded set from `add_handler(<x>.commandCreated, ...)` registrations.
+Every pre-existing gap is a `KNOWN_*` allowlist asserted equal to the tree
+(two missing arch notes, five missing arch-index rows, three f-string
+`CMD_ID`s containing a space, four `time.sleep` sites), so the lists shrink
+as gaps are fixed and cannot be grown quietly. -- `6789216`, `aa6802e`,
+`14871d7`, `f0ff1af`
+
 **The `.debug` marker drives `DEBUG`, the debugpy server and all logging; it
 is git-ignored so a distribution is always in ship mode.** When DEBUG is on,
 `ptutil.log` also appends to `cache/powertools-debug.log` (5 MB cap) -- before

@@ -9,7 +9,7 @@ does not load them automatically.
 ## What this is
 
 - **PowerTools** is a single Autodesk Fusion add-in (Python) consolidating
-  **55 commands** (`_cmd(` entries in `command_registry.py` — count it, do not
+  **54 commands** (`_cmd(` entries in `command_registry.py` — count it, do not
   quote this number) behind one entry point (`PowerTools.py`), one registry
   (`command_registry.py`), one settings store (`settings_store.py`) and one
   shared helper package (`lib/ptAddInUtils`, imported as `ptutil`).
@@ -29,7 +29,7 @@ python3 -m venv .venv && .venv/bin/pip install "ruff==0.15.20" "pytest>=8.0"
 # the four CI gates -- run them all before every commit
 ruff format .                             # (CI runs `ruff format --check .`)
 ruff check .
-.venv/bin/python -m pytest -q             # -> "782 passed, 2 skipped" (count grows)
+.venv/bin/python -m pytest -q             # -> "1711 passed, 8 skipped" (count grows)
 python3 tools/pandoc/build_readme_pdf.py --check   # README.pdf built from this README.md?
 
 python3 tools/release/build_release.py --version v0.0.0-test  # dry run -> dist/ (git add first)

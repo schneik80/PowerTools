@@ -23,7 +23,7 @@ follow-up reformat (ef424c6); the PDF went stale twice (48722db, 28188f7).
   26.5.1) with `No module named pytest` — pytest is only in `.venv`, which has
   no `ruff`, while `ruff` is only on `PATH`. Verify on the other two devices
   rather than assuming. Run
-  `.venv/bin/python -m pytest -q` (782 passed, 2 skipped at time of writing) and bare
+  `.venv/bin/python -m pytest -q` (1711 passed, 8 skipped at time of writing; count grows) and bare
   `ruff`. Full detail: `.agent/environment.md`.
 - **The ruff pin in `ci.yml` must equal the version that formatted the tree**
   (ef14b11). Bump both together and verify `ruff format --check .` first.
@@ -67,7 +67,17 @@ follow-up reformat (ef424c6); the PDF went stale twice (48722db, 28188f7).
   `test_readme_pdf_build.py` (PDF stamp -- rebuild the PDF after a README edit).
 - `test_command_abort.py::test_no_command_created_calls_do_execute` is an AST
   guard over `commands/`; if it fails you added a `doExecute` call to a
-  `commandCreated` handler -- use `_command_abort` instead (a90be46).
+  `commandCreated` handler -- use `_command_abort` instead (a90be46). The
+  guarded set is derived from `add_handler(<x>.commandCreated, ...)`
+  registrations, so a handler by any name (or returned by a `_make_*`
+  factory) is covered.
+- `test_command_contract.py` iterates `command_registry.iter_commands()` and
+  holds every command to AGENTS.md rules 9, 15 and the `time.sleep` half of
+  rule 2: entry imports under the stub, `CMD_Description` present/ASCII, docs
+  pair, arch index row, README link target, literal underscore-only `CMD_ID`,
+  every `PT*_` literal resolves to a `CMD_ID`. Its `KNOWN_*` allowlists are
+  asserted *equal* to the tree, so fixing a gap means shrinking the list, and
+  a new gap fails loudly. Do not grow a list to make it pass.
 - Cross-platform: CI runs on Linux (`ubuntu-latest`); `os.path.normcase` only
   folds case on Windows, so casefold explicitly (4cb4901); OR permission bits
   instead of assigning them (19ac0f7).

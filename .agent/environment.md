@@ -82,7 +82,7 @@ and the PDF stamp has gone stale twice (`48722db`, `28188f7`).
 ```bash
 ruff format --check .                            # CI's exact gate
 ruff check .
-.venv/bin/python -m pytest -q                    # -> "782 passed, 2 skipped" (count grows)
+.venv/bin/python -m pytest -q                    # -> "1711 passed, 8 skipped" (count grows)
 python3 tools/pandoc/build_readme_pdf.py --check  # -> "README.pdf matches README.md"
 ```
 
