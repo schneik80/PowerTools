@@ -113,22 +113,23 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
             elif input.id == "showsubs_":
                 showsubs = input.value
 
-        # Gather information about each unique component
+        # Gather information about each unique component, in first-seen order.
+        # Rows are keyed on Component.id (the persistent identity exportsysml
+        # also uses) so each occurrence costs one dict lookup instead of a
+        # rescan of every row, each comparison of which was a native call.
+        # childOccurrences.count is likewise read only when a component is
+        # first seen; it is a property of the component, not the occurrence.
         bom = []
+        rows_by_id = {}
         for occ in occs:
             comp = occ.component
             refocc = occ.isReferencedComponent
-            occtype = occ.childOccurrences.count
-            # print (occtype)
-            jj = 0
-            for bomI in bom:
-                if bomI["component"] == comp:
-                    # Increment the instance count of the existing row.
-                    bomI["instances"] += 1
-                    break
-                jj += 1
-
-            if jj == len(bom):
+            row = rows_by_id.get(comp.id)
+            if row is not None:
+                # Increment the instance count of the existing row.
+                row["instances"] += 1
+            else:
+                occtype = occ.childOccurrences.count
                 # Modify the name if versions are OFF and an occurrence is an xref
                 if not showversion and refocc:
                     longname = comp.name
@@ -143,16 +144,16 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
                         mat += bodyK.material.name
 
                 # Add this component to the BOM
-                bom.append(
-                    {
-                        "component": comp,
-                        "name": shortname,
-                        "pn": comp.partNumber,
-                        "material": mat,
-                        "instances": 1,
-                        "sub": occtype,
-                    }
-                )
+                row = {
+                    "component": comp,
+                    "name": shortname,
+                    "pn": comp.partNumber,
+                    "material": mat,
+                    "instances": 1,
+                    "sub": occtype,
+                }
+                bom.append(row)
+                rows_by_id[comp.id] = row
 
         # collect BOM data
         parentOcc = design.parentDocument.name
@@ -172,8 +173,11 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
         if dlgResult == adsk.core.DialogResults.DialogOK:
             safe_name = re.sub(r'[<>:"/\\|?*]', "_", os.path.basename(parentOcc))
             filepath = os.path.join(folderDlg.folder, safe_name + ".csv")
-            # Write the results to the file
-            with open(filepath, "w") as f:
+            # Write the results to the file. Fusion's Python on Windows defaults
+            # to the ANSI code page, so a name with a character outside it (a
+            # diameter sign, say) raised UnicodeEncodeError here; the BOM makes
+            # Excel read the file as UTF-8.
+            with open(filepath, "w", encoding="utf-8-sig") as f:
                 f.write(resultString)
             ui.messageBox("BOM saved at: " + filepath, parentOcc, 0, 2)
             ptutil.log(f"BOM Saved at {filepath}")

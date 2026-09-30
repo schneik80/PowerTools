@@ -25,6 +25,7 @@
 
 import math
 from dataclasses import dataclass, field
+from operator import itemgetter
 
 # Mesh nodes closer together than this (centimetres) are the same vertex. Fusion
 # tessellates each face independently, so the shared edge between two selected
@@ -332,14 +333,41 @@ def _triangle_frame(
     return x2, x3, y3, 0.5 * x2 * y3
 
 
-def _matvec(rows: list, x: list) -> list:
-    out = [0.0] * len(x)
-    for i, row in enumerate(rows):
-        total = 0.0
-        for j, value in row.items():
-            total += value * x[j]
-        out[i] = total
-    return out
+def _build_matvec(rows: list):
+    """Return a callable computing ``rows @ x`` for the given sparse matrix.
+
+    The dict-of-rows format is kept for the callers; this only prepares a
+    faster way to multiply by it. Per row it builds an ``itemgetter`` over the
+    column indices (a C-level gather of ``x``) and a matching tuple of values,
+    so each row's product is one ``math.sumprod`` call with no Python-level
+    inner loop. Both are C implementations, which is why this shape was chosen:
+    a plain CSR/zip rewrite of the same loop measured slower, because it still
+    runs the inner multiply-add in bytecode. The setup is paid once per solve
+    and repaid over the hundreds of matvecs CG performs.
+    """
+    gathers = []
+    values = []
+    for row in rows:
+        cols = tuple(row)
+        if len(cols) == 1:
+            # itemgetter(k) returns the bare element, not a 1-tuple, and
+            # sumprod needs a sequence on both sides.
+            col = cols[0]
+            gathers.append(lambda x, _col=col: (x[_col],))
+        elif not cols:
+            gathers.append(lambda _x: ())
+        else:
+            gathers.append(itemgetter(*cols))
+        values.append(tuple(row[col] for col in cols))
+
+    sumprod = math.sumprod
+
+    def matvec(x: list) -> list:
+        return [
+            sumprod(v, gather(x)) for gather, v in zip(gathers, values, strict=True)
+        ]
+
+    return matvec
 
 
 def solve_cg(
@@ -377,31 +405,35 @@ def solve_cg(
         d = row.get(i, 0.0)
         inverse_diagonal.append(1.0 / d if d > 0.0 else 1.0)
 
+    # Every inner product below goes through math.sumprod and the sparse
+    # products through the itemgetter gathers built here; see _build_matvec
+    # for why. The iteration itself is unchanged.
+    matvec = _build_matvec(rows)
+    sumprod = math.sumprod
+
     x = list(x0) if x0 is not None else [0.0] * n
-    ax = _matvec(rows, x)
-    r = [rhs[i] - ax[i] for i in range(n)]
-    z = [r[i] * inverse_diagonal[i] for i in range(n)]
+    ax = matvec(x)
+    r = [b - a for b, a in zip(rhs, ax, strict=True)]
+    z = [ri * di for ri, di in zip(r, inverse_diagonal, strict=True)]
     p = list(z)
-    rz = sum(r[i] * z[i] for i in range(n))
+    rz = sumprod(r, z)
 
     for _ in range(max_iter):
-        if sum(value * value for value in r) <= tol:
+        if sumprod(r, r) <= tol:
             break
-        ap = _matvec(rows, p)
-        denominator = sum(p[i] * ap[i] for i in range(n))
+        ap = matvec(p)
+        denominator = sumprod(p, ap)
         if abs(denominator) < 1e-300:
             break
         alpha = rz / denominator
-        for i in range(n):
-            x[i] += alpha * p[i]
-            r[i] -= alpha * ap[i]
-        z = [r[i] * inverse_diagonal[i] for i in range(n)]
-        rz_next = sum(r[i] * z[i] for i in range(n))
+        x = [xi + alpha * pi for xi, pi in zip(x, p, strict=True)]
+        r = [ri - alpha * api for ri, api in zip(r, ap, strict=True)]
+        z = [ri * di for ri, di in zip(r, inverse_diagonal, strict=True)]
+        rz_next = sumprod(r, z)
         if abs(rz) < 1e-300:
             break
         beta = rz_next / rz
-        for i in range(n):
-            p[i] = z[i] + beta * p[i]
+        p = [zi + beta * pi for zi, pi in zip(z, p, strict=True)]
         rz = rz_next
 
     return x

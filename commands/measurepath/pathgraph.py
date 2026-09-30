@@ -374,26 +374,46 @@ def shortest(graph, starts, ends, kinds=None, seed=None, tail=None):
         # cheaper continuation whenever the better route leaves the other way.
         for node in dict.fromkeys((seed.a, seed.b)):
             if node in starts:
-                origins.append((seed.length, seed.other(node), [seed]))
+                origins.append((seed.length, seed.other(node), seed))
         if not origins:
             return None, 0.0
     else:
-        origins = [(0.0, start, []) for start in starts]
+        origins = [(0.0, start, None) for start in starts]
 
+    # Paths are not carried in the heap. Each settled node remembers the node
+    # it was reached from and the segment taken, and the route is rebuilt from
+    # that chain only on arrival. Copying ``path + [seg]`` per relaxation made
+    # the search quadratic in path length, and every segment in a Dijkstra
+    # route is already distinct: a repeat could only close a cycle, which is
+    # never cheaper, so the explicit "already used" scan is not needed. The
+    # one exception is the seed: the node it was entered from has no ``best``
+    # entry, so walking back over it must be refused by key.
     best = {}
+    prev = {}
     heap = []
-    for counter, (cost, node, path) in enumerate(origins):
-        # The counter keeps heapq from ever comparing the list payloads.
-        heap.append((cost, counter, node, path))
+    for counter, (cost, node, via) in enumerate(origins):
+        # The counter keeps heapq from ever comparing the node payloads.
+        heap.append((cost, counter, node))
         best[node] = cost
+        prev[node] = (None, via)
     heapq.heapify(heap)
     tiebreak = len(heap)
 
+    def rebuild(node):
+        segs = []
+        while node is not None:
+            node, via = prev[node]
+            if via is not None:
+                segs.append(via)
+        segs.reverse()
+        return segs
+
     while heap:
-        cost, _, node, path = heapq.heappop(heap)
+        cost, _, node = heapq.heappop(heap)
         if cost > best.get(node, float("inf")):
             continue
-        if node in ends and (path or node in starts):
+        if node in ends and (prev[node][1] is not None or node in starts):
+            path = rebuild(node)
             if tail is not None and all(seg.key != tail.key for seg in path):
                 if node == tail.a or node == tail.b:
                     return path + [tail], cost + tail.length
@@ -402,13 +422,14 @@ def shortest(graph, starts, ends, kinds=None, seed=None, tail=None):
         for seg in graph.at(node):
             if not _allowed(seg, kinds):
                 continue
-            if any(seg.key == used.key for used in path):
+            if seed is not None and seg.key == seed.key:
                 continue
             nxt = seg.other(node)
             nxt_cost = cost + seg.length
             if nxt_cost < best.get(nxt, float("inf")) - 1e-12:
                 best[nxt] = nxt_cost
-                heapq.heappush(heap, (nxt_cost, tiebreak, nxt, path + [seg]))
+                prev[nxt] = (node, seg)
+                heapq.heappush(heap, (nxt_cost, tiebreak, nxt))
                 tiebreak += 1
 
     return None, 0.0
