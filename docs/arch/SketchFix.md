@@ -2,42 +2,44 @@
 
 [← Sketch Repair guide](../SketchFix.md)
 
-## Architecture
+| | |
+|---|---|
+| **Command ID** | `PTPM_sketchfix` |
+| **Registry** | group `partmodeling` (`Part Modeling`); enabled by default |
+| **UI location** | Design workspace, **Sketch** tab (`SketchTab`), **Modify** panel (`SketchModifyPanel`); appended at the end of the panel, not promoted. Both containers are built in; `start()` finds the tab through `ui.allToolbarTabs`. |
+| **Files** | `commands/sketchfix/entry.py`; `resources/` holds 16/32/64 px light and dark PNGs (no `generate_icons.py`) |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `ptutil.handle_error`](architecture.md#general_utils); [`config.design_workspace`](architecture.md#config) |
+| **Tests** | none module-specific (see [Tests](#tests)) |
 
-### System context
+## Purpose
 
-The following diagram shows the relationship between the user, the Sketch Repair command, and Autodesk Fusion.
+Runs Fusion's two built-in sketch-repair text commands against the sketch currently in edit mode and confirms with a message box. The command has no dialog and no inputs, so Fusion auto-executes it as soon as it is created. That is safe here because the control lives on the Sketch tab, which Fusion shows only while a sketch is being edited, so a document is always open when `execute` fires (see [acting from commandCreated when there are no inputs](architecture.md#acting-from-commandcreated-when-there-are-no-inputs) for why that matters elsewhere).
 
-```mermaid
-C4Context
-    title System Context — Sketch Repair
-    Person(user, "Fusion User", "Part designer working in Autodesk Fusion")
-    System(addin, "Sketch Repair", "Power Tools Add-in command that repairs active sketch geometry")
-    System_Ext(fusion, "Autodesk Fusion", "CAD platform and host application")
-    Rel(user, addin, "Invokes from Sketch > Modify panel")
-    Rel(addin, fusion, "Executes repair via Fusion text commands API")
-    Rel(fusion, user, "Displays confirmation message box")
-```
+## How it is wired
 
-### Component diagram
+- `start()`: `ui.commandDefinitions.addButtonDefinition(CMD_ID, CMD_NAME, CMD_Description, ICON_FOLDER)`; `ptutil.add_handler(cmd_def.commandCreated, command_created)`; `ui.allToolbarTabs.itemById("SketchTab")` → `toolbarPanels.itemById("SketchModifyPanel")` → `controls.addCommand(cmd_def)` with `isPromoted = False`. A missing tab or panel raises a `ui.messageBox` and returns, leaving the definition registered without a control.
+- `stop()`: resolves the panel through `ui.workspaces.itemById(config.design_workspace).toolbarPanels`, deletes the control and the definition. Two further branches delete the panel if `controls.count == 0` and the tab if it has no panels; both containers are built in and always hold Fusion's own controls, so neither branch fires (rule 10 forbids it if they ever did).
+- `command_created(args)`: registers `execute` → `command_execute` and `destroy` → `command_destroy` on `local_handlers`. No `CommandInputs` are added, so Fusion's default `isAutoExecute` runs the command immediately.
+- `command_execute(args)`: casts `app.activeProduct` to `adsk.fusion.Design` (message box and return if it is not one). If `design.activeEditObject` is an `adsk.fusion.Sketch`, calls `app.executeTextCommand("sketch.repairsketch /3")` and then `app.executeTextCommand("sketch.repair")`, shows "Sketch repaired." and logs; otherwise shows "No sketch is currently active.". The text commands' return values are ignored. Exceptions go to `ptutil.handle_error(CMD_NAME, show_message_box=True)`.
+- `command_destroy(args)`: clears `local_handlers`.
 
-The following diagram shows how the internal components of the command interact during execution.
+## Data and state
 
-```mermaid
-C4Component
-    title Component Diagram — Sketch Repair
-    Container_Boundary(addin, "Sketch Repair Command") {
-        Component(button, "Command Button", "Fusion UI Control", "Toolbar button in Sketch > Modify panel")
-        Component(handler, "command_execute()", "Python", "Validates active sketch and dispatches repair text commands")
-        Component(repair1, "sketch.repairsketch /3", "Fusion Text Command", "Pass 1: removes tiny segments below tolerance")
-        Component(repair2, "sketch.repair", "Fusion Text Command", "Pass 2: closes gaps and merges disconnected endpoints")
-        Component(msgbox, "Message Box", "Fusion UI", "Confirms repair completion to the user")
-    }
-    System_Ext(fusion, "Autodesk Fusion Sketch Engine", "Processes repair text commands and updates sketch geometry")
-    Rel(button, handler, "Triggers on click")
-    Rel(handler, repair1, "Executes first")
-    Rel(handler, repair2, "Executes second")
-    Rel(repair1, fusion, "Processed by")
-    Rel(repair2, fusion, "Processed by")
-    Rel(handler, msgbox, "Displays on success")
-```
+None beyond `local_handlers`. No settings keys, no files, no custom events.
+
+## The two text commands
+
+`sketch.repairsketch /3` and `sketch.repair` are undocumented Fusion text commands; the [user guide](../SketchFix.md) describes their observed effect (pass 1 removes tiny segments, pass 2 closes small gaps). The add-in does not read their output and cannot tell whether anything was repaired: the confirmation box is unconditional once both calls return.
+
+## Diagram
+
+None: the flow is one straight line (`command_created` → auto-execute → two text commands → message box) and prose shows it as clearly.
+
+## Tests
+
+- No module-specific test. `tests/test_command_contract.py` imports `entry.py` under the `adsk` stub and checks the `CMD_ID` shape, `CMD_Description`, the registered doc filename, this note, the arch index row and the README row; `tests/test_command_abort.py` scans `command_created` for `doExecute` calls.
+- `entry.py` is Fusion-bound and is not otherwise exercised by the suite; nothing here is verified in Fusion on this branch except by those AST guards. The icon set is not pinned in `tests/test_command_icons.py`.
+
+---
+
+*Copyright © 2026 IMA LLC. All rights reserved.*

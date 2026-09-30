@@ -2,39 +2,39 @@
 
 [← Toggle Data Pane guide](../Toggle%20Data%20Pane.md)
 
-## Architecture
+| | |
+|---|---|
+| **Command ID** | `CMD_ID = "PTND_toggledata"` is the module's contract constant, but the button definition Fusion sees is registered as `_navBarBtnID = "NavBarBtn"`; `CMD_ID` is not used by any control |
+| **Registry** | module `datatoggle`, group `document` (`Document Tools`); enabled by default; not beta |
+| **UI location** | Navigation Toolbar (`ui.toolbars.itemById("NavToolbar")`), appended at the end (`addCommand(cmd_def, "", False)`); icon from `resources/` |
+| **Files** | `commands/datatoggle/entry.py`; `resources/` (16/32/64 px light + dark icons) |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`](architecture.md#general_utils) |
+| **Tests** | `tests/test_command_contract.py` only |
 
-The Toggle Data Pane command registers a button control on the Fusion Navigation Toolbar. On execution, it reads the current state of the Data Pane from the Fusion Application object and dispatches to either the built-in `DashboardModeOpenCommand` or `DashboardModeCloseCommand` accordingly.
+## Purpose
 
-### Command ID
+Opens or closes the Data Panel with one click from the Navigation Toolbar, where Fusion otherwise offers only the QAT grid button or a keyboard shortcut. It reads `app.data.isDataPanelVisible` and runs whichever of Fusion's two internal commands flips the state.
 
-`NavBarBtn`
+## How it is wired
 
-### Execution flow
+- `start()`: `ui.commandDefinitions.itemById("NavBarBtn")` first; only when that is `None` does it `addButtonDefinition("NavBarBtn", CMD_NAME, CMD_Description, ICON_FOLDER)`. Then `ptutil.add_handler(cmd_def.commandCreated, command_created)` and `navToolbar.controls.addCommand(cmd_def, "", False)`.
+- `stop()`: deletes the toolbar control. The definition is looked up but the deletion is behind `if not navBarBtnCmdDef:`, so an existing definition is never deleted (and a missing one would raise `AttributeError` on `None.deleteMe()`). The `itemById` check in `start()` is what keeps a stop/start cycle from failing on a duplicate id. `stop()` also declares `global _handlers`, a name that does not exist in the module.
+- `command_created(args)`: does the work directly — `app.data.isDataPanelVisible` true → `ui.commandDefinitions.itemById("DashboardModeCloseCommand").execute()`, otherwise `DashboardModeOpenCommand.execute()`. Exceptions → `ptutil.handle_error(CMD_NAME, show_message_box=True)`. No `CommandInputs`, no `execute` or `destroy` handler; this is the [acting-from-commandCreated](architecture.md#acting-from-commandcreated-when-there-are-no-inputs) shape, which is why the button works with no document open.
 
-1. The add-in registers the command definition with a custom icon and inserts a button control on the Navigation Toolbar.
-2. The user clicks the **Toggle Data** button.
-3. The `command_created` handler checks `app.data.isDataPanelVisible`.
-4. If `True`, the handler executes `DashboardModeCloseCommand` to hide the Data Pane.
-5. If `False`, the handler executes `DashboardModeOpenCommand` to show the Data Pane.
+## Data and state
 
-### Component diagram
+`local_handlers` only. No disk cache, no settings keys, no custom events.
 
-```mermaid
-C4Component
-    title Toggle Data Pane – Component Architecture
+## Diagram
 
-    Person(user, "Designer", "Fusion user working on a design")
-    Component(addin, "PowerTools Add-In", "Python, Fusion API", "Hosts and registers all PowerTools commands")
-    Component(cmd, "Toggle Data Pane", "datatoggle/entry.py", "Registers Navigation Toolbar button and reads panel state")
-    Component(openCmd, "DashboardModeOpenCommand", "Fusion Internal API", "Opens the Data Pane")
-    Component(closeCmd, "DashboardModeCloseCommand", "Fusion Internal API", "Closes the Data Pane")
-    Component(appData, "app.data", "Fusion Application API", "Exposes isDataPanelVisible state")
+None — one branch on `isDataPanelVisible`.
 
-    Rel(user, addin, "Loads add-in on Fusion start")
-    Rel(addin, cmd, "Calls start() – registers button on Navigation Toolbar")
-    Rel(user, cmd, "Clicks Toggle Data on Navigation Toolbar")
-    Rel(cmd, appData, "Reads isDataPanelVisible")
-    Rel(cmd, openCmd, "Executes if panel is hidden")
-    Rel(cmd, closeCmd, "Executes if panel is visible")
-```
+## Tests
+
+- `tests/test_command_contract.py` — registry row, `CMD_Description`, docs pair; the literal `PTND_toggledata` is checked for the Fusion ID shape. `NavBarBtn` carries no `PT` prefix and is not covered by the ID checks.
+
+`entry.py` is Fusion-bound and is not exercised by the suite; nothing here is verified in Fusion on this branch except by the AST guards in `tests/test_command_contract.py` and `tests/test_command_abort.py`, which import it under the `adsk` stub. The icon set is not pinned in `tests/test_command_icons.py`.
+
+---
+
+*Copyright © 2026 IMA LLC. All rights reserved.*

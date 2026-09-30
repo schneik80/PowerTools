@@ -164,9 +164,12 @@ how the toolchain was installed on the device, not of the repo.
      PDF as authoritative when built on `mac-air-m4` or `ryzen-nobara`.
    - `tests/test_changecyclecolor_fusion_install.py::test_posix_candidates_keep_the_versioned_bin_layout`
      -- `os.path.join` emits backslashes for the POSIX candidate list.
-   - `tests/test_command_abort.py` (both tests) -- the AST guard reads source
-     without `encoding="utf-8"`, so cp1252 raises `UnicodeDecodeError` on
-     byte 0x90.
+   - `tests/test_command_abort.py` -- recorded 2026-09-12 as a
+     `UnicodeDecodeError` on byte 0x90 because the AST guard read source in
+     the cp1252 default. Both AST guards (`test_command_abort.py`,
+     `test_command_contract.py`) now read with `encoding="utf-8"`; not yet
+     re-verified on `g16win`, so expect three failures, not four, and record
+     what you see.
 
 ## Other repo commands
 

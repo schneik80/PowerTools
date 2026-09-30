@@ -174,12 +174,13 @@ which case the next cycle repaints with the right colour anyway.
 
 ## Known outstanding: `sketchcirclecenterpoint`
 
-`commands/sketchcirclecenterpoint/entry.py` gets the `executePreview` half right — line 392
-redraws from the preview handler, and line 382 correctly leaves `isValidResult = False`.
-Its bug is a **redundant direct draw**: `command_mouse_move` writes the live radius into the
-`diameter` value input (which by itself triggers a preview that redraws), and *then* calls
-`_update_preview(radius, hit)` again at line 299. That second, direct draw happens outside a
-preview cycle and is promptly aborted — so the two fight, and the result is the flicker.
+`commands/sketchcirclecenterpoint/entry.py` gets the `executePreview` half right:
+`command_execute_preview` redraws through `_update_preview(...)` and leaves
+`args.isValidResult = False`. Its bug is a **redundant direct draw**: `command_mouse_move`
+writes the live radius into the `diameter` value input (which by itself triggers a preview
+that redraws), and *then* calls `_update_preview(radius, hit)` again directly. That second
+draw happens outside a preview cycle and is promptly aborted — so the two fight, and the
+result is the flicker.
 
 Removing the direct `_update_preview` call from `command_mouse_move` is the likely fix, and
 would let that command come out of `DEFAULT_DISABLED_COMMANDS`. **Not yet verified in

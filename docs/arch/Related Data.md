@@ -2,73 +2,84 @@
 
 [← Create Related Data guide](../Related%20Data.md)
 
-## Architecture
+| | |
+|---|---|
+| **Command ID** | `f"{config.COMPANY_NAME}_{config.ADDIN_NAME}_cmdDialog"`, which resolves to `IMA LLC_PowerTools_cmdDialog` when the add-in folder is named `PowerTools`. The space breaks rule 9 (Fusion IDs use `_` only); the module is allowlisted in `KNOWN_NONLITERAL_CMD_IDS` in `tests/test_command_contract.py`, and the ID is not fixed because renaming a `CMD_ID` orphans users' QAT pins. |
+| **Registry** | group `related` (`Related Data`); enabled by default |
+| **UI location** | Design workspace `FusionSolidEnvironment` → tab `SolidTab` → panel `SolidCreatePanel`, promoted (`IS_PROMOTED = True`); appended, no anchor |
+| **Files** | `commands/relateddata/entry.py`; `resources/` (16/32/64 light, dark, disabled PNGs); `Sample data.json` (`{"PROJECT_ID": "TODO…", "FOLDER_ID": "TODO…"}` — read by nothing; it is tracked, so it ships in the release zip, and `tests/test_release_build.py` pins that it does) |
+| **Shared helpers** | [`config`](architecture.md#config) (`COMPANY_HUB`, `COMPANY_HUB_CONFIGS`, `reload_hub_config`, `CACHE_PATH`); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.read_json`, `write_json_atomic`](architecture.md#json_utils); [`ptutil.isSaved`, `ptutil.log`](architecture.md#general_utils) |
+| **Tests** | `tests/test_relateddata_cache.py`, `tests/test_command_contract.py`, `tests/test_release_build.py` |
 
-### How the command works
+## Purpose
 
-When you run **Create Related Data**, the add-in follows this sequence:
+Creates a new document from a template held in the hub's configured templates folder, saves it next to the active document as `<active name> ‹+› <template name>`, and inserts the active document into it as an external reference. The constraint that shapes it: the template list is read from the hub once per hub and cached on disk, so after the first run the dialog opens with no hub round-trip. Which hub, project and folder to read comes from `cache/hub.json`, written by [Select Related Data Folder](Select%20Related%20Data%20Folder.md).
 
-1. Reloads the in-memory hub configuration from `hub.json` to pick up any recently added hubs.
-2. Checks whether the active hub ID is in the configured hub list. If it is not, an error message is displayed.
-3. Calls `_load_templates_for_hub()`, which checks for a local cache file at `cache/[hub-id].json`. On a cache hit, templates are loaded from disk. On a cache miss, templates are fetched from the Fusion API, then written to the cache for future use.
-4. Verifies that the source document is saved.
-5. Presents the command dialog with a **Type** drop-down listing all available templates and an **Auto-Name** toggle.
-6. When the user selects a template, the document name field updates automatically to `<source name> ‹+› <template name>`.
-7. On confirmation (OK):
-   - Opens the selected template document from the hub.
-   - Saves it as a new document with the specified name, into the same folder as the source document.
-   - Inserts the source document into the new document's root component as an external reference (X-Ref).
-   - Saves the new document.
+## How it is wired
 
-### System context
+- `start()`: reuses the button definition if `ui.commandDefinitions.itemById(CMD_ID)` already exists (an unclean dev reload), otherwise `addButtonDefinition`; wires `commandCreated` → `command_created` with [`ptutil.add_handler`](architecture.md#event_utils); looks up `SolidTab` and `SolidCreatePanel` (both built-in, so the `add` fallbacks never run); deletes every stale control with `CMD_ID` in the panel, then `controls.addCommand` and `isPromoted = True`.
+- `stop()`: deletes every control with `CMD_ID` in `SolidCreatePanel`, then the definition.
+- `command_created(args)`, in order:
+  1. `config.reload_hub_config()` so a hub configured since start-up is visible; `_active_hub_id = app.data.activeHub.id`.
+  2. `_active_hub_id not in config.COMPANY_HUB` → "Incorrect Hub" message box, return.
+  3. `my_DocsDictSorted = _load_templates_for_hub(_active_hub_id)` (see below); empty → return, the loader has already shown its message.
+  4. [`ptutil.isSaved()`](architecture.md#general_utils) false → return (it shows the "Please Save" prompt).
+  5. Adds the inputs: drop-down `dropDownCommandInput` ("Type", `LabeledIconDropDownStyle`) — every template is added with `isSelected=True`, so the last template in sorted order is the initial selection and seeds `docTitle` / `docURN`; boolean `boolvalueInput_` ("Auto-Name", on); string `stringValueInput_` ("Name", disabled, pre-filled with `docTitle`).
+  6. Wires `execute` → `command_execute`, `inputChanged` → `command_input_changed`, `destroy` → `command_destroy`.
+
+  Every early return happens before any input is added and before `execute` is wired, so the command terminates without running anything.
+- `command_input_changed(args)`: on `dropDownCommandInput`, finds the template whose values contain the selected name, sets `docURN` and rewrites the Name field to `docSeed + " ‹+› " + <template name>`; on `boolvalueInput_`, disables the Name field when Auto-Name is on and enables it when off.
+- `command_execute(args)`: `app.data.findFileById(docURN)`; `docSeed` is the active document's name with the trailing ` vN` version token stripped (`rsplit(" ", 1)[0]`); reads the Name field; `app.documents.open(template)`; `docNew.saveAs(name, docActive.dataFile.parentFolder, "Auto created by related data add-in", "")`; casts the new document's design and calls `rootComponent.occurrences.addByInsert(docActive.dataFile, identity Matrix3D, True)`; `docNew.save("Auto saved by related data add-in")`. The new document stays open and active.
+- `command_destroy(args)`: resets `local_handlers`.
+
+## Data and state
+
+- Module globals: `_active_hub_id`, `docSeed`, `docTitle`, `docURN`, `my_DocsDictSorted`, `local_handlers`. All are repopulated in `command_created`.
+- `cache/<hub_id>.json` (`config.CACHE_PATH`): `{"<template name>dict": {"name": ..., "urn": <DataFile.id>}, ...}`, keys sorted. Written once on a miss by `_load_templates_for_hub`; nothing in the add-in deletes or refreshes it, so a template added to the hub folder later is not seen until the file is removed by hand.
+- `cache/hub.json`: read through `config.loadHub` / `reload_hub_config` into `COMPANY_HUB` (list of hub ids) and `COMPANY_HUB_CONFIGS` (`hub_id → {name, project_id, project_name, folder_id, folder_name}`).
+- Settings keys: none. Custom events: none.
+
+## Template resolution
+
+`_load_templates_for_hub(hub_id)`:
+
+1. `_load_templates_from_cache(cache/<hub_id>.json)` — `read_json` result must be a non-empty `dict`; a missing, unreadable, corrupt, empty or non-dict file is a miss, never an exception inside the handler.
+2. On a miss, `config.COMPANY_HUB_CONFIGS[hub_id]` must exist and carry both `project_id` and `folder_id`; then `app.data.activeHub.dataProjects.itemById(project_id)` and `project.rootFolder.dataFolders.itemById(folder_id)` must both resolve. Each failure shows its own message box ("Hub Not Configured", "Incomplete Hub Config", "Project Not Found", "Folder Not Found") and returns `{}`.
+3. Every `DataFile` in the folder with `fileExtension == "f3d"` becomes `{"name", "urn"}`; the dict is sorted by key and written with `write_json_atomic`.
+
+The folder lookup is `rootFolder.dataFolders.itemById`, so the templates folder must be a direct child of the project root.
+
+## Diagram
+
+The gate sequence in `command_created`, with the cache branch inside `_load_templates_for_hub`:
 
 ```mermaid
-C4Context
-  title System Context — Create Related Data
-
-  Person(user, "Fusion User", "Has a saved source document open in Fusion")
-
-  System_Boundary(addin, "PowerTools Add-in") {
-    System(relatedData, "Create Related Data Command", "Copies a template, inserts the source document as an external reference, and saves the new document")
-  }
-
-  SystemDb(hubJson, "hub.json", "Local configuration file — registered hub, project, and folder IDs")
-  SystemDb(cache, "Template Cache", "cache/[hub-id].json — cached list of available templates per hub")
-  System_Ext(fusionTeam, "Autodesk Fusion Team", "Hosts hub data, template .f3d files, and the destination folder for new documents")
-
-  Rel(user, relatedData, "Selects template, optionally sets name, clicks OK")
-  Rel(relatedData, hubJson, "Reads hub and folder configuration")
-  Rel(relatedData, cache, "Reads template list; writes cache on first fetch")
-  Rel(relatedData, fusionTeam, "Fetches templates (cache miss); opens template document; saves new document")
+flowchart TD
+    A["command_created()"] --> B["config.reload_hub_config()"]
+    B --> C{"activeHub.id in COMPANY_HUB?"}
+    C -- no --> X1["messageBox 'Incorrect Hub'<br/>return (no inputs, no execute)"]
+    C -- yes --> D["_load_templates_for_hub(hub_id)"]
+    D --> E{"cache/&lt;hub_id&gt;.json is a non-empty dict?"}
+    E -- no --> F["COMPANY_HUB_CONFIGS → dataProjects.itemById → rootFolder.dataFolders.itemById"]
+    F -- any step fails --> X2["messageBox, return {}"]
+    F --> G["collect .f3d DataFiles, sort,<br/>write_json_atomic(cache)"]
+    G --> H{"templates non-empty?"}
+    E -- yes --> H
+    H -- no --> X3["return"]
+    H -- yes --> I{"ptutil.isSaved()?"}
+    I -- no --> X4["return"]
+    I -- yes --> J["add Type / Auto-Name / Name inputs<br/>wire execute, inputChanged, destroy"]
+    J --> K["command_execute(): open template → saveAs → addByInsert → save"]
 ```
 
-### Container detail
+## Tests
 
-```mermaid
-C4Container
-  title Container Diagram — Create Related Data
+- `tests/test_relateddata_cache.py` — `_load_templates_from_cache` treats a missing, corrupt, empty or non-dict file as a miss and returns a valid dict unchanged.
+- `tests/test_release_build.py` — `commands/relateddata/Sample data.json` is among the tracked paths asserted to ship in the release zip (`test_runtime_paths_ship`).
+- `tests/test_command_contract.py` — registry/doc/description contract; pins `relateddata` in `KNOWN_NONLITERAL_CMD_IDS` and asserts the resolved `CMD_ID` still violates the ID shape.
 
-  Person(user, "Fusion User")
+Not covered: `entry.py` is Fusion-bound and is not exercised by the suite; nothing here is verified in Fusion on this branch except by the AST guards in `tests/test_command_contract.py` and `tests/test_command_abort.py`, which import it under the `adsk` stub. The icon set is not pinned in `tests/test_command_icons.py`.
 
-  Container_Boundary(addin, "PowerTools Add-in") {
-    Container(cmdCreated, "command_created handler", "Python / Fusion API", "Validates the active hub; loads templates via _load_templates_for_hub(); builds the Type drop-down and Auto-Name toggle")
-    Container(cmdInputChanged, "command_input_changed handler", "Python", "Updates the document name field when the user changes the Type or toggles Auto-Name")
-    Container(cmdExecute, "command_execute handler", "Python / Fusion API", "Opens the selected template; saves as new document with X-Ref to source; saves the new document")
-    Container(loadTemplates, "_load_templates_for_hub()", "Python / json", "Returns templates from cache or fetches from Fusion API and writes cache on miss")
-    Container(configModule, "config.py", "Python", "In-memory COMPANY_HUB list and COMPANY_HUB_CONFIGS map loaded from hub.json")
-  }
+---
 
-  SystemDb(hubJson, "hub.json", "Local JSON configuration file")
-  SystemDb(cache, "cache/[hub-id].json", "Local template cache file per hub")
-  System_Ext(fusionApi, "Fusion API (adsk.core / adsk.fusion)", "Provides documents.open(), document.saveAs(), occurrences.addByInsert(), dataProjects, dataFolders")
-
-  Rel(user, cmdCreated, "Clicks Create Related Data")
-  Rel(cmdCreated, configModule, "Calls reload_hub_config(); checks COMPANY_HUB")
-  Rel(cmdCreated, loadTemplates, "Calls _load_templates_for_hub(hub_id)")
-  Rel(loadTemplates, cache, "Reads cache on hit; writes cache on miss")
-  Rel(loadTemplates, fusionApi, "Fetches folder contents on cache miss")
-  Rel(cmdCreated, cmdInputChanged, "Fires on Type or Auto-Name change")
-  Rel(cmdCreated, cmdExecute, "Fires on OK")
-  Rel(cmdExecute, fusionApi, "Opens template; saves new document; inserts X-Ref")
-  Rel(configModule, hubJson, "Reads hub entries on load or reload")
-```
+*Copyright © 2026 IMA LLC. All rights reserved.*

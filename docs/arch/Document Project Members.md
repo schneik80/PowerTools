@@ -2,62 +2,58 @@
 
 [← Document Project Members guide](../Document%20Project%20Members.md)
 
-## Architecture — command flow
+| | |
+|---|---|
+| **Command ID** | `PTSHD_projectMembers` (`CMD_NAME` is `Document Project Members...`) |
+| **Registry** | group `share` (`Share Document`); enabled by default; last in the group's start order |
+| **UI location** | the `shareDropMenu` ("Share Menu") flyout on `QATRight`; inserted before Change Share Settings (`addCommand(cmd_def, "PTSHD_sharesettings", True)`), so it lands between Invite to Project and Change Share Settings |
+| **Files** | `commands/projectMembers/entry.py` (no `__init__.py`); `resources/` (16 light/dark, `16x16@2x-dark`, 32 light PNGs) |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.isSaved`, `log`, `handle_error`](architecture.md#general_utils); [`ptutil.remove_from_qat_right_flyout`](architecture.md#ui_utils); [`config`](architecture.md#config) (workspace/panel constants are imported but unused) |
+| **Tests** | none beyond `tests/test_command_contract.py` |
 
-The following diagram shows what the add-in does when you select **Document Project Members**.
+## Purpose
 
-```mermaid
-C4Context
-    title Document Project Members — System Interactions
+Opens the Fusion Team "Members" page for the project that holds the active document in the default web browser, where access levels can be reviewed and changed. The project URL is derived from the document's `fusionWebURL`, so the document must be saved and in a project.
 
-    Person(designer, "Designer", "Autodesk Fusion user selecting the command")
-    System(addin, "Share Menu Add-in", "Constructs the Fusion Team members URL")
-    System_Ext(fusionApi, "Autodesk Fusion API", "Provides the fusionWebURL for the active document")
-    System_Ext(browser, "Default Web Browser", "Opens the Fusion Team members page")
-    System_Ext(fusionTeam, "Autodesk Fusion Team", "Hub web client — Project Members page")
+## How it is wired
 
-    Rel(designer, addin, "Selects Document Project Members")
-    Rel(addin, fusionApi, "Reads dataFile.fusionWebURL")
-    Rel(addin, browser, "Opens constructed members URL via webbrowser.open()")
-    Rel(browser, fusionTeam, "Navigates to Project Members page")
-    Rel(designer, fusionTeam, "Reviews and manages member permissions")
-```
-
-### Detailed command flow
-
-```mermaid
-flowchart TD
-    A([User selects Document Project Members]) --> B{Document saved?\napp.activeDocument.isSaved}
-    B -- No --> C[Show save-required dialog\nCommand exits]
-    B -- Yes --> D[Show progress indicator]
-    D --> E[Read app.activeDocument.dataFile.fusionWebURL]
-    E --> F[URL-encode the fusionWebURL]
-    F --> G[Strip path after last /\nto get project-level URL]
-    G --> H[Append ==/fpV2?redirectSource=fremont\n&action=ffpViewMembers]
-    H --> I[Hide progress indicator]
-    I --> J[Open URL in default web browser\nwebbrowser.open shareLink]
-    J --> K([Fusion Team Project Members page opens])
-```
-
----
+- `start()`: `addButtonDefinition`; `commandCreated` → `command_created`; find-or-create the `shareDropMenu` flyout on `QATRight` (see [Get a Share Link](Get%20a%20Share%20Link.md)); `dropDown.controls.addCommand(cmd_def, "PTSHD_sharesettings", True)`.
+- `stop()`: [`ptutil.remove_from_qat_right_flyout(CMD_ID, "shareDropMenu")`](architecture.md#ui_utils), then delete the definition. `commands/__init__.py` stops commands newest-first, so this is the first share command to stop and the flyout survives until the last sibling's control is removed (unless this is the only enabled share command).
+- `command_created(args)`: wires `execute` → `command_execute` and `destroy` → `command_destroy`; no inputs, so `execute` runs immediately when a document is open.
+- `command_execute(args)`: [`ptutil.isSaved()`](architecture.md#general_utils) false → return. Then, inside a `try` ending in `ptutil.handle_error(CMD_NAME)`: `ui.progressBar.showBusy("Generating Share Link")`; build the URL (below); `ptutil.log` it (the log line says "Invite Link"); `progressBar.hide()`; `webbrowser.open(shareLink)`. No message box is shown.
+- `command_destroy(args)`: resets `local_handlers`.
 
 ## URL construction
 
-The add-in derives the members URL from `dataFile.fusionWebURL`, which points to the active document's page on Fusion Team. The construction process:
+1. `rootLink = quote(app.activeDocument.dataFile.fusionWebURL)`.
+2. `rootLink = rootLink.rpartition("/")[0]` — drops the last path segment (the file), leaving the project-level URL.
+3. `rootLink = urllib.parse.unquote(rootLink)`.
+4. `shareLink = f"{rootLink}==/fpV2?redirectSource=fremont&action=ffpViewMembers"`.
 
-1. Reads the document's `fusionWebURL` (for example, `https://autodesk.com/team/hubs/.../projects/.../data/.../files/...`).
-2. Trims the path to the project level by removing everything after the last `/`.
-3. Appends the query string `==/fpV2?redirectSource=fremont&action=ffpViewMembers` to redirect to the Members page.
+Identical to [Invite to Project](Invite%20to%20Project.md) except for the `action` value.
 
-This pattern is identical to [Invite to Project](invite-to-project.md), but uses the `ffpViewMembers` action instead of `ffpInviteMembers`.
+## Data and state
 
----
+None.
+
+## Diagram
+
+None: the flow is linear (guard, build URL, open browser).
 
 ## Key API surface
 
 | API element | Purpose |
 |---|---|
-| `futil.isSaved()` | Guards against operating on unsaved documents (checks `app.activeDocument.isSaved`; shows a "Please Save" prompt if not) |
-| `app.activeDocument.dataFile.fusionWebURL` | Base URL used to construct the members page URL |
-| `urllib.parse.quote` / `urllib.parse.unquote` | URL encoding and decoding during path manipulation |
-| `webbrowser.open(url)` | Opens the constructed URL in the system default browser |
+| `app.activeDocument.dataFile.fusionWebURL` | Base URL the project URL is cut from |
+| `urllib.parse.quote` / `unquote` | Encoding round-trip around the path cut |
+| `webbrowser.open(url)` | Opens the members page in the system default browser |
+
+## Tests
+
+- `tests/test_command_contract.py` — registry/doc/description contract; `PTSHD_projectMembers` is checked against the ID shape.
+
+Not covered: `entry.py` is Fusion-bound and is not exercised by the suite; nothing here is verified in Fusion on this branch except by the AST guards in `tests/test_command_contract.py` and `tests/test_command_abort.py`, which import it under the `adsk` stub. The icon set is not pinned in `tests/test_command_icons.py`.
+
+---
+
+*Copyright © 2026 IMA LLC. All rights reserved.*

@@ -2,37 +2,53 @@
 
 [← Add Default Project Folders guide](../Default%20Folders.md)
 
-## Architecture
+| | |
+|---|---|
+| **Command ID** | `PT_defaultfolders` |
+| **Registry** | module `defaultfolders`, group `document` (`Document Tools`); enabled by default; not beta; `settings=True` (has a section in the Preferences palette) |
+| **UI location** | QAT File dropdown (`ui.toolbars.itemById("QAT")` → `FileSubMenuCommand`), appended at the end (`addCommand(cmd_def)` with no anchor); text item, no icon |
+| **Files** | `commands/defaultfolders/entry.py` only (no `resources/`) |
+| **Shared helpers** | [`settings_store.command_setting`, `COMMAND_SETTING_DEFAULTS`, `DEFAULT_FOLDER_SETS`](architecture.md#settings_store); [`cache_utils.get_active_project`](architecture.md#cache_utils) (as `ptutil.get_active_project`); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`](architecture.md#general_utils) |
+| **Tests** | `tests/test_command_contract.py` only |
 
-The Add Default Project Folders command registers a button in the QAT File dropdown. On execute, it retrieves the root folder of the active project, reads all existing folder names into a lowercase list, and then iterates through the selected folder set, calling `dataFolders.add()` only for names that are not already present.
+## Purpose
 
-### Command ID
+Creates a predefined set of folders in the root of the active project, skipping any that already exist (case-insensitive), so every project gets the same structure without anyone building it by hand. The user picks **Basic** or **Advanced** in a small dialog with a live preview; both lists are user-editable in Preferences and read from the settings store at run time.
 
-`PT_defaultfolders`
+## How it is wired
 
-### Execution flow
+- `start()`: `addButtonDefinition(CMD_ID, CMD_NAME, CMD_Description)` (no resource folder); `ptutil.add_handler(cmd_def.commandCreated, command_created)`; `fileDropDown.controls.addCommand(cmd_def)`. The QAT and dropdown are read directly, without the `None` guard [`ptutil.get_qat_file_dropdown`](architecture.md#ui_utils) provides.
+- `stop()`: deletes the dropdown control and the definition.
+- `command_created(args)`: builds a `folderSet` text-list dropdown (**Basic** selected, **Advanced**) and a read-only `folderPreview` text box sized to `max(len(basic), len(advanced)) + 1` rows, filled by `_build_preview("Basic", _get_existing_lower())`. Registers `command_execute`, `command_input_changed`, `command_destroy`.
+- `_get_existing_lower()`: `ptutil.get_active_project(CMD_NAME)` (guards `app.data.activeProject`, which raises `InternalValidationError('id.size()')` when no project is in context — rule 8); returns `[f.name.casefold() for f in project.rootFolder.dataFolders]`, or `[]` when there is no project or the read fails.
+- `_folder_set(option_key)`: `settings_store.command_setting("defaultfolders", key, fallback)` with `fallback = COMMAND_SETTING_DEFAULTS["defaultfolders"][key]`; a non-list value falls back; blank names are dropped.
+- `_build_preview(name, existing_lower)`: one line per folder, `+ name` or `(exists)  name`.
+- `command_input_changed(args)`: only for `args.input.id == "folderSet"`; re-reads the project folders and rewrites `folderPreview.text`.
+- `command_execute(args)`: reads the dropdown, resolves the list with `_folder_set`, then `ptutil.get_active_project(CMD_NAME)`; `None` → an actionable message box ("Open the Data Panel and click into the project…") and return. Otherwise `root.dataFolders.add(name)` for every name whose `casefold()` is not already present. Exceptions → `ptutil.handle_error(CMD_NAME, show_message_box=True)`.
+- `command_destroy(args)`: drops `local_handlers`.
 
-1. The add-in registers the command definition and appends a button to the QAT File dropdown.
-2. The user selects **PowerTools Add Project Folders**.
-3. A command dialog opens with a **Folder set** dropdown (defaulting to **Basic**) and a read-only **Folders to create** preview.
-4. The preview lists every folder in the selected set; folders already present in the project root are shown as `(exists)`.
-5. Switching the dropdown immediately refreshes the preview via the `inputChanged` event.
-6. The user confirms with **OK**.
-7. The `command_execute` handler reads the dropdown selection and resolves the active project through `ptutil.get_active_project()` — which guards `app.data.activeProject` (that raises `InternalValidationError('id.size()')` when the Data Panel has no project in context). If no project resolves, the command shows an actionable message and stops; otherwise it retrieves `rootFolder.dataFolders` and calls `dataFolders.add(name)` only for folder names that are not already present (case-insensitive).
+## Data and state
 
-### Component diagram
+- `local_handlers` only; no module-level caches, no custom events.
+- Settings keys: `command_settings.defaultfolders.basic` and `command_settings.defaultfolders.advanced` (lists of folder names), edited in the Preferences palette's **Add Project Folders** section. Defaults seed from `settings_store.DEFAULT_FOLDER_SETS`:
+  - `basic`: `_Global Parameters`, `Drawings`, `Archive`, `Obit`, `Wiki`
+  - `advanced`: `01 - Assemblies` … `10 - Archive`, `XX - Obit` (eleven names)
+- Written: new `DataFolder`s under the active project's `rootFolder`.
 
-```mermaid
-C4Component
-    title Add Default Project Folders – Component Architecture
+## Diagram
 
-    Person(user, "Designer", "Fusion user managing a project")
-    Component(addin, "PowerTools Add-In", "Python, Fusion API", "Hosts and registers all PowerTools commands")
-    Component(cmd, "Default Folders", "defaultfolders/entry.py", "Registers QAT button and manages folder creation logic")
-    Component(projectData, "app.data.activeProject", "Fusion Data API", "Provides access to the active project root folder and its child folders")
+None — dropdown → preview → `dataFolders.add` for the missing names.
 
-    Rel(user, addin, "Loads add-in on Fusion start")
-    Rel(addin, cmd, "Calls start() – registers button in QAT File dropdown")
-    Rel(user, cmd, "Clicks PowerTools Add Project Folders in QAT File menu")
-    Rel(cmd, projectData, "get_active_project() guards activeProject; reads rootFolder.dataFolders and adds missing folders")
-```
+## Tests
+
+- `tests/test_command_contract.py` — registry row, `CMD_Description`, docs pair, `CMD_ID` shape.
+
+The name comparison, the preview text and the settings fallback have no dedicated test. `entry.py` is Fusion-bound and is not exercised by the suite; nothing here is verified in Fusion on this branch except by the AST guards in `tests/test_command_contract.py` and `tests/test_command_abort.py`, which import it under the `adsk` stub.
+
+## Learnings
+
+- **`app.data.activeProject` raises rather than returning `None`.** With no project in the Data Panel's context it fails with `InternalValidationError('id.size()')`; go through `cache_utils.get_active_project` and show an actionable message instead of a traceback (rule 8).
+
+---
+
+*Copyright © 2026 IMA LLC. All rights reserved.*

@@ -5,264 +5,179 @@
 | | |
 |---|---|
 | **Command ID** | `PTPM_measurepath` |
-| **Registry group** | `partmodeling` (enabled by default) |
-| **Location** | Every Inspect panel of every design-product workspace |
-| **Modules** | `commands/measurepath/entry.py`, `commands/measurepath/pathgraph.py` |
-| **Tests** | `tests/test_measurepath_pathgraph.py` |
+| **Registry** | group `partmodeling` (`Part Modeling`); enabled by default |
+| **UI location** | Every **Inspect** panel of every design-product workspace (Solid, Surface, Mesh, Sheet Metal, Plastic …), discovered at runtime by [`_inspect_panels.add_to_inspect_panels`](architecture.md#_inspect_panels); appended, not promoted. The panels are built in and are never created or deleted. |
+| **Files** | `commands/measurepath/entry.py` (all Fusion contact); `pathgraph.py` (graph, walk, Dijkstra, resolution ladder; no `adsk`); `resources/generate_icons.py` and the PNGs it produces |
+| **Shared helpers** | [`_inspect_panels.add_to_inspect_panels`, `remove_from_inspect_panels`](architecture.md#_inspect_panels); [`abort_before_dialog`, `consume_abort`, `clear_abort`](architecture.md#_command_abort); [`ptutil.capture_selections`, `picked_one`](architecture.md#selection_utils); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`, `perf_timer`, `clipText`](architecture.md#general_utils) |
+| **Tests** | `tests/test_measurepath_pathgraph.py`; icon set pinned in `tests/test_command_icons.py` |
 
-## Architecture
+## Purpose
 
-### System context
+Measures the cumulative arc length of a connected chain of sketch curves and model edges between two picked objects, shows the chain highlighted with Start/End dots and numbered direction cones, breaks it down per segment, resolves forks either by shortest path or by letting the user click a direction cone, and copies the length to the clipboard on Close. The load-bearing constraint is Fusion's preview transaction: custom graphics survive only when created inside `executePreview`, and every other design choice follows from that.
 
-```mermaid
-C4Context
-    title System Context — Measure Path
-    Person(user, "Fusion User", "Designer measuring along edges and sketch curves")
-    System(addin, "Measure Path", "Power Tools Add-in command that totals arc length along a connected chain")
-    System_Ext(fusion, "Autodesk Fusion", "CAD platform, B-Rep topology and sketch engine")
-    System_Ext(clip, "System Clipboard", "clip.exe on Windows, pbcopy elsewhere")
-    Rel(user, addin, "Picks a start and end object in Inspect panel")
-    Rel(addin, fusion, "Reads topology, highlights the chain, draws markers")
-    Rel(fusion, user, "Shows the highlighted path, Start/End labels and direction cones")
-    Rel(addin, clip, "Copies the measured length on Close")
-```
+## How it is wired
 
-### Component diagram
+- `start()`: `addButtonDefinition(...)`; `ptutil.add_handler(cmd_def.commandCreated, command_created)`; `_inspect_panels.add_to_inspect_panels(cmd_def, CMD_NAME, IS_PROMOTED)`, which walks every design-product workspace and adds the control to each panel whose id contains `inspect`, deduplicated by id.
+- `stop()`: `_inspect_panels.remove_from_inspect_panels(CMD_ID, CMD_NAME)`; deletes the definition.
+- `command_created(args)`: if `app.activeProduct` is not a Design, message box, `abort_before_dialog(CMD_ID, CMD_NAME, "no open design")`, return with no inputs ([aborting a command before its dialog](architecture.md#aborting-a-command-before-its-dialog)). Otherwise `_reset_state()`, `okButtonText = "Close"`, `isExecutedWhenPreEmpted = False`, caches `_active_command` and `_cmd_inputs`, and builds: `mp_start` and `mp_end` (selection inputs; filters `SketchPoints`, `Vertices`, `ConstructionPoints`, `SketchCurves`, `Edges`; limits 0,1), `mp_shortest` (checkbox, on), `mp_branch_pick` (selection; `SketchCurves`, `Edges`; limits 0,1; hidden), `mp_undo_branch` (`addBoolValueInput` with `isCheckBox=False` and no resource folder, which renders as a text button; hidden), `mp_result` (read-only text), `mp_status` (two rows, full width), `mp_segments` (table, three columns `3:2:3`, 1–10 visible rows, hidden), `mp_highlight` (selection; `SketchCurves`, `Edges`; limits 0,0). Registers `execute`, `executePreview`, `inputChanged`, `preSelect`, `mouseMove`, `mouseDown`, `mouseUp`, `mouseClick` and `destroy`. `validateInputs` is deliberately not registered: gating it would suppress the preview and with it the graphics.
+- `command_input_changed(args)`: `mp_branch_pick` with one selection → `_seg_key` → `clearSelection()` → `_choose_branch(key)`. `mp_undo_branch` → pop `_choices` → `_resolve_and_draw`. `mp_shortest` → `_resolve_and_draw`. `mp_start`/`mp_end` → `ptutil.capture_selections(inputs, _picks, INPUT_START, INPUT_END)`, reset `_choices`; with both picks present, a closed curve (`_closed_pick`) is refused with a status message; otherwise `_rebuild(start, end)` runs under `ptutil.perf_timer("measurepath.rebuild")`, a failure clears the graph and says the geometry could not be read, and `_resolve_and_draw(inputs)` follows either way.
+- `_rebuild(start, end)`: `_collect` expands a frontier from each pick — an edge yields its two vertices, a vertex its `edges`, a sketch curve its two sketch points, a sketch point those `connectedEntities` whose ends actually touch it — into `(key, pa, pb, length, kind, entity)` records, bounded by `_MAX_EXPANSION_STEPS`. All endpoints plus the two picks' anchor points go through `pathgraph.weld`; the records become `pathgraph.Seg`s in a `pathgraph.build` graph; `_start_nodes`/`_end_nodes` are the welded anchors; a curve picked as Start becomes a `_seeds` entry, one picked as End becomes `_tail`.
+- `_resolve_and_draw(inputs)`: with `mp_shortest` on, `pathgraph.shortest(graph, starts, ends, seed, tail)`; off, `pathgraph.resolve(graph, starts, ends, HOMOGENEOUS_ORDER, _choices, _seeds, _tail)`. Writes `mp_result` (`_format` via `unitsManager.formatValue`), `mp_status`, the table (`_fill_table`), the native highlight (`_highlight`), the terminal and per-segment marker state (`_set_markers`), shows `mp_branch_pick` and caches `_candidates`/`_pending_node` when a fork is pending, and ends with `_request_preview()`, which calls `_active_command.doExecutePreview()` because Fusion fires a preview by itself only after an *input* changes, not after a mouse click.
+- `command_execute_preview(args)`: the only place graphics are created. `_clear_graphics()`, clear `_hit_targets` and `_marker_gfx`, `_draw_terminals()`, then either `_draw_path_markers(_path_segs)` (resolved chain) or `_draw_candidates(_pending_node, _candidates)` (pending fork), then `viewport.refresh()`. `isValidResult` is never set, so it stays false and `execute` still runs.
+- `command_pre_select(args)`: while candidates are pending and `args.activeInput` is `mp_branch_pick` (or is unavailable), sets `isSelectable = False` for any entity that is not a candidate.
+- `command_mouse_move(args)`: `_hit(args)` tests `args.viewportPosition` against the projected cone midpoints in `_hit_targets` within `_HIT_PX_SLOP`; a change of hovered key runs `_apply_hover`, which recolours the live cone graphics in place.
+- `command_mouse_down` records `_press_xy`; `command_mouse_up` and `command_mouse_click` both call `_handle_click`, which ignores non-left buttons, treats travel above `_DRAG_PX_SLOP` (4 px) as an orbit or pan, de-duplicates by rounded cursor position so one click cannot consume two choices, and calls `_choose_branch(hit)` → append to `_choices` → `_resolve_and_draw`.
+- `command_execute(args)`: `consume_abort` first; if `_result_cm > 0`, `ptutil.clipText(_format(_result_cm))` (`clip.exe` on Windows, `pbcopy` elsewhere).
+- `command_destroy(args)`: `clear_abort(CMD_ID)`, `_clear_graphics()`, refresh, `_reset_state()`.
 
-```mermaid
-C4Component
-    title Component Diagram — Measure Path
-    Container_Boundary(addin, "Measure Path Command") {
-        Component(created, "command_created()", "Python", "Builds the dialog and registers handlers")
-        Component(changed, "command_input_changed()", "Python", "Captures picks, rebuilds the graph, re-resolves")
-        Component(rebuild, "_rebuild()", "Python", "Frontier expansion from both selections into plain records")
-        Component(resolve_ui, "_resolve_and_draw()", "Python", "Runs the ladder, writes the dialog, requests a preview")
-        Component(highlight, "_highlight()", "Python", "Highlights the chain via a limits-0,0 SelectionCommandInput")
-        Component(preview, "command_execute_preview()", "Python", "The ONLY place custom graphics are created")
-        Component(terminals, "_draw_terminals()", "Python", "Start/End dots with billboarded text labels")
-        Component(markers, "_draw_path_markers()", "Python", "Numbered, green-to-red direction cone per resolved segment")
-        Component(cones, "_draw_candidates()", "Python", "A direction cone per branch candidate, base on the curve")
-        Component(mouse, "command_mouse_up() / _hit()", "Python", "Drag-guarded, de-duplicated cone hit test")
-        Component(preselect, "command_pre_select()", "Python", "Restricts picking to the current candidate set")
-        Component(execute, "command_execute()", "Python", "Copies the result via ptutil.clipText")
-    }
-    Container_Boundary(pure, "pathgraph.py — no adsk import") {
-        Component(weld, "weld()", "Python", "Spatial-hash node interning with tolerance")
-        Component(walk, "walk()", "Python", "Deterministic chain walk with viability pruning")
-        Component(short, "shortest()", "Python", "Dijkstra over arc length")
-        Component(res, "resolve()", "Python", "The disambiguation ladder")
-        Component(ends, "endpoints()", "Python", "Locates the chain's true terminals")
-        Component(trav, "traversal()", "Python", "Re-derives the node each segment is entered from")
-    }
-    System_Ext(fusion, "Autodesk Fusion", "Topology, selection, custom graphics")
-    Rel(created, changed, "Registers handler")
-    Rel(changed, rebuild, "On a new selection")
-    Rel(rebuild, weld, "Feeds world points")
-    Rel(changed, resolve_ui, "After each change")
-    Rel(resolve_ui, res, "Asks for a chain")
-    Rel(res, walk, "Direct, then per-kind")
-    Rel(resolve_ui, short, "When Shortest path is on")
-    Rel(resolve_ui, highlight, "Chain to highlight")
-    Rel(resolve_ui, ends, "To place Start/End")
-    Rel(resolve_ui, preview, "Requests a cycle")
-    Rel(preview, terminals, "Draws")
-    Rel(preview, markers, "Draws when the chain is resolved")
-    Rel(markers, trav, "Asks which way each segment runs")
-    Rel(preview, cones, "Draws when a branch is pending")
-    Rel(mouse, resolve_ui, "Commits a branch choice")
-    Rel(preselect, fusion, "Rejects non-candidates")
-    Rel(execute, fusion, "Reads formatted length")
-```
+## Data and state
 
-### Resolution ladder
+Module globals only: `_graph`, `_node_coords`, `_seg_entities` (key → Fusion entity, for highlighting and curve evaluation), `_start_nodes`, `_end_nodes`, `_seeds`, `_tail`, `_choices`, `_candidates`, `_pending_node`, `_hit_targets`, `_marker_gfx`, `_hover_key`, `_marker_start`, `_marker_end`, `_path_segs`, `_result_cm`, `_picks`, `_cmd_inputs`, `_active_command`, `_press_xy`, `_last_pick_xy`, `_cell_serial`, `_preview_pending`. Custom graphics group id `PTPM_measurepath_gfx`. Tunables: `DEFAULT_WELD_TOL` 1e-4 cm, `_MAX_EXPANSION_STEPS` 200 000, `_MAX_PATH_MARKERS` 250, `_HIT_PX_SLOP` 15 px, `_DRAG_PX_SLOP` 4 px. No settings keys, no files, no custom events.
 
-```mermaid
-flowchart TD
-    S[Start and End picked] --> G[Build graph by frontier expansion]
-    G --> SP{Shortest path checked?}
-    SP -->|yes| DIJ[Dijkstra] --> DONE[Report total]
-    SP -->|no| W[Deterministic walk over mixed graph]
-    W --> R{Reached the end?}
-    R -->|yes| DONE
-    R -->|no| H[Walk restricted to edges only, then sketch only]
-    H --> H1{Exactly one succeeds?}
-    H1 -->|yes| DONE
-    H1 -->|no| B[Highlight the resolved prefix]
-    B --> C[Raise a direction cone per viable candidate]
-    C --> P[User clicks a cone or its curve]
-    P --> W
-```
+## The graph is keyed on coordinates, not entities
 
-## Design decisions
+A node is a **welded world coordinate**. `BRepVertex` has no identity stable across calls — Fusion returns a fresh Python wrapper on each property access, so `id()` is useless, and `tempId` is unique only within one body. Entity identity also cannot express what the command needs: a sketch point coincident with a vertex on a different body must be **one** node. `pathgraph.weld` at `DEFAULT_WELD_TOL` (1 µm) settles node identity, cross-body unification and the sketch/edge boundary in one mechanism, using a spatial hash that probes the 27 surrounding cells so two points either side of a cell boundary still merge.
 
-### The graph is keyed on coordinates, not entities
+Segment keys (`_token`) prefer `entityToken`, which distinguishes occurrence proxies from one another. The fallback (`_geom_key`) is **geometric** — rounded endpoints plus length — never `id()`; an identity-based fallback would let one edge enter the graph twice under two names. `_seg_key` builds the key exactly as `_collect` does, or the branch-pick lookup and the curve seed would silently miss.
 
-A node is a **welded world coordinate**, not a Fusion entity. `BRepVertex` has no
-identity stable across calls — Fusion returns a fresh Python wrapper on each
-property access, so `id()` is useless, and `tempId` is unique only within one body.
-More importantly entity identity *cannot* express what the command needs: a sketch
-point coincident with a vertex on a different body must become **one** node. Welding
-at `DEFAULT_WELD_TOL` (1e-4 cm) solves node identity, cross-body unification and the
-sketch↔edge boundary in one mechanism.
+Sketch point world positions come from `sketch.sketchToModelSpace(point.geometry)` followed by `assemblyContext.transform2`, not from `worldGeometry`, which can return the origin for some point types; a wrong world point mis-welds nodes and yields a plausible wrong total with no error. `BRepVertex.geometry` is used as is.
 
-Segment keys prefer `entityToken`, which distinguishes occurrence proxies from one
-another. The fallback is **geometric** (rounded endpoints plus length), never `id()` —
-an identity-based fallback would let one edge enter the graph twice under two names.
+## Ambiguity is O(V+E), not path enumeration
 
-### Ambiguity is O(V+E), not path enumeration
+"A single deterministic chain" means every node reached has exactly one unvisited continuation, which `pathgraph.walk` checks in a linear pass rather than by counting simple paths. Two refinements carry most of the usability:
 
-"A single deterministic chain" means: every node reached has exactly one unvisited
-continuation. That is a linear walk, not a count of simple paths, so it cannot blow
-up on a dense graph.
+- **Viability pruning.** At a fork, `can_reach` discards candidates that cannot reach an end node. If one survives it is taken silently — that is what implements "continue until the next branch point *or* a single path to the end", and it means cones never point down dead ends. If none survives the walk stops and reports where the trail went cold.
+- **Homogeneity fallback.** When the mixed graph is ambiguous and the user has not yet picked a direction, `pathgraph.resolve` retries with an edges-only and then a sketch-only walk (`HOMOGENEOUS_ORDER`) and accepts the result only if **exactly one** succeeds, so it never silently chooses between two valid answers. A restriction the seed or tail violates is skipped rather than answered, or a mixed chain would be reported as homogeneous with a terminal dropped.
 
-Two refinements carry most of the usability:
+Segments whose two ends weld to the same node are dropped by `Graph.add`: a closed loop can never move the walk and would otherwise pose as a branch candidate.
 
-- **Viability pruning.** At a fork, candidates that cannot reach an end node are
-  discarded first. If one survives it is taken silently — this is what implements
-  "continue until the next branch point *or a single path to the end*", and it means
-  cones never point down dead ends.
-- **Homogeneity fallback.** When the mixed graph is ambiguous, an edges-only and then
-  a sketch-only walk are tried. Accepted only if **exactly one** succeeds, so the
-  command never silently picks between two valid answers.
-
-A restriction that the start seed or end tail violates is skipped rather than
-answered, otherwise a mixed chain gets reported as homogeneous with a terminal
-silently dropped.
-
-### Both terminal selections contribute their length
-
-Picking a curve or edge rather than a point counts its **full** length, at either end:
+## Both terminal selections contribute their length
 
 | Selection | Mechanism |
 |---|---|
-| Start curve | `seed` — forced as the walk's first step, out of whichever end reaches onward |
-| End curve | `tail` — appended by `_arrive()` when the walk touches either of its ends |
+| Start curve | `seed` — forced as the walk's first step, out of whichever of its ends reaches onward; `shortest` tries both ends because they cost the same and only one may have the cheaper continuation |
+| End curve | `tail` — appended by `_arrive` (and at the end of `shortest`) when the walk touches either of its ends |
 
-Without the tail the walk finishes the moment it touches an end segment's endpoint,
-dropping that segment from both the total and the breakdown. Both guards skip a
-segment already in the chain, so a curve picked as *both* start and end counts once.
+Without the tail the walk finishes the moment it touches an end segment's endpoint and drops that segment from both the total and the breakdown. Both guards skip a segment already in the chain, so a curve picked as *both* Start and End counts once. The reported **Length** is therefore always the sum of the **Segments** rows; `test_total_always_equals_the_sum_of_the_breakdown` brute-forces that over every start/end/seed/tail combination.
 
-The reported **Length** is therefore always exactly the sum of the **Segments** rows.
-`tests/test_measurepath_pathgraph.py::test_total_always_equals_the_sum_of_the_breakdown`
-brute-forces that invariant over every start/end/seed/tail combination.
+## Per-segment markers are derived, not stored
 
-### Per-segment markers are derived, not stored
+`Seg` is undirected: `a` and `b` carry no sense, and traversal order lives only in a list. `pathgraph.traversal` re-derives the entry node of each segment by chaining forward from the origin that `pathgraph.endpoints` finds, and returns **empty** when the list does not chain cleanly, rather than guessing a sense that would be drawn backwards. `endpoints` itself tries every start candidate and accepts the one that chains all the way through, which also rejects a mis-ordered list.
 
-`Seg` is deliberately undirected: `a` and `b` are two node indices with no sense
-between them, and traversal order lives only in a list's ordering. The per-segment
-cones need to know which way each segment runs, so `traversal()` re-derives it by
-chaining forward from the origin `endpoints()` found, returning `(seg, entry_node)`
-pairs. It returns **empty** when the chain does not chain cleanly, rather than
-guessing a sense that would then be drawn backwards.
+`_draw_path_markers` builds each cone from two `_point_along` calls straddling the arc-length midpoint (via `curve.evaluator.getParameterAtLength`), so it follows a curved segment rather than chording it, with base-to-apex as the direction of travel. `_ramp` interpolates the colour between `_COLOR_START` and `_COLOR_END`, the terminal dot colours, and `_billboard_text` numbers each cone with its row in the Segments table. `_set_markers` fills `_path_segs` only for a **resolved** chain of at most `_MAX_PATH_MARKERS` segments (`_marker_note` says so in the status box when the cap bites); the markers are kept out of `_hit_targets` and `_marker_gfx` because a resolved chain has nothing to pick. `_path_segs` and `_candidates` are never both non-empty.
 
-Each cone is built from two `_point_along()` calls straddling the arc-length midpoint,
-so it follows a curved segment instead of chording it, and its base-to-apex sense is
-the direction of travel. The colour ramp runs between `_COLOR_START` and `_COLOR_END` —
-the terminal dot colours — so the markers read as part of the same annotation rather
-than an unrelated palette, and the number on each is its row in the Segments table.
+While a chain is still partial, `_set_markers` labels the origin (or every start anchor) Start and every *target* end anchor End, so the viewport shows where the measurement is heading, not only where it has got to.
 
-Markers are drawn only for a **resolved** chain: `_set_markers()` populates
-`_path_segs` only when `resolved`, because numbering a chain that is about to change
-would mislead. They are kept out of `_hit_targets` and `_marker_gfx` — those drive the
-branch manipulator, and a resolved chain has nothing left to pick. The two cone
-families can never coexist: `_path_segs` is non-empty only when `_candidates` is empty,
-and vice versa.
+## Custom graphics only in `executePreview`
 
-`_MAX_PATH_MARKERS` caps the count at 250, and `_marker_note()` says so in the status
-box when it bites, so a silently unannotated path cannot be mistaken for a short one.
+Fusion builds everything constructed during a preview in one transaction and aborts it — "the equivalent of an undo" — when the next preview fires, so graphics created from `inputChanged` or a mouse handler flash and vanish with no error. `command_execute_preview` is the only function that creates graphics, and it redraws from module state on every cycle. Consequences threaded through the design:
 
-### Custom graphics only in `executePreview`
+- The **chain highlight uses no custom graphics**: `_highlight` clears `mp_highlight` (a `SelectionCommandInput` with limits 0,0) and `addSelection`s each segment's entity. Selection state is outside the transaction, so it cannot be undone; `ui.activeSelections` does not highlight while a dialog is open, this input does.
+- `_request_preview` forces a cycle with `doExecutePreview()` after a mouse-driven change, since only input changes trigger one by themselves.
+- **Hover recolours in place** (`_apply_hover` sets `marker.color` on the live entities in `_marker_gfx`) because delete-and-re-add per mouse move is itself a flicker source.
+- `isValidResult` is left false; setting it true would make Fusion skip `execute`, where the clipboard copy happens.
+- The graphics group has `isSelectable = False` so the overlay cannot intercept picks aimed at the candidate curves beneath it.
 
-**This is the load-bearing constraint of the whole command.** Fusion builds everything
-constructed during a preview in one transaction and aborts that transaction — "the
-equivalent of an undo" — when the next preview fires. Custom graphics created from
-`inputChanged` or a mouse handler are therefore undone almost immediately: they flash
-and vanish, with no error.
+Full recipe: [Custom graphics that stay painted](../dev/Custom%20graphics%20that%20stay%20painted.md).
 
-So `command_execute_preview()` is the only function that creates graphics, and it
-redraws from state on every cycle. Consequences threaded through the design:
+## Branch picking has two independent routes
 
-- The **chain highlight uses no custom graphics at all** — a `SelectionCommandInput`
-  with `setSelectionLimits(0, 0)` and `addSelection()`. Selection state is outside the
-  transaction, so it cannot be undone. (`ui.activeSelections` does not highlight while
-  a dialog is open; this input does.)
-- **Hover recolours in place** rather than rebuilding, because delete-and-re-add per
-  mouse move is itself a flicker source.
-- `isValidResult` is deliberately left **False**. Setting it True would make Fusion
-  skip `execute`, which is where the clipboard copy happens.
-- `validateInputs` is **not** registered. Gating it would suppress the preview and
-  with it the graphics.
-
-Full write-up, including the fix this implies for `sketchcirclecenterpoint`:
-[Custom graphics that stay painted](../dev/Custom%20graphics%20that%20stay%20painted.md).
-
-### Branch picking has two independent routes
-
-There is **no `CustomGraphics` selection filter** in Fusion, so a cone can only be
-picked through raw mouse events — and `Command.mouseClick` is documented as unreliable
-on some builds. The structural mitigation: each cone's **base sits on its own candidate
-curve**, so a click on the cone is geometrically a click on that curve and Fusion's
-native picking resolves the choice even if no mouse event ever arrives.
+There is no `CustomGraphics` selection filter in Fusion, so a cone can only be picked through raw mouse events, and `Command.mouseClick` is documented as unreliable on some builds. The structural mitigation: each cone's **base sits on its own candidate curve** (`_draw_candidates` places it `_CONE_PX_OFFSET` pixels along the curve, clamped between `_MARKER_MIN_FRAC` and `_MARKER_MAX_FRAC` of the segment), so a click on the cone is geometrically a click on that curve and Fusion's native picking resolves the choice even if no mouse event arrives.
 
 | Route | Mechanism | Fails how |
 |---|---|---|
-| Click the cone | `mouseUp` + `mouseClick`, hit-tested by projecting the cone midpoint with `modelToViewSpace` against `viewportPosition` | Degrades to route 2 |
-| Click the curve | `mp_branch_pick` selection input, filtered by `preSelect` to the candidate set | Native; no coordinate maths |
+| Click the cone | `mouseUp` and `mouseClick` both bound → `_handle_click` → `_hit` projects each cone midpoint with `modelToViewSpace` and compares it with `viewportPosition` | Degrades to the curve route |
+| Click the curve | `mp_branch_pick`, filtered by `command_pre_select` to the candidate set, handled in `command_input_changed` | Native; no coordinate maths |
 
-`mouseUp` and `mouseClick` are both bound because either may be the one that fires;
-`_handle_click` de-duplicates by rounded cursor position so one physical click cannot
-consume two choices. A press-to-release travel of more than `_DRAG_PX_SLOP` is treated
-as an orbit or pan, not a click.
+## Coordinate spaces and sizing
 
-### Coordinate spaces
+`MouseEventArgs.viewportPosition` is viewport-local, the same space `Viewport.modelToViewSpace()` returns, so hit testing compares them directly; this is what spares the command the window-space calibration that Radial Hole Circle needs by using `MouseEventArgs.position`. Marker and label sizes are converted from pixels with `_px_per_cm`, which samples the projected length of unit offsets along X, Y and Z near the point and takes the largest, rather than relying on `CustomGraphicsViewScale`. When no usable projection exists (a segment near-parallel to the view axis) sizes fall back to fractions of the segment length. `_billboard_text` anchors the `CustomGraphicsBillBoard` on the label's own offset point, not the node, or the label would orbit the dot as the camera turns.
 
-`MouseEventArgs.viewportPosition` is viewport-local, the same space
-`Viewport.modelToViewSpace()` returns, so hit testing compares them directly. This
-deliberately avoids the window-space calibration that `RadialHoleCircle` needs, which
-arises only from using `MouseEventArgs.position` instead.
+## Placement is discovered, not listed
 
-Sketch point world positions go through `sketch.sketchToModelSpace()`, **not**
-`worldGeometry`, which is documented in this repo as silently returning the origin for
-some sketch point types — a wrong world point mis-welds nodes and yields a wrong total
-with no error.
-
-Marker sizes are computed from a sampled px-per-cm rather than
-`CustomGraphicsViewScale`, which has no proven use in this add-in.
-
-### Placement is discovered, not listed
-
-`_inspect_panels()` walks every design-product workspace and collects each panel whose
-id contains `inspect`, deduplicated by id. Which tabs exist — Solid, Surface, Mesh,
-Sheet Metal, Plastic — varies with the Fusion version and the user's entitlements, so
-a hardcoded tab list would miss panels on one build and log "not found" noise on
-another. `productType` is matched loosely because its exact value is undocumented,
-falling back to `config.design_workspace`.
-
-Every one of these panels is **built-in**: `stop()` removes only the controls and the
-command definition, never a panel.
+Which design tabs exist varies with the Fusion version and the user's entitlements, so a hardcoded tab list would miss panels on one build and log "not found" noise on another. `commands/_inspect_panels.design_inspect_panels` walks every workspace whose id is `config.design_workspace` or whose `productType` contains `design`, collects every panel whose id contains `inspect`, and deduplicates by id because one panel can be reached through several tabs. The same module places Match Units.
 
 ## Scope and limits
 
-- Expansion is frontier-driven from the two selections through real connectivity, so
-  the graph is the connected component containing them, not the whole assembly.
-  `_MAX_EXPANSION_STEPS` is a runaway backstop.
-- Full circles and ellipses have no endpoints and cannot join a chain; they are
-  excluded from the graph and rejected as selections with a specific message.
-- `SketchPoint.connectedEntities` also reports circles, arcs and ellipses that use the
-  point as their **centre**. Those are filtered by an endpoint-coincidence test, or
-  every circle centre would become a phantom branch.
+- Expansion is frontier-driven from the two selections through real connectivity, so the graph is the connected component containing them, never the whole assembly; `_MAX_EXPANSION_STEPS` is a runaway backstop.
+- Full circles and ellipses have no endpoints, cannot join a chain, and are refused as picks with a specific status message. `SketchPoint.connectedEntities` also reports curves that merely use the point as their **centre**; `_touches` filters those, or every circle centre would become a phantom branch.
+- `SketchPoint.connectedEntities` can be `None` and property reads can raise; `_iter_collection` absorbs both so one flaky point costs its neighbours, not the whole measurement.
+- `_fill_table` derives cell ids from a monotonic `_cell_serial`, never the row index: `TableCommandInput.clear()` removes rows but leaves the cell inputs alive, so a reused id throws on the second rebuild.
+- On failure `_report_unreachable` quotes `_nearest_gap`, the smallest distance between a start-side and an end-side node, because "not connected" is usually two endpoints just outside tolerance.
 
-### Still unverified in Fusion
+### Fallbacks not exercised in Fusion on this branch
 
-Each has a logged fallback rather than an exception:
-
-| Item | Fallback |
+| Item | Fallback in code |
 |---|---|
-| `CustomGraphicsBillBoard` behaviour | Label still placed, orientation view-dependent |
-| `createCylinderOrCone` with a sliver apex radius | Returns null → cone skipped |
-| `doExecutePreview()` from a mouse handler | Input-driven changes get their own preview |
-| Occurrence-proxy `vertex.geometry` being root-space | Logged for diagnosis |
-| Per-segment marker cost at the 250-segment cap | Cap plus a status note; typical paths are an order of magnitude smaller |
+| `CustomGraphicsBillBoard` behaviour | Label still placed; orientation view-dependent |
+| `createCylinderOrCone` with a sliver apex radius (`_CONE_APEX_FRAC`) | Returns null → cone skipped |
+| `doExecutePreview()` from a mouse handler | Logged; an input-driven change gets its own preview |
+| `BRepVertex.geometry` on an occurrence proxy being root-space | None; a wrong space would surface as "not connected" with a nearest-gap figure |
+| Per-segment marker cost near the 250-segment cap | The cap plus a status note |
+
+## Diagram
+
+The resolution ladder, as `_resolve_and_draw` drives `pathgraph`:
+
+```mermaid
+flowchart TD
+    S["Start and End captured in command_input_changed()"] --> G["_rebuild(): frontier expansion, pathgraph.weld(), pathgraph.build()"]
+    G --> SP{"mp_shortest on?"}
+    SP -->|yes| DIJ["pathgraph.shortest(), Dijkstra with seed and tail"]
+    DIJ --> R1{"Route found?"}
+    R1 -->|yes| DONE["Resolved: Length, Segments table, _highlight(), numbered cones"]
+    R1 -->|no| UNR["_report_unreachable() with the nearest gap"]
+    SP -->|no| W["pathgraph.resolve(): walk() from each start node, replaying _choices"]
+    W --> R{"Reached an end node?"}
+    R -->|yes| DONE
+    R -->|"no, and no picks yet"| H["walk() restricted to edges only, then to sketch only"]
+    H --> H1{"Exactly one succeeds?"}
+    H1 -->|yes| DONE
+    H1 -->|no| B["Furthest partial walk"]
+    R -->|"no, picks already made"| B
+    B --> C2{"Viable candidates at the fork?"}
+    C2 -->|no| UNR
+    C2 -->|yes| CONE["_draw_candidates(): one cone per branch, mp_branch_pick shown"]
+    CONE --> P["User clicks a cone (_handle_click) or its curve (command_pre_select, command_input_changed)"]
+    P --> CH["_choose_branch(): append to _choices"]
+    CH --> W
+```
+
+One measurement, showing where the preview cycle is forced and where the graphics are drawn:
+
+```mermaid
+sequenceDiagram
+    participant F as Fusion
+    participant E as entry.py
+    participant P as pathgraph.py
+    F->>E: command_input_changed (mp_start or mp_end)
+    E->>E: capture_selections, _rebuild()
+    E->>P: weld(), build()
+    E->>E: _resolve_and_draw()
+    E->>P: shortest() or resolve()
+    E->>E: _highlight() via mp_highlight, _set_markers(), _request_preview()
+    E->>F: command.doExecutePreview()
+    F->>E: command_execute_preview
+    E->>E: _clear_graphics(), _draw_terminals(), _draw_path_markers() or _draw_candidates()
+    F->>E: command_mouse_up or command_mouse_click on a cone
+    E->>E: _handle_click(), _choose_branch(), _resolve_and_draw()
+    F->>E: command_execute on Close
+    E->>E: consume_abort(), ptutil.clipText(_format(_result_cm))
+```
+
+## Tests
+
+- `tests/test_measurepath_pathgraph.py` loads `pathgraph.py` by file path and pins: `weld` merging within tolerance, splitting outside it, merging across a grid-cell boundary, rejecting a non-positive tolerance; a self-loop never being a branch candidate; a straight chain resolving directly; a fork with two reachable ends being ambiguous while a fork whose other arm is a dead end needs no choice; a replayed choice steering the walk; disjoint components not resolving; a sketch curve bridging to an edge within tolerance and not beyond it; the homogeneity fallback picking the only edge chain, skipping a restriction the tail violates, and failing a restricted walk with a wrong-kind seed; the end segment, the start segment, and a segment that is both being counted exactly once; `shortest` taking the cheap arm of a diamond, trying both ends of a start segment, counting seed and tail, and returning nothing when unreachable; `endpoints` on a chain, a non-chaining candidate, an empty chain and a chain that doubles back; `traversal` reporting entry nodes, running round a circuit, and returning empty for an unchainable list; and `test_total_always_equals_the_sum_of_the_breakdown`, which brute-forces Length == sum of rows over every start/end/seed/tail combination.
+- `tests/test_command_icons.py` pins the generated icon set (`IconSet("measurepath", THEME_VARIANTS, None)`).
+- Not covered: `entry.py` is Fusion-bound and is not exercised by the suite; nothing here is verified in Fusion on this branch except by the AST guards in `tests/test_command_contract.py` and `tests/test_command_abort.py`, which import it under the `adsk` stub.
+
+## Learnings
+
+**Collections can be `None` instead of empty, and a stale result on screen is worse than an error.** `SketchPoint.connectedEntities` returned `None` for some points; the frontier expansion raised and the graph was never built, but the *previous* selection's length stayed on screen next to the new picks and read as their answer. `_iter_collection` absorbs `None` and raising accessors, and a failed rebuild clears the dialog and says the geometry could not be read (`c8c0382`).
+
+**Make the bug you fixed impossible by construction and brute-force the invariant in tests.** Three plausible-wrong-number bugs — dropped end-segment length, Dijkstra trying one end of a start segment only, a kind-restricted walk accepting a wrong-kind seed — are each closed structurally in `pathgraph.py` and pinned by a test that checks Length == sum of the Segments rows over every combination (`b3bed5f`).
+
+**Dijkstra must not carry paths in the heap.** Copying `path + [seg]` per relaxation made the search quadratic in path length; `shortest` records a predecessor per settled node and rebuilds the route only on arrival, refusing only the seed by key because the node it was entered from has no `best` entry (code comment in `pathgraph.shortest`).
 
 ---
 

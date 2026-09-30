@@ -2,310 +2,212 @@
 
 [← Bottom-Up Update architecture](Bottom-Up%20Update.md) · [← Bottom-Up Update guide](../Bottom-Up%20Update.md)
 
-This note is the deep dive on the **dependency-ordering engine** behind the
-Bottom-Up Update command: how the assembly is turned into a directed acyclic
-graph (DAG), how that DAG is topologically sorted so that **every part is saved
-before any parent that references it**, and the invariants that keep the order
-correct and cheap. It documents the code in
-`commands/bottomupupdate/entry.py` — `traverse_assembly()` and
-`sort_dag_bottom_up()`.
+| | |
+|---|---|
+| **Scope** | Companion note to [Bottom-Up Update](Bottom-Up%20Update.md); no command of its own, so no Command ID, registry or UI rows |
+| **Files** | `commands/bottomupupdate/document_dag.py` (`resolve_document`, `build_document_dag`, `sort_document_dag_bottom_up`, `document_bottom_up_order`, `document_bottom_up_names`); in `commands/bottomupupdate/entry.py`: the reference `traverse_assembly` / `sort_dag_bottom_up`, and the resume helpers `_extract_latest_bottom_up_order`, `_extract_last_checkpoint`, `_analyze_resume_state` |
+| **Shared helpers** | none — the pure module imports nothing from the add-in (see [the pure-logic split](architecture.md#the-pure-logic-split)); the reference sort in `entry.py` logs through [`ptutil.log`](architecture.md#general_utils) |
+| **Tests** | `tests/test_bottomupupdate_document_dag.py`, `tests/test_bottomupupdate_dag.py`, `tests/test_bottomupupdate_resume.py` |
 
----
+## Purpose
 
-## 1. The invariant we must guarantee
+Turns the active assembly into a directed acyclic graph of *documents* and sorts
+it so that every document is saved before any document that references it. The
+graph is keyed by `dataFile.id`, so a component name that happens to repeat in
+two distinct documents cannot collapse them, and the same ids drive the
+checkpoint log that makes a run resumable.
 
-Autodesk Fusion resolves a document's external references **against whatever
-version of each child is current at save time**. If a parent assembly is saved
-before its children have been updated and saved, the parent locks onto stale
-child versions. The command exists to prevent exactly that.
+## The invariant
 
-> **Ordering invariant** — For every reference edge *parent → child*, the child
-> document is opened, updated, and saved **before** the parent. Equivalently:
-> the processing list is a *reverse topological order* of the reference graph
-> (a leaves-first / bottom-up order).
+Fusion resolves a document's external references against whichever version of
+each child is current at save time. If a parent is saved before its children
+have been updated and saved, it locks onto stale child versions.
 
-Everything below is in service of producing and preserving that order.
+> **Ordering invariant** — for every reference edge *parent → child*, the child
+> document is opened, updated and saved **before** the parent. The processing
+> list is a reverse topological order (leaves first) of the reference graph.
 
----
+## Two graphs
 
-## 2. Two units of work: components vs. documents
-
-There are two different graphs in play, and keeping them straight is what makes
-the design correct:
-
-| | **Component graph** (build/sort operates here) | **Document graph** (the actual save unit) |
+| | Component graph (reference implementation) | Document graph (live path) |
 |---|---|---|
-| Node | `adsk.fusion.Component` (by `name`) | A saved `dataFile` (by `id`) |
-| Source | `component.occurrences` | Reference relationship between documents |
-| Includes | Internal sub-components too | Only externalized/referenced documents |
-| Dedup key | component `name` | `dataFile.id` |
+| Functions | `entry.traverse_assembly`, `entry.sort_dag_bottom_up` | `document_dag.build_document_dag`, `sort_document_dag_bottom_up` |
+| Node | `adsk.fusion.Component`, keyed by `name` | a saved document, keyed by `dataFile.id` |
+| Edge source | `component.occurrences` | `component.occurrences`, crossing into a component owned by another document |
+| Includes | internal sub-components as nodes | only documents; internals fold into their owner |
+| Used by | `tests/test_bottomupupdate_dag.py` only | `command_created` and `command_execute` |
 
-The ordering engine builds and sorts the **component graph** (it is what the
-Fusion API exposes cheaply via `occurrences`). The processing loop then maps
-each component to its owning document and **deduplicates by `dataFile.id`** using
-the module-level `saved` set, so that a document backing several components — or
-reached along several component paths — is opened and saved exactly once. The
-component-level sort and the document-level `saved` set are two complementary
-dedup layers; the sort keeps the *list* clean, `saved` keeps the *side effects*
-clean.
+The component-name pair is retained as the tested reference implementation and
+is not on the live path; the module comment above it says it can be removed once
+the id path is verified in Fusion.
 
----
+## Pipeline
 
-## 3. The pipeline
+This flowchart shows the live path from root component to processing loop.
 
 ```mermaid
 flowchart TD
-    A["rootComponent"] --> B["traverse_assembly()<br/>Phase 1 — build the DAG"]
-    B --> C["assembly_dict<br/>(nested {component, children} nodes)"]
-    C --> D["sort_dag_bottom_up()<br/>Phase 2 — post-order topo sort"]
-    D --> E["bottom_up_order<br/>(unique names, leaves → roots)"]
-    E --> F["Processing loop<br/>open · updateAllReferences · save"]
-    F --> G["saved: set[dataFile.id]<br/>document-level dedup"]
-    G --> H["Root assembly saved last"]
+    A["design.rootComponent"] --> B["build_document_dag(root, resolver=resolve_document)"]
+    B --> C["nodes: doc_id -> {doc_id, name, children}; root_doc_id"]
+    C --> D["sort_document_dag_bottom_up(nodes, root_doc_id)"]
+    D --> E["document_bottom_up_order -> [{doc_id, name}, ...] leaves first, root omitted"]
+    E --> F["command_execute loop: findFileById(doc_id), open, update, save"]
+    E --> G["log: 'Bottom-up order:' doc_id|name lines; CHECKPOINT doc_id=..."]
+    G --> H["_analyze_resume_state on the next run"]
 ```
 
----
+## Resolving a component to its document
 
-## 4. Phase 1 — build the DAG (`traverse_assembly`)
+`resolve_document(component)` walks
+`component.parentDesign.parentDocument.designDataFile` and returns
+`(doc_id, component.name)`, or `None` when there is no reachable design data
+file (internal or never-externalised geometry). This is the same ownership path
+the processing loop reads for its skip checks, so the module adds no API
+assumption of its own; it is the only Fusion contact in the file and tests
+inject a fake resolver in its place.
 
-Starting at `rootComponent`, the function walks `component.occurrences`
-depth-first and records each component as a node:
+## Building the DAG (`build_document_dag`)
 
-```python
-node = {"component": <adsk.fusion.Component>, "children": {<name>: <node>, ...}}
-```
+The walk is depth-first over `component.occurrences`, carrying
+`current_doc_id`, the document that owns the position in the walk:
 
-A single `_memo` dict keyed by component **name** guarantees each distinct
-component's subtree is walked **once**. The node is inserted into `_memo`
-*before* its children are walked, which is what makes the build itself
-**cycle-safe** — a component that (pathologically) contained itself would find
-its own half-built node in `_memo` and stop, rather than recurse forever.
+- A child whose resolved id differs from `current_doc_id` is a **reference to
+  another document**: `get_node` creates or reuses its node, an edge
+  `nodes[current]["children"][child_id] = node` is recorded, and the child's
+  internals are walked once (`expanded_docs`) with the child's id as owner.
+- A child that resolves to `None` or to the same id is **internal**: the owner
+  is unchanged, the walk continues to find outgoing edges, and
+  `walked_components` (keyed by `(doc_id, name)`) stops a shared internal
+  component from being re-walked.
 
-- **First time a name is seen:** build the node, cache it, recurse into its
-  occurrences.
-- **Every later occurrence of that name:** reuse the *same* node object under
-  the new parent. Shared sub-assemblies become **shared node references**, not
-  copies — this is what turns the tree into a DAG.
+Shared documents therefore become shared node references, not copies, which is
+what makes the structure a DAG rather than a tree. Complexity is O(V + E) over
+documents and reference edges because each document's internals are expanded
+once.
 
-Complexity: **O(V + E)** over the component graph (V = distinct components,
-E = occurrence edges), instead of O(number of root-to-node paths) if subtrees
-were re-walked per occurrence.
+## Sorting (`sort_document_dag_bottom_up`)
 
----
+Depth-first post-order from the root node (or from every node when the root is
+unresolved): a node is appended only after all of its children. Two sets guard
+the walk:
 
-## 5. Phase 2 — reverse-topological sort (`sort_dag_bottom_up`)
+- `emitted` — a document reached through several parents (a diamond) is
+  appended exactly once, and shared subtrees are not re-descended (without it
+  the walk is O(paths), exponential for stacked diamonds).
+- `in_progress` — the nodes on the DFS stack (the VISITING colour of tri-colour
+  DFS). A back edge, impossible for a real Fusion assembly, returns instead of
+  recursing until `RecursionError`. The document sort returns silently; the
+  component-name reference sort logs `Cycle detected at component '<name>'`.
 
-The sort is a **depth-first, post-order traversal**: a node is appended to the
-output **only after all of its children have been appended**. That post-order
-discipline is precisely a reverse topological sort, and it is what satisfies the
-ordering invariant in §1.
+The root document is excluded from the result because the command saves it
+separately at the end.
 
-Two sets harden the walk:
+### Worked example — a diamond
 
-- **`emitted`** — names already appended. A shared component (a *diamond*
-  dependency reached through more than one parent) is appended **exactly once**,
-  and the walk stays **O(V + E)** instead of re-descending a shared subtree once
-  per path that reaches it (worst case *exponential* for stacked diamonds).
-- **`in_progress`** — the names currently on the DFS stack (the classic
-  *VISITING* state of tri-color DFS). Fusion assemblies are acyclic, but if a
-  malformed graph ever presented a back edge, this **breaks and logs it**
-  instead of recursing until Python raises `RecursionError`.
-
-```python
-def traverse_dag(node):
-    name = node["component"].name
-    if name in emitted:      # diamond already placed — don't re-walk
-        return
-    if name in in_progress:  # back edge — impossible for Fusion, guard anyway
-        ptutil.log(f"Cycle detected at component '{name}'; skipping re-entry.")
-        return
-    in_progress.add(name)
-    for child in node["children"].values():
-        traverse_dag(child)
-    in_progress.discard(name)
-    emitted.add(name)
-    sorted_components.append(name)
-```
-
-### Tri-color states of a node during the sort
+Root document `Chassis` references `GearboxAssy` and `WheelAssy`; both reference
+the same `Fastener` document.
 
 ```mermaid
-stateDiagram-v2
-    [*] --> UNVISITED
-    UNVISITED --> VISITING: enter traverse_dag (in_progress.add)
-    VISITING --> VISITED: children done (emitted.add, append)
-    VISITED --> VISITED: revisited via another parent (dedup, return)
-    VISITING --> VISITING: back edge detected (log, return)
-    VISITED --> [*]
-```
-
----
-
-## 6. Worked example — a diamond
-
-Assembly: a `Chassis` root references `GearboxAssy` and `WheelAssy`; **both**
-reference the same `Fastener` part. That shared child is the diamond.
-
-```mermaid
-graph TD
+flowchart TD
     Chassis --> GearboxAssy
     Chassis --> WheelAssy
     GearboxAssy --> Fastener
     WheelAssy --> Fastener
 ```
-*Edges point parent → child (dependency direction). `Fastener` has two parents.*
 
-Post-order walk from the roots (`GearboxAssy`, `WheelAssy` are the top-level
-entries under the root's occurrences):
+Post-order from `Chassis`: visit `GearboxAssy` → visit `Fastener` → append
+`Fastener` → append `GearboxAssy`; visit `WheelAssy` → `Fastener` already
+emitted → append `WheelAssy`; `Chassis` is the root and is not appended.
+Result: `[Fastener, GearboxAssy, WheelAssy]` — `Fastener` once, before both
+parents, and `docCount` equals the number of real save operations.
 
-```
-traverse(GearboxAssy)
-  traverse(Fastener)      → append "Fastener"          emitted={Fastener}
-  append "GearboxAssy"                                 emitted={Fastener,GearboxAssy}
-traverse(WheelAssy)
-  traverse(Fastener)      → already emitted, return    (no duplicate, no re-walk)
-  append "WheelAssy"
-```
+### Why DFS post-order rather than Kahn's algorithm
 
-Result: `["Fastener", "GearboxAssy", "WheelAssy"]`.
+The graph is already a nested parent → children structure, so recursion over it
+needs no in-degree bookkeeping or reverse-edge index, and post-order yields the
+leaves-first order directly (Kahn's emit order over parent → child edges would
+need reversing). `emitted` and `in_progress` give diamond dedup and cycle
+termination for free. Kahn's would be the better fit only for explicit cycle
+*reporting* (the never-emitted set is the cycle) or deterministic tie-breaking
+across independent branches; Fusion guarantees acyclicity and branch order
+follows `occurrences` order.
 
-- `Fastener` appears **once** and **before both** parents — invariant holds.
-- Before hardening, the same walk produced
-  `["Fastener", "GearboxAssy", "Fastener", "WheelAssy"]` — a duplicate that
-  inflated `docCount`, muddied the resume index math (`list.index()` returns the
-  *first* occurrence), and, for deeper stacked diamonds, re-walked shared
-  subtrees super-linearly.
+## Resume interaction
 
-The `Chassis` root is intentionally **excluded** from `bottom_up_order` and saved
-separately at the very end, after all children are current.
+`command_execute` writes the order to the log as `doc_id|name` lines under
+`Bottom-up order:` and each per-document checkpoint as
+`CHECKPOINT|SAVE_UPLOAD_COMPLETE|doc_id=…|component=…|saved_index=…|…`.
+On the next run `_analyze_resume_state`:
 
----
+1. requires the logged `Fusion client version:` to equal `app.version`;
+2. treats a `Bottom-up Update completed successfully` line as a finished run
+   (log cleared, full run);
+3. compares `_extract_latest_bottom_up_order` (the last order section, `doc_id`
+   column) with the fresh id list — any difference is a full run;
+4. takes `_extract_last_checkpoint` — the last checkpoint carrying `doc_id`;
+   the root's final checkpoint has none and is skipped — and resumes at
+   `current_doc_ids.index(doc_id) + 1`, clamped to the list length.
 
-## 7. Why post-order DFS here (rather than Kahn's algorithm)
+Keying on ids makes resume rename-robust and unambiguous; a log written by a
+name-keyed build fails the equality in step 3 and triggers a safe full run.
 
-Both DFS post-order and Kahn's algorithm (repeatedly emit in-degree-zero nodes)
-are valid topological sorts. This command uses **DFS post-order** because:
+## Known limits
 
-1. The graph is already materialized as a **nested parent→children structure**
-   from `occurrences`; recursion over it is the natural fit and needs no
-   in-degree bookkeeping or reverse-edge index.
-2. It yields the leaves-first order **directly** (a Kahn's emit-order over
-   parent→child edges would need reversing).
-3. `emitted` gives O(V + E) and diamond-dedup for free; `in_progress` gives
-   cycle detection for free — the same tri-color scheme a from-scratch DFS topo
-   sort uses.
+- **Recursion depth.** Both sorts recurse as deep as the assembly nests. Real
+  assemblies stay far below Python's default limit; an explicit stack would
+  remove the ceiling.
+- **Cycles are terminated, not reported.** The guard prevents runaway recursion
+  and (in the document sort) says nothing. Explicit reporting would mean a
+  Kahn-style pass whose leftover set is surfaced to the user.
+- **The order is computed twice per invocation** — in `command_created` for the
+  Run status text and again in `command_execute` — and each build resolves
+  `dataFile` per component, which is heavier than a name-only walk. Caching the
+  records for the active design across the two phases would remove the
+  duplicate.
+- **`document_bottom_up_names`** projects the id-keyed order back to names for
+  A/B comparison and is not used by the loop; consuming it would re-expose the
+  name collision at that boundary.
 
-Kahn's algorithm would be the better choice if we needed **explicit cycle
-reporting** (leftover nodes = the cycle) or **deterministic tie-breaking**
-across independent branches. Neither is required here: Fusion guarantees
-acyclicity, and branch order simply follows `occurrences` order.
+## Tests
 
----
+- `tests/test_bottomupupdate_document_dag.py` — loads `document_dag.py` from
+  its file path with a fake component / occurrence pair and an injected
+  resolver: a multi-component document collapses to one entry, an internal
+  component without a document folds into its owner, a shared document diamond
+  is emitted once before both parents, same-named distinct documents stay
+  distinct (and the `document_bottom_up_names` projection collapses them, made
+  explicit), a cyclic graph terminates.
+- `tests/test_bottomupupdate_dag.py` — the reference `traverse_assembly` /
+  `sort_dag_bottom_up`: children precede parents, a shared sub-assembly is
+  emitted once before all parents, a deep shared chain keeps order, a cycle is
+  broken.
+- `tests/test_bottomupupdate_resume.py` — the `doc_id` column is extracted from
+  the last order section, the root checkpoint is skipped, resume after the last
+  saved document and past the last document, full run on changed order and on
+  version mismatch, cleared after a completed run.
+- `resolve_document` against real `adsk` objects, and the loop that consumes
+  the order, are not exercised by the suite; nothing here is verified in Fusion
+  on this branch except by the AST guards in `tests/test_command_contract.py`
+  and `tests/test_command_abort.py`, which import `entry.py` under the `adsk`
+  stub.
 
-## 8. Complexity summary
+## Learnings
 
-| Stage | Metric | Before | After hardening |
-|---|---|---|---|
-| Build (`traverse_assembly`) | time | O(V + E) (memoized) | O(V + E) |
-| Sort (`sort_dag_bottom_up`) | time | O(paths) — worst case exponential | **O(V + E)** |
-| Sort output | length | V + duplicates | **V (unique)** |
-| Malformed cycle | behavior | `RecursionError` / hang | **logged + skipped** |
-| Progress `docCount` | accuracy | inflated by duplicates | **exact** |
-
-*V = distinct components, E = occurrence edges.*
-
----
-
-## 9. Resume interaction
-
-The bottom-up order is written into the checkpoint log as `doc_id|name` lines,
-and each per-document checkpoint records `doc_id=…`. On the next run,
-`_analyze_resume_state()` compares the freshly computed **document-id** order
-with the logged one (`dag_matches`) and resumes from the document after the last
-`SAVE_UPLOAD_COMPLETE` checkpoint via `list.index()` on the id list. Keying on
-`doc_id` makes resume **rename-robust** (renaming a component no longer
-invalidates the run) and unambiguous (ids are unique). A log produced by an
-older name-keyed build simply fails the `dag_matches` equality and triggers a
-safe full run — never an incorrect resume.
-
----
-
-## 10. Hardening status
-
-**Implemented — the document-id migration (`document_dag.py`).** Items 1 and 2
-below have landed: the live path (`command_created` / `command_execute`) now
-builds a **document-level DAG keyed by `dataFile.id`** via
-`document_bottom_up_order()` and iterates real save units. Internal
-sub-components fold into their owning document, multi-component documents
-collapse to one node, `docCount` counts real save operations, and the graph is
-collision-safe by construction (distinct documents sharing a component name stay
-distinct). The resume log/checkpoints moved to `doc_id` in lockstep (§9). The
-component-name functions (`traverse_assembly` / `sort_dag_bottom_up`) are
-retained as the tested reference implementation and are removable once the id
-path is verified inside Fusion.
-
-> The migration was validated by `py_compile` and pure-logic tests only; the
-> Fusion-entangled processing loop still needs an in-Fusion runtime pass. In
-> particular, confirm `resolve_document`'s ownership resolution for
-> referenced-but-not-open child documents on a real multi-level assembly.
-
-1. **Key the graph by a stable identity, not `name`.** *(Done, as `dataFile.id`.)*
-   Component names are not guaranteed unique across referenced external
-   documents; the id-keyed graph removes the latent silent-skip. The one boundary
-   to watch: any code path that still maps a name back to a component reintroduces
-   the collision, so keep the loop on ids.
-2. **Build a document-level DAG directly.** *(Done.)* Nodes keyed by
-   `dataFile.id`, internal components folded into their owner, the runtime
-   `saved` dedup now subsumed by the graph.
-
-**Still open.**
-
-3. **Iterative traversal for very deep assemblies.** Both sorts recurse to a
-   depth equal to the assembly nesting depth. Real Fusion assemblies nest far
-   below Python's ~1000-frame default limit, so this is low priority; an
-   explicit-stack post-order removes the ceiling entirely if it ever matters.
-4. **Explicit cycle *reporting*.** The guard prevents runaway recursion but only
-   logs. If diagnosing a malformed reference graph ever becomes a need, switch
-   this phase to Kahn's algorithm so the leftover (never-emitted) set *is* the
-   cycle, and surface it to the user.
-5. **Cache the order between `command_created` and `command_execute`.** The order
-   is now computed twice per invocation (dialog preview, then execution), and the
-   id-based build resolves `dataFile` per component — heavier than the old
-   name-only walk. Memoizing the records for the active design across the two
-   phases would remove the duplicate build.
-
----
-
-## 11. Testing
-
-Pure-logic coverage runs outside Fusion (fake component/occurrence objects; the
-`PowerTools.*` scaffolding in `tests/conftest.py` where a module import is
-needed):
-
-- `tests/test_bottomupupdate_dag.py` — the component-name reference sort:
-  children-before-parents, diamond-once, nested diamonds, cyclic-graph
-  termination.
-- `tests/test_bottomupupdate_document_dag.py` — the document-level DAG:
-  multi-component collapse, doc-less internal fold, document diamond, same-named
-  distinct documents stay distinct, cyclic-graph termination.
-- `tests/test_bottomupupdate_resume.py` — the id-based resume/log parsing: order
-  extraction on the `doc_id` column, checkpoint extraction, and the
-  resume / full-run / version-mismatch / completed decisions.
-
-The Fusion-entangled processing loop is not unit-testable outside Fusion and
-requires a manual in-app verification pass (see §10).
-
----
+- **Deduplicate the sort output, not just the side effects.** Before `emitted`
+  was added the component-name walk produced
+  `["Fastener", "GearboxAssy", "Fastener", "WheelAssy"]`: the duplicate inflated
+  `docCount`, muddied the resume index (`list.index()` returns the first hit)
+  and re-walked shared subtrees super-linearly.
+- **Key the graph on `dataFile.id`, never on component name.** Component names
+  are not unique across referenced documents; a name-keyed graph silently
+  skipped one of two same-named documents. Keeping the loop on ids end to end is
+  what realises the fix — any path that maps a name back to a component
+  reintroduces the collision.
 
 ## Sources
 
-Background on the DAG / topological-sort patterns this engine implements:
-
 - [Topological sorting — Wikipedia](https://en.wikipedia.org/wiki/Topological_sorting)
-- [Kahn's Algorithm vs DFS Approach: A Comparative Analysis — GeeksforGeeks](https://www.geeksforgeeks.org/dsa/kahns-algorithm-vs-dfs-approach-a-comparative-analysis/)
-- [Graph Topological Sort Patterns: Kahn's, DFS Post-Order, and Cycle Detection — techinterview](https://www.techinterview.org/post/3233465614/graph-topological-sort-patterns/)
-- [Graph Topological Sorting — Build System Order Example — GyanBlog](https://www.gyanblog.com/coding-interview/graph-topological-sort-build-system-example/)
-- [Resolving dependencies in a DAG with a topological sort — IPython Cookbook](https://ipython-books.github.io/143-resolving-dependencies-in-a-directed-acyclic-graph-with-a-topological-sort/)
+- [Kahn's Algorithm vs DFS Approach — GeeksforGeeks](https://www.geeksforgeeks.org/dsa/kahns-algorithm-vs-dfs-approach-a-comparative-analysis/)
 
 ---
 

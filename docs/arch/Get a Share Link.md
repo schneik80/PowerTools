@@ -2,61 +2,77 @@
 
 [← Get a Share Link guide](../Get%20a%20Share%20Link.md)
 
-## Architecture — command flow
+| | |
+|---|---|
+| **Command ID** | `PTSHD_sharedocument` |
+| **Registry** | group `share` (`Share Document`); enabled by default |
+| **UI location** | the `shareDropMenu` ("Share Menu") flyout on the right Quick Access Toolbar (`QATRight`); this control is appended (`addCommand(cmd_def, "", False)`) |
+| **Files** | `commands/shareDocument/entry.py`; `resources/` (16/32 light and dark, 64 light PNGs) — also the flyout's icon when this command creates it |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.isSaved`, `clipText`, `log`, `handle_error`](architecture.md#general_utils); [`ptutil.remove_from_qat_right_flyout`](architecture.md#ui_utils); [`config`](architecture.md#config) (workspace/panel constants are imported but unused) |
+| **Tests** | none beyond `tests/test_command_contract.py` |
 
-The following diagram shows what the add-in does when you select **Get a Share Link**.
+## Purpose
 
-```mermaid
-C4Context
-    title Get a Share Link — System Interactions
+Turns sharing on for the active document if it is off, copies the public share link to the clipboard and tells the user what the link allows (download, password, external references). When the hub administrator has disabled sharing it copies the document's private Fusion Team permalink instead. The constraint: the share state lives on `DataFile.sharedLink`, so the document must be saved.
 
-    Person(designer, "Designer", "Autodesk Fusion user selecting the command")
-    System(addin, "Share Menu Add-in", "Processes the share link request")
-    System_Ext(fusionApi, "Autodesk Fusion API", "Reads and writes document share state")
-    System_Ext(aps, "Autodesk Platform Services", "Stores sharing configuration and generates the share URL")
-    System_Ext(clipboard, "System Clipboard", "Receives the generated share link")
+## How it is wired
 
-    Rel(designer, addin, "Selects Get a Share Link")
-    Rel(addin, fusionApi, "Reads isSaved, isShareAllowed, sharedLink state")
-    Rel(addin, fusionApi, "Sets isShared = True if not already shared")
-    Rel(fusionApi, aps, "Persists share state and retrieves linkURL")
-    Rel(addin, clipboard, "Copies the share link via clipText()")
-    Rel(addin, designer, "Shows result dialog with share state details")
-```
+- `start()`: `addButtonDefinition`; `commandCreated` → `command_created`; then the flyout: `ui.toolbars.itemById("QATRight")`; if `controls.itemById("shareDropMenu")` is `None`, `controls.addDropDown("Share Menu", ICON_FOLDER, "shareDropMenu", "FeaturePacksCommand", True)` — before Fusion's built-in `FeaturePacksCommand` control, with this command's icon folder; otherwise the existing flyout. Then `dropDown.controls.addCommand(cmd_def, "", False)` (appended). All six `share` commands run this same find-or-create block, so whichever starts first (registry order puts this one first) creates the flyout.
+- `stop()`: [`ptutil.remove_from_qat_right_flyout(CMD_ID, "shareDropMenu")`](architecture.md#ui_utils) removes the control and deletes the flyout only when its last child is gone; then the definition.
+- `command_created(args)`: wires `execute` → `command_execute` and `destroy` → `command_destroy`; adds no inputs, so Fusion runs `execute` immediately when a document is open.
+- `command_execute(args)`, in order:
+  1. `isShareAllowed = ui.commandDefinitions.itemById("SimpleSharingPublicLinkCommand").controlDefinition.isEnabled` (the hub's sharing policy).
+  2. [`ptutil.isSaved()`](architecture.md#general_utils) false → return (it shows the "Please Save" prompt).
+  3. `not isShareAllowed` → `clipText(app.activeDocument.designDataFile.fusionWebURL)`, message "Sharing is not allowed … A private perma-link was copied", return.
+  4. `shareState = app.activeDocument.dataFile.sharedLink`; `wasShared = shareState.isShared`. Not shared → `ui.progressBar.showBusy("Generating Share Link")`, `shareState.isShared = True`.
+  5. `shareLink = shareState.linkURL`; empty → message "Failed to share the document." then `exit(0)`. `exit` raises `SystemExit`, which the surrounding `except Exception` does not catch, so it propagates out of the handler; the progress bar is not hidden on this path.
+  6. `clipText(shareLink)`; builds an HTML result: already shared / now shared, the link, then `shareState.isDownloadAllowed` and `shareState.isPasswordRequired` notes; when `app.activeProduct.productType == "DesignProductType"` and `has_external_child_reference(rootComponent)` (recursive over `occurrences`, true on any `isReferencedComponent`), a note whose wording depends on whether download is allowed. `progressBar.hide()`, `ui.messageBox(resultString, "Share Document", 0, 2)`.
+  7. Any exception → `ptutil.handle_error(CMD_NAME)`.
+- `command_destroy(args)`: resets `local_handlers`.
 
-### Detailed command flow
+## Data and state
+
+None. Clipboard writes go through `ptutil.clipText` (`clip.exe` on Windows, `pbcopy` otherwise).
+
+## Diagram
+
+The branches in `command_execute`; every other share command is linear.
 
 ```mermaid
 flowchart TD
-    A([User selects Get a Share Link]) --> B{Document saved?}
-    B -- No --> C[Show save-required dialog\nCommand exits]
-    B -- Yes --> D{Hub sharing enabled?\nSimpleSharingPublicLinkCommand.isEnabled}
-    D -- No --> E[Copy fusionWebURL permalink\nto system clipboard]
-    E --> F[Show sharing-disabled message\nwith permalink note]
-    D -- Yes --> G{shareState.isShared?}
-    G -- No --> H[Show progress indicator\nSet isShared = True via Fusion API]
-    G -- Yes --> I[wasShared = True]
-    H --> J[Read shareState.linkURL]
-    I --> J
-    J --> K{linkURL empty?}
-    K -- Yes --> L[Show failure dialog\nCommand exits]
-    K -- No --> M[Copy shareLink to clipboard\nvia futil.clipText]
-    M --> N[Build result message:\nshare state + download setting\n+ password setting + external refs]
-    N --> O[Show result dialog]
+    A["command_execute()"] --> B["read SimpleSharingPublicLinkCommand.controlDefinition.isEnabled"]
+    B --> C{"ptutil.isSaved()?"}
+    C -- no --> X1["return"]
+    C -- yes --> D{"sharing enabled on the hub?"}
+    D -- no --> E["clipText(designDataFile.fusionWebURL)<br/>messageBox: private permalink copied"]
+    D -- yes --> F{"dataFile.sharedLink.isShared?"}
+    F -- no --> G["progressBar.showBusy()<br/>sharedLink.isShared = True"]
+    F -- yes --> H["wasShared = True"]
+    G --> I["shareLink = sharedLink.linkURL"]
+    H --> I
+    I --> J{"linkURL empty?"}
+    J -- yes --> K["messageBox 'Failed to share'<br/>exit(0) → SystemExit"]
+    J -- no --> L["clipText(shareLink)"]
+    L --> M["result: shared state, isDownloadAllowed,<br/>isPasswordRequired, has_external_child_reference"]
+    M --> N["progressBar.hide(); messageBox"]
 ```
-
----
 
 ## Key API surface
 
 | API element | Purpose |
 |---|---|
-| `ui.commandDefinitions.itemById("SimpleSharingPublicLinkCommand")` | Checks whether sharing is enabled for this Hub |
-| `futil.isSaved()` | Guards against operating on unsaved documents (checks `app.activeDocument.isSaved`; shows a "Please Save" prompt if not) |
-| `app.activeDocument.dataFile.sharedLink` | Returns the `SharedLink` object for reading and setting share state |
-| `sharedLink.isShared` | Reads or sets the sharing enabled state |
-| `sharedLink.linkURL` | The public share URL |
-| `sharedLink.isDownloadAllowed` | Whether recipients can download the document |
-| `sharedLink.isPasswordRequired` | Whether the share link is password protected |
-| `app.activeDocument.designDataFile.fusionWebURL` | Private permalink used when Hub sharing is disabled |
-| `futil.clipText(text)` | Copies the link to the system clipboard |
+| `ui.commandDefinitions.itemById("SimpleSharingPublicLinkCommand").controlDefinition.isEnabled` | Whether the hub allows public sharing |
+| `app.activeDocument.dataFile.sharedLink` | `SharedLink`: `isShared` (read and set), `linkURL`, `isDownloadAllowed`, `isPasswordRequired` |
+| `app.activeDocument.designDataFile.fusionWebURL` | Private permalink copied when sharing is disabled |
+| `app.activeProduct.rootComponent` / `Occurrence.isReferencedComponent` | External-reference detection in `has_external_child_reference` |
+| `ui.progressBar.showBusy` / `hide` | Busy indicator while the link is generated |
+
+## Tests
+
+- `tests/test_command_contract.py` — registry/doc/description contract; `PTSHD_sharedocument` is checked against the ID shape.
+
+Not covered: `entry.py` is Fusion-bound and is not exercised by the suite; nothing here is verified in Fusion on this branch except by the AST guards in `tests/test_command_contract.py` and `tests/test_command_abort.py`, which import it under the `adsk` stub. The icon set is not pinned in `tests/test_command_icons.py`.
+
+---
+
+*Copyright © 2026 IMA LLC. All rights reserved.*

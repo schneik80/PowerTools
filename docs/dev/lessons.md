@@ -41,8 +41,10 @@ document-scoped pipeline; `commandCreated` fires, the command terminates before
 `execute`. Fix: act from `commandCreated` like `closealldocuments`,
 `datatoggle`, `scriptsmanager` already did; documented under *Command execution
 model* in `architecture.md`. Open Recent's flyout items had the same bug and
-were moved to `commandCreated` in `8a676af`, leaving no known `execute`-handler
-command reachable without a document. -- `f18b911`, `11cfc51`, `8a676af`
+were moved to `commandCreated` in `8a676af`. Still on `execute` and reachable
+from the QAT with no document open: Favorites' navigate items and its Add
+button (`commands/favorites/entry.py`), found in the 2026-09-30 documentation
+review and not yet fixed. -- `f18b911`, `11cfc51`, `8a676af`
 
 **Never call `args.command.doExecute()` from `commandCreated`.** It runs inside
 `CommandDefinition::createCommand`, so `doExecute(True)` *or* `doExecute(False)`
@@ -67,7 +69,10 @@ support it; the command must finish before a transaction opens. Close All
 Documents therefore runs entirely from `commandCreated`, re-checks
 `Document.isValid` before each close and pumps events for 0.25 s after it.
 Never-saved documents are closed with `close(True)` so Fusion can collect a
-name; `doc.save()` cannot write them. -- `11cfc51`
+name; `doc.save()` cannot write them. Version Diff still opens and closes its
+comparison document inside `command_execute`
+(`commands/versiondiff/entry.py`); it ships disabled, and this is why it must
+not be enabled as-is. -- `11cfc51`
 
 **A control placed in `start()` may silently not exist; retry from
 `documentActivated`.** Symptom: Preferences unreachable for a whole session when
@@ -259,13 +264,31 @@ as their answer. `_iter_collection()` absorbs `None` and raising accessors; a
 failed rebuild now clears the dialog and says the geometry could not be read.
 -- `c8c0382`
 
+**A `TriadCommandInput` is hidden with `hideAll()`, not `isVisible`.** Setting
+`isVisible = False` on the triad input leaves its manipulator drawn in the
+viewport; `hideAll()` is what removes it, and the individual `is*Visible`
+flags bring the parts back once there is a plane to place it on
+(`commands/flattensurface/entry.py`, the `INPUT_TRIAD` setup).
+
+**A `delete-if-empty` branch on a built-in panel or tab is dead code that
+reads as a rule-10 violation.** `sketchfix`, `sketchunderconstrained`,
+`timelinecompute` and `insertSTEP` end `stop()` with "delete the panel when its control count
+is 0, then the tab when it has no panels" against Fusion's own
+`SketchModifyPanel` / `InsertPanel`, which are never empty. The branch never
+fires, but a reader (or an AST rule) cannot tell it from a real deletion;
+remove such branches rather than documenting them. -- found in the
+2026-09-30 documentation review, not yet fixed
+
 **`SketchPoint.worldGeometry` returns the origin for some point types.** Go
 through `sketch.sketchToModelSpace()` (see `measurepath/entry.py`,
 `sketchcirclecenterpoint/entry.py`).
 
 **Preview-driven edits must be idempotent.** Round Sketch Dimensions applies in
-`executePreview`, reverts on Cancel and commits on OK; skips angular,
-formula-driven and driven dimensions to preserve parametric intent. -- `e6b80ba`
+`executePreview`, reverts on Cancel and commits on OK. Length and angular
+dimensions are rounded on separate increments; driven (reference) dimensions
+and any expression that is not a plain number are skipped to preserve
+parametric intent (`commands/roundsketchdimensions/entry.py`,
+`rounding.is_plain_numeric_expression`). -- `e6b80ba`
 
 **Do not stack heuristics on logic that has not been verified in Fusion.**
 Infer Constraints accumulated a Revolute default, a three-mode redundancy
@@ -505,7 +528,11 @@ control across releases, and dumps the File dropdown's control IDs under DEBUG.
 
 **Dead `positionID`s fail silently.** Two anchors pointed at IDs that never
 resolved (`PTAT_GetandUpdate` casing; a control in a different panel). Check
-that an anchor lives in the same container. -- `6789216`
+that an anchor lives in the same container -- and that it has already been
+*placed*: `shareSettings` anchors on `PTSHD_projectInvite`, which starts four
+registry entries later, so what Fusion does with that anchor is whatever it
+does with an unresolved one (`commands/shareSettings/entry.py`, not yet
+verified in Fusion). -- `6789216`
 
 **Placement is discovered where the set of tabs varies.** Measure Path adds
 itself to every Inspect panel of every design-product workspace because which
@@ -618,6 +645,13 @@ argument so both run from any host. -- `25d5f48`, `93c6b36`
 mode left POSIX entries at `0o200`, so a directory lost its traverse bit and
 `rmtree` could no longer descend. -- `19ac0f7`
 
+**`exit()` inside a Fusion handler raises `SystemExit`, which `except
+Exception:` does not catch.** `shareDocument/entry.py` still ends its
+empty-link path with `exit(0)`, leaving the progress bar shown and the
+`SystemExit` to propagate through `add_handler`'s wrapper. Return from the
+handler instead. -- found in the 2026-09-30 documentation review, not yet
+fixed
+
 **Bare `except:` is banned; intentional no-op property touches are written
 `_ = obj.prop` so B018 does not flag them and readers see the intent.**
 `doc.documentReferences.count` is touched on purpose to force a raise for
@@ -694,13 +728,15 @@ is git-ignored so a distribution is always in ship mode.** When DEBUG is on,
 that there was literally no add-in log file to collect. -- `fe5efcb`, `f388ad9`,
 `16be595`
 
-**Diagnose through `ptutil.log`, not `_diag`.** `commands/assemblypalette`
-carries a local `_diag` helper that only reaches Fusion's **Text Commands**
-window; nothing it writes lands in `cache/powertools-debug.log`. During the
-parked gallery auto-refresh work every refresh decision was logged through
-`_diag`, so when the crash happened none of that reasoning survived in the log
-file that gets collected -- the investigation had to proceed from the CER stack
-alone. If a trace needs to outlive the session, it goes through `ptutil.log`.
+**Every diagnostic goes through `ptutil.log`; a local helper may only wrap
+it.** `commands/assemblypalette` once carried a `_diag` helper that wrote to
+Fusion's **Text Commands** window directly, so nothing it logged reached
+`cache/powertools-debug.log`. During the gallery auto-refresh attempt every
+refresh decision went through it, and when the crash happened none of that
+reasoning survived in the file that gets collected -- the investigation had
+to proceed from the CER stack alone. `_diag` now delegates to `ptutil.log`
+with a prefix (`fdb334f`); a trace that must outlive the session goes through
+`ptutil.log`, nothing else.
 
 **Debugging setup traps (macOS/Zed)** are in [debugging.md](debugging.md):
 Fusion's Python has no pip; `in_process_debug_adapter=True` or a second Fusion
@@ -780,6 +816,20 @@ Do not regress these (`a06e049`, `266e2c2`):
   `AGENTS.md` told agents to run `python -m pytest -q`, which has never worked
   here (pytest is only in `.venv`). Verify the commands you document by
   running them.
+- **Architecture docs describe the as-is state; the journey goes in a
+  Learnings section or in this ledger.** The dev and arch docs had
+  accumulated "was moved from", "previously", "no longer" narrative and
+  commit hashes inside design sections, a file-structure reference showing a
+  folder that had been renamed, a shared flyout the bootstrap had stopped
+  creating, and a "System context" diagram copied into every command note.
+  The owner's correction (2026-09-30): document what the code is today; when
+  an event is a learning, put it in a separate, clearly headed section;
+  reference and explain the shared modules; keep only diagrams that earn
+  their place; name the tests. The rule lives in
+  `.claude/rules/docs-release.md`, the template in `docs/arch/index.md`. A
+  doc claim that has not been checked against the source is not verified --
+  the review found notes naming handlers, helpers, anchors and placements
+  that did not match the code.
 
 ---
 

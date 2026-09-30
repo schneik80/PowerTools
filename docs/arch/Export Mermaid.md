@@ -2,58 +2,48 @@
 
 [← Export Mermaid Diagram guide](../Export%20Mermaid.md)
 
-## Architecture
+| | |
+|---|---|
+| **Command ID** | `PTE_exportmermaid` (`CMD_NAME = "Export Mermaid Diagram..."`) |
+| **Registry** | group `exports` (`Exports`); enabled by default |
+| **UI location** | QAT **File** dropdown (`FileSubMenuCommand`), `controls.addCommand(cmd_def, "ExportCommand", True)` — directly before Fusion's **Export** item; no icon folder |
+| **Files** | `commands/exportmermaid/entry.py` only |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils), [`ptutil.log`, `ptutil.handle_error`](architecture.md#general_utils) |
+| **Tests** | none of its own; `tests/test_command_contract.py`, `tests/test_command_abort.py` |
 
-### System context
+## Purpose
 
-The following C4 context diagram shows how the **Export Mermaid Diagram** command interacts with Autodesk Fusion and external rendering tools.
+Writes the active design's occurrence tree as a Mermaid `graph LR` flowchart to `<document name>.mmd` in a folder the user picks, then opens the same diagram in the Mermaid Live viewer in the system browser. One edge per parent/child occurrence pair; node ids are the occurrence names with Mermaid-hostile characters removed. There is no dialog and no options: the whole command is one `execute`.
 
-```mermaid
-C4Context
-    title Export Mermaid Diagram — System Context
+## How it is wired
 
-    Person(user, "Designer", "Autodesk Fusion user with an active assembly open.")
+- `start()`: `addButtonDefinition(CMD_ID, CMD_NAME, CMD_Description)`, `command_created` on `commandCreated` (global handler list), then adds the control to the File dropdown before `ExportCommand`.
+- `stop()`: deletes the File-dropdown control and the definition.
+- `command_created(args)`: registers `command_execute` and `command_destroy` in `local_handlers`; builds no inputs, so Fusion auto-executes and `command_execute` runs only with a document open (rule 1).
+- `command_execute(args)`:
+  1. `adsk.fusion.Design.cast(app.activeProduct)`; not a design -> "A Design Must be Active.", return.
+  2. `resultString` = a `%%{init: ...}%%` front-matter block (theme `base`, look `classic`, layout `elk`, five `themeVariables`) + `graph LR\n`.
+  3. `traverseAssembly(design.parentDocument.name, rootComp.occurrences.asList, 1, resultString)` — see below.
+  4. `ui.createFolderDialog()` ("Choose Folder to save Mermaid Graph"); on `DialogOK` writes `os.path.join(folder, safe_name + ".mmd")` (`safe_name` replaces `<>:"/\|?*` in the document name with `_`), UTF-8; shows "Graph saved at: <path>"; then encodes `{"code": <mermaid>, "mermaid": "{\"theme\": \"base\"}"}` as base64 and calls `webbrowser.open("https://mermaid.live/view#base64:<state>")`. Cancel -> return, nothing written and no browser.
+  5. Exceptions -> `ptutil.handle_error(CMD_NAME, show_message_box=True)`.
+- `command_destroy(args)`: resets `local_handlers`.
 
-    System(addin, "Power Tools – Export Mermaid", "Autodesk Fusion add-in command that traverses the component hierarchy and writes a Mermaid flowchart file.")
+### Tree walk
 
-    System_Ext(fusion, "Autodesk Fusion", "CAD platform. Provides the design API, component occurrence tree, and the folder browser dialog.")
+`traverseAssembly(sParent, occurrences, currentLevel, inputString)` iterates `occurrences.item(i)`. For each occurrence it sanitises both `occ.name` and `sParent` — `-`, `<`, `>` become `_`; `"`, `=`, `(`, `)` are deleted — builds `"<parent> --> <child>\n"`, deletes every space in that line, appends it, and recurses into `occ.childOccurrences` with the **unsanitised** `occ.name` as the new parent (it is sanitised again at the next level). The root's label is the document name; child ids are occurrence names including their `:<n>` instance suffix, so two instances of one component are two nodes. `currentLevel` is carried but unused.
 
-    System_Ext(fs, "Local File System", "Receives the exported Mermaid file named after the active document.")
+## Data and state
 
-    System_Ext(viewer, "Mermaid Viewer", "Renders the .mmd file into a visual diagram. Can be Mermaid Live, a VS Code extension, GitHub, or any compatible Markdown renderer.")
+- Module-level: `local_handlers` only.
+- Output: `<sanitised document name>.mmd` in the chosen folder; the same text is also sent to `mermaid.live` in the URL fragment (the diagram content leaves the machine only as far as the browser; the fragment is not sent to the server by the browser, but the site renders it). No caches, settings, custom events or temp files.
 
-    Rel(user, fusion, "Invokes Export Mermaid Diagram via File menu")
-    Rel(fusion, addin, "Fires CommandCreated and Execute events")
-    Rel(addin, fusion, "Reads rootComponent.occurrences recursively")
-    Rel(addin, fs, "Writes {DocumentName}.mmd")
-    Rel(user, viewer, "Opens .mmd file for rendering")
-    Rel(viewer, fs, "Reads .mmd file")
-```
+## Tests
 
-### Command processing flow
+- `tests/test_command_contract.py` — `CMD_Description`, literal `CMD_ID` shape, registry/doc/README contract.
+- `tests/test_command_abort.py` — the `doExecute` AST guard.
 
-The following diagram shows the internal processing steps that run when the command executes.
+`entry.py` is Fusion-bound and is not exercised by the suite; nothing here is verified in Fusion on this branch except by the AST guards above, which import it under the `adsk` stub. `traverseAssembly` and the name sanitising are pure string logic but live in `entry.py` and have no tests; no icon set exists to pin.
 
-```mermaid
-flowchart TD
-    A([User selects Export Mermaid Diagram]) --> B[CommandExecute event fires]
-    B --> C{Active product\nis a Fusion Design?}
-    C -- No --> D[Show error:\nA Design Must be Active]
-    C -- Yes --> E[Get rootComponent and document name]
-    E --> F[Write Mermaid front matter\ntheme init block]
-    F --> G[Write graph LR declaration]
-    G --> H[traverseAssembly:\nIterate rootComponent.occurrences]
-    H --> I[Sanitize parent and child names\nReplace or remove special characters]
-    I --> J[Write relationship string:\nParent--&#62;Child]
-    J --> K{Child has\nchild occurrences?}
-    K -- Yes --> L[Recurse into\nchild occurrences]
-    L --> I
-    K -- No --> M{More occurrences\nat this level?}
-    M -- Yes --> I
-    M -- No --> N[Show folder picker dialog]
-    N --> O{User confirmed\ndestination folder?}
-    O -- No --> P([Exit — no file written])
-    O -- Yes --> Q[Write {DocumentName}.mmd]
-    Q --> R[Show confirmation message\nwith full file path]
-    R --> P
-```
+---
+
+*Copyright © 2026 IMA LLC. All rights reserved.*

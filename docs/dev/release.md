@@ -41,7 +41,7 @@ add-in folder.
 
 ## Cutting a release
 
-1. Make sure [CI](index.md#developer-tooling) is green on the commit you are
+1. Make sure [CI](index.md#developer-tooling-and-the-ci-gates) is green on the commit you are
    releasing.
 2. On GitHub, draft a new **Release** with a tag of the form `vX.Y.Z`
    (e.g. `v1.2.0`). Write the release notes as usual.
@@ -87,13 +87,10 @@ regression), rather than shipping them.
 ## Keeping README.pdf current
 
 `README.pdf` ships in the zip but is a **checked-in artifact** — nothing in
-Fusion or in the add-in generates it. Left alone it goes stale the moment
-`README.md` changes, and the release quietly ships a PDF that disagrees with the
-Markdown beside it. That happened once already: the Flatten Surface row was
-added to the command table in `b5946ea` and the PDF was not rebuilt until
-`f93ec75`.
-
-Two things now prevent it:
+Fusion or in the add-in generates it. Left alone it would go stale the moment
+`README.md` changes and the release would ship a PDF that disagrees with the
+Markdown beside it. Two guards keep the two in step (the ledger entry is in
+[`lessons.md`](lessons.md#tooling-ci-docs-release)):
 
 | Guard | Where | Needs pandoc? |
 |---|---|---|

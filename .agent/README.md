@@ -63,6 +63,8 @@ depends on what kind of thing it is.
 | A tool/path/command fact you had to hunt for | [`environment.md`](environment.md) |
 | A process or git convention | [`workflow.md`](workflow.md) |
 | Where some code lives | `docs/dev/codebase-map.md` |
+| How a shared module or pattern works, as it is today | `docs/arch/architecture.md` (shared-module reference and pattern diagrams) |
+| A per-command design decision or a lesson specific to one command | `docs/arch/<Doc>.md` -- as-is sections for the design, a `## Learnings` section at the end for the lesson |
 
 Three standing constraints on anything added here:
 

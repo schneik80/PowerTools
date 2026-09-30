@@ -2,9 +2,46 @@
 
 [← Favorites guide](../Favorites.md)
 
-## Data model
+| | |
+|---|---|
+| **Command ID** | `PTAT_favorites_dropdown` (`CMD_ID`, the QAT dropdown control). Button definitions: `PTAT_favorites_add` (`CMD_ADD_ID`, "Favorite This Location"), `PTAT_favorites_edit` (`CMD_EDIT_ID`, "Edit Favorites"), and one generated `PTAT_fav_<i>` per saved entry |
+| **Registry** | group `document` (`Document Tools`); enabled by default |
+| **UI location** | a dropdown added directly to the `QAT` toolbar (not inside the File menu), anchored before the first of `FileSubMenuCommand`, `NewDocumentCommand`, `new`; else after the first of `ShowDataPanelCommand`, `DataPanelCommand`; else appended |
+| **Files** | `commands/favorites/entry.py`; `resources/` (16/32/64 px light and dark icons used by the dropdown) |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils), [`ptutil.log`](architecture.md#general_utils), [`ptutil.read_json`, `ptutil.write_json_atomic`](architecture.md#json_utils) |
+| **Tests** | none of its own; `tests/test_command_contract.py`, `tests/test_command_abort.py` |
 
-Each hub's favorites are saved in a separate file: `cache/favorites_<sanitised_hub_id>.json`.
+## Purpose
+
+A QAT dropdown of saved Fusion Team locations: two fixed actions (add the active document's location, edit the list) followed by one generated button per favorite that runs `Dashboard.ShowInLocation <urn>` to reveal it in the Data Panel. The shaping constraint is that favorites are stored per hub, so the menu must be rebuilt whenever the active hub changes, and Fusion offers no hub-changed event — the command watches document events instead.
+
+## How it is wired
+
+- `start()`, in order:
+  1. `_remove_legacy_cache()` deletes `cache/favorites.json` if present.
+  2. `_active_hub_id = _get_active_hub_id()` (`app.data.activeHub.id`, falling back to `hubId`; `""` on any failure or when no hub is in context yet).
+  3. Creates or reuses the `CMD_ADD_ID` and `CMD_EDIT_ID` button definitions and registers `_add_favorite_created` / `_edit_favorites_created` on their `commandCreated`.
+  4. Deletes any stale `CMD_ID` control on the `QAT` toolbar, then `qat.controls.addDropDown(CMD_NAME, ICON_FOLDER, CMD_ID, anchor, is_before)` using the anchor ladder in the table above.
+  5. Adds the add and edit commands and a separator to the dropdown, then `_rebuild_menu()`.
+  6. Registers `_favorites_document_event` on both `app.documentActivated` and `app.documentOpened`.
+- `stop()`: deletes the dropdown control, the add/edit definitions and every id in `_fav_cmd_ids`, then resets all module state and rebinds `local_handlers` to a new empty list.
+- `_favorites_document_event(args)`: re-reads the hub id; when it is non-empty and differs from `_active_hub_id`, `_on_hub_changed()` records it and calls `_rebuild_menu()`. Exceptions are logged at `ErrorLogLevel` and swallowed.
+- `_rebuild_menu()`: deletes the controls and definitions listed in `_fav_cmd_ids`, loads the active hub's file with `_load_favorites()`, and for each entry `i` creates (or reuses) button definition `PTAT_fav_{i}` titled with the entry's `display`, registers the closure from `_make_navigate_handler(urn, display)` on its `commandCreated`, and adds it to the dropdown.
+- Navigation: `_make_navigate_handler` returns `_created`, which registers a nested `_execute` on `args.command.execute`. The command builds no inputs, so Fusion auto-executes it and `_execute` runs `app.executeTextCommand(f"Dashboard.ShowInLocation {urn}")`; a failure logs and shows a message box. Because the work is in `execute`, not `commandCreated`, it depends on `execute` being raised — which Fusion does not do with no document open (rule 1); Open Recent, by contrast, acts from `commandCreated`.
+- Add (`PTAT_favorites_add`): `_add_favorite_created` registers `_add_favorite_execute`, which requires `app.activeDocument`, `doc.isSaved` and `doc.dataFile`; takes `dataFile.id` as the URN, `_get_folder_lineage(dataFile.parentFolder)` for the display string (up to ten ancestors joined with `" > "`), `_get_document_name()` for the name; rejects a duplicate URN; appends, `_save_favorites()`, `_rebuild_menu()`.
+- Edit (`PTAT_favorites_edit`): `_edit_favorites_created` copies the loaded list into `_edit_staged_favorites`, builds the dialog with `_build_edit_dialog_inputs()`, and registers `_edit_favorites_input_changed`, `_edit_favorites_execute` and `_edit_favorites_destroy`. Deletes are staged in memory and committed only by `execute` (OK); `destroy` clears the staged state on OK and Cancel alike.
+
+Neither `_add_favorite_execute` nor the navigate `_execute` reads command inputs, so [`ptutil.capture_selections`](architecture.md#selection_utils) is not involved.
+
+## Data and state
+
+- Module-level: `_favorites_dropdown` (the control), `_fav_cmd_ids` (generated definition ids), `_active_hub_id`, `local_handlers`, and the edit-dialog triple `_edit_staged_favorites` / `_edit_checkbox_map` / `_edit_build_version`.
+- On disk: one file per hub, `cache/favorites_<sanitised hub id>.json`, where `_hub_cache_file()` replaces every character that is not alphanumeric, `-` or `_` with `_` (`b.abc123` -> `favorites_b_abc123.json`; an empty hub id maps to `favorites_unknown.json`). `cache/` is `<add-in root>/cache`. Reads go through `ptutil.read_json(path, {})` (missing or corrupt file -> empty list); writes through `ptutil.write_json_atomic`.
+- Legacy file `cache/favorites.json` is deleted on every `start()` if it exists.
+- No settings keys, custom events or temp files.
+- Every `_rebuild_menu()` appends new handler objects to `local_handlers` without removing the previous ones; they are released together in `stop()`.
+
+## Data model
 
 ```json
 {
@@ -19,49 +56,24 @@ Each hub's favorites are saved in a separate file: `cache/favorites_<sanitised_h
 }
 ```
 
-- `hub_id`: the Fusion hub ID this file belongs to (informational).
-- `name`: document name shown in edit UI.
-- `display`: folder lineage shown in the dropdown and edit table.
-- `urn`: the `dataFile.id` URN used for reliable navigation.
+- `hub_id`: the hub the file belongs to (informational; the filename is the key).
+- `name`: document name, shown in the edit table; `_get_favorite_name()` falls back to the last `display` segment when it is empty.
+- `display`: folder lineage, used as the button title and the edit table's location column.
+- `urn`: `dataFile.id` of the document that was active when the favorite was added — the same URN form Show In Location uses. Navigation therefore reveals that document, and with it the folder shown in `display`.
 
-## Architecture
+## Edit dialog
 
-The Favorites module creates one static dropdown control and a set of dynamic command definitions. The first two static actions are **Favorite This Location** and **Edit Favorites**. Below those actions, each favorite entry is added as a generated command that executes `Dashboard.ShowInLocation` for its saved URN.
+`_build_edit_dialog_inputs()` deletes and recreates three inputs each time it runs: a read-only count text box (`PTAT_favorites_edit_count`), a three-column table (`PTAT_favorites_edit_table`, ratio `1:3:6`, 3-12 visible rows) with one checkbox + two read-only text boxes per staged favorite, and a full-width bool "Delete Selected" button (`PTAT_favorites_edit_delete`) that starts disabled. Per-row input ids carry a build counter (`fav_edit_sel_<build>_<i>`) so ids never collide across rebuilds inside one dialog; `_edit_checkbox_map` maps checkbox id -> staged index.
 
-### Command IDs
+`_edit_favorites_input_changed`: a `fav_edit_sel_*` change only toggles the delete button (`_update_delete_button_enabled`); a click on the delete button collects the checked indices, filters `_edit_staged_favorites`, sets `btn.value = False` **before** rebuilding (after the rebuild the old input object is deleted and can no longer be written), and rebuilds the inputs.
 
-- Dropdown: `PTAT_favorites_dropdown`
-- Add action: `PTAT_favorites_add`
-- Edit action: `PTAT_favorites_edit`
-- Dynamic favorite entries: `PTAT_fav_<index>`
+## Tests
 
-### Execution flow
+- `tests/test_command_contract.py` — imports `entry.py` under the `adsk` stub; checks `CMD_Description`, the registry/doc/README contract, that `CMD_ID` is a literal with the Fusion id shape, and that the `PTAT_favorites_add`, `PTAT_favorites_edit`, `PTAT_fav_`, `PTAT_favorites_edit_*` literals are the known non-command ids (`KNOWN_NON_COMMAND_PT_LITERALS`).
+- `tests/test_command_abort.py` — the repo-wide `doExecute` AST guard; pins that the three oddly named `commandCreated` handlers here (`_created`, `_add_favorite_created`, `_edit_favorites_created`) are found by the registration walk.
 
-1. Add-in startup removes any legacy `cache/favorites.json`, resolves the active hub ID, and creates the Favorites dropdown on the QAT.
-2. Startup registers static commands for add/edit and loads saved favorites from the active hub's cache file.
-3. The menu is rebuilt with dynamic commands for each saved favorite.
-4. Application-level `documentActivated` and `documentOpened` handlers monitor for hub changes. When the hub changes, the menu is rebuilt with the new hub's favorites.
-5. **Favorite This Location** validates the active document is saved and writes a new favorite record to the active hub's cache file if it is not a duplicate.
-6. **Edit Favorites** stages changes in a dialog table and commits deletes only when the user confirms.
-7. Selecting any saved favorite executes `Dashboard.ShowInLocation <urn>`.
+`entry.py` is Fusion-bound and is not exercised by the suite; nothing here is verified in Fusion on this branch except by the AST guards above, which import it under the `adsk` stub. The icon set is not pinned in `tests/test_command_icons.py`. The JSON round-trip, hub-id sanitising and lineage walk have no unit tests of their own.
 
-### Component diagram
+---
 
-```mermaid
-C4Component
-    title Favorites – Component Architecture
-
-    Person(user, "Designer", "Fusion user managing common locations")
-    Component(addin, "PowerTools Add-In", "Python, Fusion API", "Hosts and starts all command modules")
-    Component(cmd, "Favorites", "favorites/entry.py", "Builds QAT dropdown, detects hub changes, manages per-hub cache, and handles navigation")
-    Component(cache, "cache/favorites_<hub_id>.json", "Local JSON files", "One file per Fusion hub; persists favorites between sessions")
-    Component(fusion, "Dashboard.ShowInLocation", "Fusion Internal Command", "Opens the saved location in Data Panel")
-    Component(docevt, "documentActivated / documentOpened", "Fusion App Events", "Signal used to detect hub changes")
-
-    Rel(user, addin, "Loads add-in on Fusion start")
-    Rel(addin, cmd, "Calls start() and stop()")
-    Rel(cmd, cache, "Reads and writes per-hub favorites list")
-    Rel(user, cmd, "Uses add/edit actions and selects saved entries")
-    Rel(cmd, fusion, "Executes Dashboard.ShowInLocation <urn>")
-    Rel(docevt, cmd, "Triggers hub-change check and menu rebuild")
-```
+*Copyright © 2026 IMA LLC. All rights reserved.*

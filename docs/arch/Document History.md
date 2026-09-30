@@ -2,166 +2,176 @@
 
 [← Document History guide](../Document%20History.md)
 
-## Architecture
-
-A QAT button that opens an HTML palette. The palette draws the active document's version history as a stack of day rows — one row per local calendar day, newest first, split into a track per author, with saves placed on a 00:00–24:00 clock axis and the elapsed time called out between rows.
-
-It replaces the original behaviour, which selected the root component and ran Fusion's built-in `ShowHistoryCmd`. That panel is a single undifferentiated strip: it cannot say who saved what, how a working day was shaped, or how long the design sat untouched, which are the questions this view exists to answer. The presentation is a port of the History timeline in the adjacent FusionOnPremServer web app, so the same history reads the same way in both places.
-
-### Command ID
-
-`PTND_history` — unchanged from the `ShowHistoryCmd` version, deliberately: renaming a `CMD_ID` orphans every user's saved QAT pin (6789216).
-
-### Files
-
-| File | Holds |
+| | |
 |---|---|
-| `entry.py` | Fusion contact only: lifecycle, reading the versions, serving the page, the thumbnail pump. |
-| `history_model.py` | The bucketing — day rows, author tracks, gaps, the calendar arithmetic — plus the merge of MFGDM's two version views and the index numbering. `adsk`-free and unit-tested. |
-| `mfgdm_history.py` | The GraphQL read: one paginated request over `mfgdm://v3`, through the transport `partnumber_shared/mfgdm_props.gql` already owns. |
-| `resources/html/{index.html,style.css,app.js}` | The drawing, plus the width-dependent geometry. |
-| `tests/test_dochistory_history_model.py` | A port of the vitest suite covering the same bucketing in the web app, so the two presentations cannot drift apart in what they claim about a history. |
-| `tests/test_dochistory_doc_switch.py` | Document identity and the decision to tear the palette down when the active document changes. |
+| **Command ID** | `PTND_history` (`CMD_NAME = "History"`) |
+| **Registry** | module `dochistory`, group `document` (`Document Tools`); enabled by default; not beta |
+| **UI location** | QAT button inserted before the `save` control (`qat.controls.addCommand(cmd_def, "save", True)`); opens the palette `config.document_history_palette_id` (`IMA_LLC_<ADDIN_NAME>_document_history_palette`), docked right, 400 × 720 px, `useNewWebBrowser=True` |
+| **Files** | `commands/dochistory/entry.py` (Fusion contact only); `history_model.py` (`adsk`-free bucketing and numbering); `mfgdm_history.py` (the GraphQL read); `resources/html/{index.html, style.css, app.js}`; generated `resources/html/init.js` (git-ignored); `resources/generate_icons.py` and the 16/32/64 px light, dark and disabled icons |
+| **Shared helpers** | [`partnumber_shared.mfgdm_props.gql`](architecture.md#partnumber_shared) (transport); [`recents_utils`](architecture.md#recents_utils) (`cached_thumbnail_data_url`, `store_thumbnail_object`, `png_to_data_url`); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.isSaved`, `log`, `handle_error`](architecture.md#general_utils); `config.DEBUG` and the palette id ([config](architecture.md#config)) |
+| **Tests** | `tests/test_dochistory_history_model.py`; `tests/test_dochistory_doc_switch.py`; `tests/test_command_contract.py`; `tests/test_command_icons.py` |
 
-### Where the layout maths lives, and why it is split
+## Purpose
 
-The bucketing is in Python because it is where a plausible wrong number would come from — which day a save belongs to, which track, how many days two rows are apart — and the repo rule is that such logic lives in an `adsk`-free module with tests.
+Draws the active document's version history as a stack of day rows, newest first: one row per local calendar day, a track per author, each save a dot on a 00:00–24:00 clock axis, and the elapsed time called out between rows. It answers what Fusion's own history strip cannot — who saved, how a day was shaped, how long the design sat untouched. Two constraints shape it: the only per-version author Fusion exposes is in MFGDM, so the read is a cloud call that must not run on the click; and the page can only be fed through a generated `init.js`, so the read happens before the palette is created.
 
-The geometry is in `app.js` because all of it depends on the panel width the browser measures (`ResizeObserver` on the scroll container). Sending a width to Python and a layout back would put a round trip in the middle of a drag. Its port was verified locally against the same vitest cases; CI cannot run it, because CI installs nothing but ruff and pytest.
+## How it is wired
 
-Constants therefore live on exactly one side: `TRACKS_PER_DAY_CAP` with the bucketing, `DAY_ROWS_CAP` and every pixel value with the drawing.
+- `start()`: `addButtonDefinition` with the resources folder; `ptutil.add_handler(cmd_def.commandCreated, command_created)`; the QAT button before `save`. Then, for each of `PTND_history_thumbTick`, `PTND_history_loadHistory`, `PTND_history_docSwitch`: `app.unregisterCustomEvent` (so a re-run without a Fusion restart does not stack handlers), `app.registerCustomEvent`, and `.add()` of `_ThumbTickHandler`, `_LoadHistoryHandler`, `_DocSwitchHandler` respectively, kept in module globals. Finally `application_document_changed` is added to `app.documentActivated`, `app.documentOpened` and `app.documentCreated` (`local_handlers`, for the add-in's lifetime).
+- `stop()`: deletes the QAT control, the definition and the palette; unregisters the three custom events; clears the handlers, the thumbnail pump and `_version_files`.
+- `command_created(args)`: `app.activeDocument` is `None` → "Open a document to see its version history." and return; `ptutil.isSaved()` false → return (it shows its own box). Otherwise `_schedule_load()`. The palette is not opened here and nothing is read here: this is the [deferral pattern](architecture.md#deferring-work-to-a-later-main-loop-turn), and the handler runs from `commandCreated` because the command has no `CommandInputs` (rule 1).
+- `_schedule_load()` → `threading.Timer(0.1, _fire_load_event)` (daemon) → `app.fireCustomEvent("PTND_history_loadHistory")`, the only API call on the timer thread (rule 7).
+- `_LoadHistoryHandler.notify` → `_open_palette(_gather_history())`; a raise → `ptutil.handle_error(CMD_NAME, show_message_box=True)`.
+- `_gather_history()` builds the page state (`theme`, `docName`, `docId`, `status`, `message`, `versionCount`, `changeCount`, `rows`, `rowsWithChanges`); see [Reading the history](#reading-the-history).
+- `_open_palette(state)`: `_last_state = state`; deletes any existing palette with this id; `_reset_thumb_pump()`; `_write_init_js(state)` writes `window.__ptInit = <state JSON>;`; `ui.palettes.add(...)`; `ptutil.add_handler(palette.closed, _palette_closed)` and `(palette.incomingFromHTML, _palette_incoming)`; docks right if Fusion opened it floating.
+- The page (`app.js`) reads `S = window.__ptInit`, renders, then `send("htmlReady")`. `_palette_incoming` logs every action, answers `htmlReady` with `_push_state(palette)` — `sendInfoToHTML("setHistory", json.dumps(_last_state))`, a re-send from memory, never a re-read — and `requestThumbs` with `_action_request_thumbs`. Actions the page sends: `htmlReady`, `requestThumbs`; messages Python sends: `setHistory`, `setThumbs`. This is the [palette RPC](architecture.md#palette-to-python-rpc) shape.
+- `_palette_closed` → `_close_palette("closed by the user")`: reset the pump, clear `_version_files` and `_last_state`, `palette.deleteMe()`.
+- `application_document_changed(args)` → `_schedule_switch_check()` → `threading.Timer(0.1, _fire_switch_event)` → `fireCustomEvent("PTND_history_docSwitch")` → `_DocSwitchHandler.notify` → `_close_palette_if_stale()`. The application handler touches nothing else.
+- Thumbnails: `_action_request_thumbs` → `_schedule_thumb_tick()` → `threading.Timer(0.15, _fire_thumb_event)` → `fireCustomEvent("PTND_history_thumbTick")` → `_ThumbTickHandler.notify` → `_pump_thumbs()`; see [Thumbnails](#thumbnails).
 
-`RAIL_FRAC` puts a track's rail at 80% of its own height rather than the middle, and `ROW_PAD_Y` is the lead-in above the first one. Both exist for the angled index labels: the rail is low so the labels have somewhere to rise, and the lead-in is the top track's share of that room. Because the labels lean sideways rather than rising straight up, that room is less than their full height — with `AXIS_H` trimmed to match, a one-track day row is back at the 66px it stood at before it carried any labels. The avatar disc is offset by the same fraction with a `translateY`, not padding, so the gutter meets the rail it labels without any cell changing height and pushing the next one down.
+## Data and state
 
-The **Index** toggle splits on the same line. `history_model.stamp_index_labels` decides the numbers — a release counts up major, a save or milestone minor, any other change patch, each resetting what sits below it — because a version number that is quietly wrong is worse than one that is missing. `app.js` owns only where the label goes, which needs the measured width. `indexLabelNodes` draws it at `INDEX_ANGLE` rising from just above its dot: rotated, two neighbours slide past each other diagonally and need only their line height over sin(angle) of horizontal clearance — about 12px at 45 degrees — which fits inside `MIN_DOT_GAP`, so a day view run can label every dot. Flat labels needed their full ~30px width and most of a busy day's had to be dropped. `INDEX_MIN_GAP` is left as a guard for the one case the axis cannot separate at all: `declutter` spaces a run evenly once there are more dots than the width can hold, and past that the labels would pile up unreadably.
+- Module state: `_last_state` (the state last written to `init.js`; also the "is our palette open" flag), `_version_files` (`versionId` → version `DataFile`, for thumbnails only), `_thumb_queue`, `_thumb_inflight` (`versionId` → `(future, started)`), `_thumb_missing`, `_thumb_tick_pending`, `_thumb_tick_scheduled_at`, the three handler references, `local_handlers`.
+- Custom events: `PTND_history_loadHistory` (0.1 s), `PTND_history_docSwitch` (0.1 s), `PTND_history_thumbTick` (0.15 s tick, `_THUMB_MAX_INFLIGHT = 8`, `_THUMB_FUTURE_TIMEOUT_SECONDS = 20`, `_THUMB_TICK_STALE_SECONDS = 2`).
+- Disk: `commands/dochistory/resources/html/init.js`, rewritten on every open and git-ignored (`commands/*/resources/html/init.js`). Thumbnails in `<add-in root>/cache/thumbs/<md5(versionId)>.png` (falling back to the OS temp dir when `cache/` is not writable), shared with the Assembly Palette and Open Recent through `recents_utils`. The key is `<DataFile.id>:v<number>` on the MFGDM path and `DataFile.versionId` on the fallback path.
+- Read flags: `config.DEBUG` enables the author-property probe on the fallback path.
+- No settings keys.
 
-The label rises *left*, ending at its dot (`INDEX_ANCHOR` of `end` with a positive `INDEX_ANGLE`), so the number reads into the event rather than away from it; the cost is that a save near midnight has its label clipped by the left edge of the plot, and rising right only moves that problem to the right edge. The two constants flip together.
+## Reading the history
 
-`indexLabelColor` keeps a label to two colours: accent for a release, `C.secondary` for everything else. It first took the author's rail colour for a change, to pair a number with its mark, and that had to be reverted after a screenshot of a five-track day — the author hues are chosen to tell *people* apart across a hub, not to be legible as 9px text, and a label lands beside a rail drawn in the same hue, so it competed with the line instead of pointing at the dot. Which author a number belongs to is already said by which track it sits on.
+`_gather_history` tries MFGDM first and falls back to the desktop Data API. Both paths produce the same record shape (`number`, `createdOnMs`, `createdBy`, `createdById`, `comment`, `isMilestone`, `revision`, `publicShare`, `versionId`), and everything after that is `history_model`.
 
-`INDEX_DY` is likewise gone, replaced by `markerRadius(v) + INDEX_CLEAR`. Sizing every label off `HALO_R` floated the common cases — a plain save, and a change ring at little more than half that radius — six to eight pixels out for a ring they do not wear.
-
-`TRACK_H` and `TRACK_H_INDEXED` are the reason `trackHeight()` exists. A label rises about 25px out of its dot and the tight track pitch is 30, so most of every label sat in the band of the track *above* it: on that same five-track day the numbers on one author's dots read as the author above's, which is misattribution rather than clutter. Rows therefore open while the toggle is on and close again when it is off, by however much `indexedTrackPitch` works out the labels in *this* history need — the widest label and deepest marker across the rendered stack, plus `NODE_R` of tail clearance off the dots above. It was a flat 44px constant, sized for the longest label the numbering can produce and so for a history most documents never have: a two-digit major needs nine pixels of rise a single-digit one does not, and that was nine pixels off every track of every row for nothing. Derived, a typical history lands at 35 to 38 against the unindexed 30, and only the rare `10.10.10` case reaches the old 44. Only computed when the toggle is on, since `render` runs on every pixel of a resize drag. Everything vertical — `rowHeight`, `trackY`, the avatar cells, and `layoutStack`/`threadOverlay` through them — reads that one function, because mixing the two heights inside a single render is what would drift the thread polyline off its dots.
-
-**The hover reveal is what keeps that cost optional.** Opening every row is only worth paying for when every number is on screen at once; with the toggle off, resting the pointer in a track shows that track's numbers alone, at the tight pitch. One track at a time has nothing to be confused with, so the misattribution the roomy pitch exists to prevent cannot arise, and a label crossing the rail above is handled by masking instead of by space.
-
-Three details make it work. The labels are always built and live in their own `<g>`, revealed by one `display` attribute rather than by a re-render — re-rendering on hover would replace the DOM under the cursor and drop the very hover that asked for them. The `mouseenter`/`mouseleave` pair is bound to the whole **track group**, not to the transparent hit rect inside it: the dots are siblings of that rect, so moving onto a dot counts as leaving the rect and would blink the numbers off exactly when a reader reached for one. And the hit rect spans the full band rather than the 3px rail, so the pointer does not have to find the line.
-
-Each label paints its own mask: a `C.paper` rect, plus a `C.band` rect over it on a banded row, because `--band` is translucent and cannot be flattened into a single fill — the same two-layer approach `.gutter.band` takes in the stylesheet. `indexLabelWidth` sizes that mask from an estimate rather than a `getBBox` measurement, which is affordable only because the alphabet is ten digits and a dot, whose advances are known; dots are counted separately at about half a digit's width, since a label is a third dots by character count.
-
-`rowNode` places every track before it draws any of it, which is not incidental ordering. Whether the axis can carry its interior hour markers depends on where `declutter` actually put the dots, so the layout has to exist before that decision — the tracks loop then reads the stored placement rather than recomputing it.
-
-`driftCrossesMarker` is that decision, and it is the one piece of this view that guards against the drawing telling a lie. `declutter` trades clock accuracy for legibility, and in its worst branch — more dots than the axis can ever separate — it abandons clock position and spaces the run evenly. The markers do not move with it, so a 9 AM save can end up drawn right of 12 PM, where the only honest reading of the picture is "afternoon". The axis therefore gives up its precision rather than assert it: the quarter-day markers come off, the row keeps its own two bounds, and it claims order instead of time.
-
-The test is a **crossing**, not a distance, and that distinction is the whole design. A dot nudged from 09:00 to 10:30 still reads as morning and costs nothing; one nudged from 11:59 to 12:01 has changed which half of the day it appears to be in on a twentieth of the movement. Any distance threshold would have been a guess at where those cases divide and would have got both wrong — a run drifting 4.9 hours but staying before noon keeps its markers correctly, which no distance rule would allow. The crossing must also clear `DRIFT_VISIBLE`: below that the code already judges a nudge too small to be worth a hairline, so it is too small to strip an axis over. The check is row-level because one axis stands behind every track in the row.
-
-`indexLabelText` is the one place that answers what a label prints, shared by the drawing, the width measurement behind the track pitch, and the hover card. It prints all three figures. For one commit it dropped the major while that was still zero, on the grounds that the digit could not vary and the angled labels would be shorter for it; testing rejected that — a two-figure number beside a three-figure one is ambiguous to read whatever the arithmetic says about the information in a leading zero, and a three-number presentation is worth more than the pixels. The card prints it unconditionally: gating it on `showIndex` made sense while the toggle was the only way to see a number, but once hovering a track revealed them it meant the one place a reader was already pointing at an event was the place that would not name it.
-
-`INDEX_MIN_GAP` is `MIN_DOT_GAP`, not a number of its own. Two parallel labels clear each other by their horizontal separation times sin(angle), so an ~11px line box needs about 16px of separation; the 14 it was set to let the dense runs overlap. Landing exactly on `MIN_DOT_GAP` is the useful part: any dot `declutter` managed to separate keeps its label, and only a genuinely unseparable pile loses one.
-
-Both share one ordering. `_ordered_oldest_first` is the history's canonical sequence; `bucket_by_day` numbers a dot's thread-axis `index` from it and `stamp_index_labels` counts along it, so a label can never disagree with a position. It was inlined in `bucket_by_day` before the numbering needed it too.
-
-The numbering runs once, over the saves and the changes together, before either `bucket_by_day` call — the labels ride on record dicts both stacks share by reference. Resetting patch on a save is what makes that safe: a save's label depends only on the releases and saves before it, so the two stacks agree about every save and `showChanges` adds patch labels without renumbering a dot.
-
-### Execution flow
-
-1. `start()` registers the command definition and inserts the button before the QAT **Save** control, then registers the custom event that drives the thumbnail pump.
-2. `command_created` opens the palette directly. Not from `execute`: this command has no `CommandInputs`, and `execute` only fires when Fusion runs a command through its document-scoped pipeline, so with no document open the button would be live and nothing would happen (f18b911, 11cfc51). It bails out on no document and on an unsaved one (`ptutil.isSaved`).
-3. `command_created` opens nothing. It validates and calls `_schedule_load()` — a `threading.Timer` → `app.fireCustomEvent` hop.
-4. `_LoadHistoryHandler` runs on the next main-loop turn: `_gather_history()` reads the history behind `ui.progressBar.showBusy`, then `_open_palette(state)` writes that state into `init.js` and creates the palette from it.
-5. The page requests a thumbnail only for the version the pointer rests on, and the pump answers it.
-
-### init.js is the only channel to this page
-
-The page must be able to paint from `init.js` alone, because nothing else has been shown to work.
-
-Two builds proved it. The first opened the palette with a "Reading version history…" banner and waited for the page to ask for the data over `adsk.fusionSendData`; the palette sat on the banner forever. The second read the history on a deferred event and pushed it with `sendInfoToHTML` to an already-open palette; the palette came up empty even though the log recorded a successful 27-version read.
-
-The DEBUG log explains both. `_palette_incoming` logs every action the page sends, and the count of `htmlReady` across every session to date is **zero** — the handshake the page fires at parse time never arrives. `requestThumbs`, sent later from a hover, does. So the page→Python channel only works after the page has been up a while, and the Python→page direction has never been independently demonstrated at all: every time this palette has shown a history, the data came from `init.js`.
-
-Hence the order: read first, write `init.js`, then create the palette. An already-open palette is torn down and rebuilt rather than refreshed, because a live page cannot be made to re-read `init.js`; that costs the thread toggle and scroll position on a re-click. The `htmlReady` → `setHistory` path is still wired and answers from `_last_state` rather than re-reading, so it costs nothing if the handshake ever does start arriving.
-
-### Reading the history
-
-The history comes from **MFGDM over GraphQL**, with the desktop Data API as a fallback. `mfgdm_history.py` owns the query; the merge is pure and tested in `history_model.merge_cloud_history`.
-
-**Why not the desktop API.** It cannot attribute versions. `DataFile` exposes exactly two `User` properties and there is no per-version type; on a 27-version design saved by nine people, `createdBy` returned "Jeremy Lambert" for all 27 and `lastUpdatedBy` returned "Myron Oakley" for all 27 — one file-level name each, and different names from each other. Fusion's own history panel shows all nine. Swapping one property for the other only trades one wrong constant for another, so the source had to change.
-
-**Where the data actually is.** Two halves of one request:
+**MFGDM (`mfgdm_history.fetch_records(model_id)`).** `_model_id(doc)` reads `rootDataComponent.mfgdmModelId` — from the deferred event only, never from `commandCreated`. One paginated GraphQL document over `mfgdm_props.gql` fetches two lists with independent cursors (`VERSIONS_PAGE_LIMIT = 100`, `HISTORY_PAGE_LIMIT = 50`, `MAX_PAGES = 60`):
 
 | Field | Carries |
 |---|---|
 | `model.designItem.versions` → `DesignItemVersion` | `versionNumber`, `createdOn`, `createdBy` — the only per-version author Fusion exposes |
-| `model.history` → `ModelWrittenHistoryChange` | the `description` typed at save time; `DesignItemVersion.description` comes back empty |
+| `model.history` → `ModelWrittenHistoryChange` | the `description` typed at save time (`DesignItemVersion.description` comes back empty) |
+| `model.history` → every other `HistoryChange` type | property edits, component changes, milestones, releases — entries that produced no version |
 
-`ModelWrittenHistoryChange` is the save event — a 27-version design produced exactly 27 of them. (`VersionCreatedHistoryChange` is a *milestone*: its id decodes to `…~milestone`.) The two lists are joined **by position, not timestamp**: MFGDM stamps the same save up to 35 seconds apart in its two views. Position is trusted only when the lengths match; otherwise every version keeps its author and date and loses its comment, because a save wearing someone else's comment is worse than a bare one.
+`history_model.merge_cloud_history(versions, writes)` joins the first two **by position, newest first**, and only when the lengths agree; otherwise every version keeps its author and date and loses its comment. `history_model.change_records(others)` turns the rest into `kind == "change"` records via `change_label` (`CHANGE_LABELS`, with a de-camel-cased fallback for unmapped types) and drops `DUPLICATE_CHANGE_TYPES` (`RevisionCreatedHistoryChange`, `VersionCreatedHistoryChange`), because the release or milestone they record is already drawn on its save dot via `DataFile.milestones`. Thumbnails are deliberately not requested from MFGDM. A failure of any kind raises `HistoryUnavailable` and the gather falls through to the fallback.
 
-**Cost.** One request, 1.4s, against 21s for the walk it replaces — that walk was ~160 cloud round trips, because every `DataFile` property read is one. Thumbnails stay off the query deliberately: `DesignItemVersion.thumbnail.signedUrl` costs ~1.4s per row, five rows took 8.3s and thirty aborted the transport at 30s.
+`_decorate_cloud_records(records, data_file)` adds what MFGDM's version list lacks, each one desktop read for the whole file: `_milestone_labels` (`DataFile.milestones` → version number → name), `_shared_version` (`DataFile.sharedLink.isShared` → `latestVersionNumber`, so the ring marks the current version), and the thumbnail key `<file id>:v<number>`. `history_model.is_release_name` splits a user-typed revision (drawn as a release) from Fusion's auto-named milestones (`AUTO_MILESTONE_PREFIXES = ("Milestone ", "Item Update")`).
 
-**Timing.** `rootDataComponent.mfgdmModelId` must not be read from `commandCreated` — doing so and then showing a modal crashed Fusion (234b043). The read runs from a timer-fired custom event instead, which also means the palette appears immediately and fills in, rather than freezing Fusion before it is on screen.
+Then `model.stamp_index_labels(records + changes)` numbers everything once, `rows = bucket_by_day(records)` and `rowsWithChanges = bucket_by_day(records + changes)`. Two stacks ship because the bucketing is tested Python and the **Show other changes** toggle is on the page.
 
-**Other changes.** The history query is unfiltered, so it also returns the entries that produced no version: on the test design, 11 `PropertiesUpdatedHistoryChange` ("Estimated Cost: 100"), 3 `ComponentPrimaryHistoryChange` and the milestone, against 27 saves. `history_model.change_records` turns them into records marked `kind == "change"`, and they are worth keeping because **two of that design's nine contributors never saved a version at all** — a saves-only history credits it to eight.
+**Fallback (`DataFile.versions` walk).** `_version_record(version, labels, shared_version)` flattens each version: `dateCreated` (then `dateModified`), `_user_fields` (`createdBy`, then `lastUpdatedBy`), `isMilestone`, `versionId`, `description`. Every per-version read is guarded so one unreadable version costs its own dot. `_version_files[versionId] = version` is kept for thumbnails. This path cannot see non-version changes, so `changeCount` stays 0 and the page hides the toggle; it reports one file-level author name for every version (see Learnings). Under `config.DEBUG`, `_probe_indexes` samples up to six versions and logs the distinct names each author property yields.
 
-Two of those types are dropped, though — `history_model.DUPLICATE_CHANGE_TYPES`. `RevisionCreatedHistoryChange` and `VersionCreatedHistoryChange` are the audit-trail entries for *creating* a release or a milestone, and the same release or milestone already decorates the save it was made against by way of `DataFile.milestones` (`entry._decorate_cloud_records`). Drawing both put a release on screen twice: an accent dot with its ring, and a bare open ring beside it labelled "Release". The save dot is the one that carries the version number and the revision name, so it wins. The cost is that a person who only named a release and never saved is credited nowhere; `CHANGE_LABELS` keeps both names because `change_label` is a general typename→display mapping and is tested as one.
+## Where the layout maths lives
 
-The gather buckets twice and ships both stacks (`rows`, `rowsWithChanges`), because the bucketing is tested Python and the toggle is on the page; sending both costs a little JSON and keeps the arithmetic out of the browser. The DataFile fallback cannot see these entries, so it leaves `changeCount` at zero and the page hides the checkbox rather than offering a dead one.
+The bucketing is in Python because that is where a plausible wrong number would come from — which day a save belongs to, which track, how many days apart two rows are — and the repo rule is that such logic lives in an `adsk`-free module with tests ([the pure-logic split](architecture.md#the-pure-logic-split)). The geometry is in `app.js` because all of it depends on the panel width the browser measures (one `ResizeObserver` on the scroll container); a Python round trip in the middle of a resize drag is not acceptable. Constants therefore live on exactly one side: `TRACKS_PER_DAY_CAP = 6` with the bucketing; `DAY_ROWS_CAP = 60` and every pixel value with the drawing.
 
-**Still on the desktop API**, because each is one read for the whole file rather than one per version: milestones (`DataFile.milestones`), the public share (`DataFile.sharedLink`), and the version `DataFile` behind a hover thumbnail — resolved lazily by version number, index guess verified rather than trusted.
+`history_model` in brief:
 
-Two things are read once for the whole file rather than per version, because both are cloud calls:
+| Symbol | Role |
+|---|---|
+| `_ordered_oldest_first(versions)` | The one canonical order (undated last, stable); both the thread-axis `index` and the index labels count along it, so a label can never disagree with a position |
+| `bucket_by_day(versions)` | Local calendar days, newest first; undated versions collect in one trailing bucket; each row carries `gap` to the row above |
+| `tracks_for_day(dots)` | One track per `author_key` (user id, else display name), ordered by who saved first; past the cap the tail merges into one overflow track, losing no dots |
+| `gap_between` / `calendar_breakdown` / `add_months` | `nextDay` / `days` / `wide` tiers and a years-months-days breakdown with an end-of-month clamp |
+| `stamp_index_labels(records)` | Semantic labels from 0.0.0: a release bumps major, a save or milestone minor, a no-version change patch, each resetting what sits below it |
+| `iso_to_epoch_ms`, `person_name`, `is_release_name` | Parsing and naming helpers |
 
-- **Milestones and releases** come from `DataFile.milestones`, mapped version number → name. A milestone whose name Fusion generated (`Milestone V7`, `Item Update`) is drawn as a milestone; anything else is a revision the user typed, drawn as a release. `history_model.is_release_name` owns that rule, shared in spirit with `commands/versiondiff`.
-- **The public share** comes from `DataFile.sharedLink.isShared`. Fusion exposes the link on the file rather than per version, so the ring marks the current version. Reading it per version would be one round trip per dot.
+Days are **local** calendar days: a 23:30 save stays on the day its author saw on their own clock.
 
-Every per-version read is guarded individually: one unreadable version costs its own dot, not the whole history.
+## The index labels
 
-### Following the active document
+`stamp_index_labels` decides the numbers; `app.js` decides only where they go. Resetting patch on every save is what lets the labels survive the changes toggle: a save's label depends only on the releases and saves before it, so both stacks (which share the record dicts by reference) agree about every save and `showChanges` adds patch labels without renumbering a dot.
 
-The palette reads one document, once. Nothing told it when that stopped being the active one, so it went on showing the old history under the old document's name — a correct-looking history of the wrong design, which is worse than a visible failure (#8).
+On the page:
 
-`documentActivated`, `documentOpened` and `documentCreated` now all run `application_document_changed`, which does nothing but start a timer. **That emptiness is the point.** Reading the document model from inside one of those events can walk the document graph while Fusion's background saver is serialising it and abort the saver thread — the reason the Assembly Palette gallery auto-refresh is parked. Even `args.document.dataFile` is off limits there. The timer fires `_SWITCH_EVENT_ID`, and `_close_palette_if_stale` does the work a main-loop turn later, where reading a document is safe.
+- `indexLabelNodes` draws each label rising to the **left** at `INDEX_ANGLE = 45` with `INDEX_ANCHOR = "end"`, ending at its own dot so the number reads into the event. Angled, two neighbours need only their line height over sin(angle) of horizontal clearance, which fits inside `MIN_DOT_GAP`, so a day-view run can label every dot that `declutter` managed to separate; `INDEX_MIN_GAP = MIN_DOT_GAP` drops labels only in a genuinely unseparable pile. The cost is a clipped label for a save near midnight; rising right would move that to the other edge.
+- `RAIL_FRAC = 0.8` puts a track's rail low in its band so the labels have room to rise; `ROW_PAD_Y = 10` is the top track's share of that room; `AXIS_H = 16` is trimmed to match, so a one-track day row is 66 px tall.
+- `trackHeight()` returns `indexPitch` while the toggle is on and `TRACK_H = 30` otherwise, and is the single reader for `rowHeight`, `trackY`, the avatar cells, `layoutStack` and `threadOverlay`, so one render cannot mix the two heights and drift the thread polyline off its dots. `indexedTrackPitch(rows)` computes `indexPitch` from the widest label and deepest marker actually in this history plus `NODE_R` of tail clearance — typically 35–38 px, only the rare `10.10.10` case reaching 44. It runs only when the toggle is on, because `render` runs on every pixel of a drag.
+- Each label's clearance is `markerRadius(v) + INDEX_CLEAR`, from the marker's own radius rather than the widest one any dot draws.
+- **Hover reveal.** With the toggle off, resting the pointer in a track shows that track's numbers alone at the tight pitch. The labels are always built in their own `<g>` and revealed by a `display` attribute — a re-render would replace the DOM under the cursor and drop the hover. `mouseenter` / `mouseleave` are bound to the whole track group, not the hit rect (the dots are siblings of the rect, so moving onto a dot would otherwise count as leaving). The hit rect spans the full band, not the 3 px rail.
+- Each label paints its own mask (a `C.paper` rect, plus a `C.band` rect on a banded row, because `--band` is translucent) sized by `indexLabelWidth` from known digit and dot advances rather than a `getBBox` pass.
+- `indexLabelColor` uses two colours only: accent for a release, `C.secondary` for everything else. `indexLabelText` prints all three figures and is shared by the drawing, the pitch measurement and the hover card.
 
-Activation alone would very likely cover all three cases, since creating or opening a document activates it. All three are wired anyway: the failure mode is a wrong answer rather than a missing one, so it is not worth resting on that inference.
+## The clock axis and honest drift
 
-**Closed, not reloaded**, and that is a cost decision. Reloading means `_gather_history` — a ~1.4s MFGDM read behind a busy indicator — on every tab switch, and because a live page cannot re-read `init.js` it also means the teardown and rebuild `_open_palette` describes, losing the scroll position and the view toggles regardless. Paying that on a keystroke the user spent on something else is worse than asking for the click that re-opens it, and the palette was always documented as a snapshot. Hiding rather than deleting is not an option either: Fusion can leave a torn-down palette in `ui.palettes`, and toggling `isVisible` on that husk silently no-ops, so the next open would show nothing.
+`rowNode` places every track before drawing any of it, because whether the axis can carry its interior markers depends on where `declutter` put the dots. `declutter` trades clock accuracy for legibility, and in its worst branch — more dots than the axis can separate — abandons clock position and spaces the run evenly. `driftCrossesMarker(placements, ticks)` then decides per row: if any dot nudged by more than `DRIFT_VISIBLE = 3` px crossed an interior hour marker, `hourTicks(plotW, endpointsOnly=true)` keeps only the day's two bounds and the row claims order rather than time. The test is a crossing, not a distance: a dot moved 09:00 → 10:30 still reads as morning; one moved 11:59 → 12:01 has changed which half of the day it appears in.
 
-Identity goes through `_document_identity`, not through comparing `Document` objects — two API calls hand back different wrappers around the same native document. It is `dataFile.id`, falling back to `"unsaved:" + name` for a document that has none, so two new untitled documents still tell apart. Anything unreadable falls back too, which means an offline document counts as "not the one on screen" and closes the palette rather than raising off an event handler. Comparing identities rather than closing unconditionally is what keeps a re-activation of the *same* document — which fires for reasons other than a switch — from churning the palette.
+`hourTicks(plotW)` returns six-hourly ticks at ≥ 260 px of plot, twelve-hourly below that, and none below 200 px; every tick carries its hour. At the docked `PALETTE_WIDTH = 400` the plot is about 310 px, so the axis is six-hourly with every tick named. (The `PALETTE_WIDTH` comment in `entry.py` describes three-hourly gridlines; `app.js` is the source of truth.)
 
-Pinned in `tests/test_dochistory_doc_switch.py`. `_close_palette_if_stale` is split out of the handler precisely so it can be: a `CustomEventHandler` subclass cannot be instantiated with `adsk` stubbed.
+## Following the active document
 
-### Thumbnails
+`application_document_changed` does nothing but start a timer, and that emptiness is the point: reading the document model from inside an application event can walk the document graph while Fusion's background saver is serialising it and abort the saver thread — even `args.document.dataFile` is off limits there. `_close_palette_if_stale` runs a main-loop turn later: return if `_last_state` is empty (no palette of ours) or the palette is gone; otherwise compare `_document_identity(app.activeDocument)` with `_last_state["docId"]` and `_close_palette("active document changed")` on a mismatch.
 
-`DataFile.thumbnail` returns a `DataObjectFuture`, and `adsk.core.Future` has no completion event, so a thumbnail can only be collected by polling. Polling inline would hold the UI thread while the palette is on screen, so each poll is one turn of a `threading.Timer` → `app.fireCustomEvent` → handler hop, the same shape `commands/assemblypalette` uses (14f42ca). The timer thread touches nothing but `fireCustomEvent` (266e2c2).
+`_document_identity(doc)` is `dataFile.id`, falling back to `"unsaved:" + name` for a document without one and to `""` when the read raises. Comparing identities rather than `Document` objects matters because two API calls return different wrappers around the same native document, and comparing rather than closing unconditionally keeps a re-activation of the same document from churning the palette.
 
-The page asks only for the version the pointer has rested on for 400 ms, so this is a trickle rather than a gallery load. Results are cached on disk through `recents_utils`, keyed by `versionId`; the pump reports `""` for a version with no thumbnail so the hover card can tell "still downloading" from "there is no preview".
+The palette is **closed, not reloaded**: a reload is a ~1.4 s cloud read behind a busy indicator plus a teardown and rebuild (a live page cannot re-read `init.js`) on every tab switch. Hiding is not an option either — Fusion can leave a torn-down palette in `ui.palettes`, and toggling `isVisible` on that husk silently no-ops. All three document events are wired even though activation alone would likely cover them, because the failure mode is a wrong answer rather than a missing one.
 
-### Notes
+## Thumbnails
 
-- The palette docks right at `PALETTE_WIDTH` (400 px), like the other PowerTools palettes. That leaves about 310 px of plot, over `hourTicks()`'s 260 px threshold, so the axis is six-hourly with every tick named. Drag the dock narrower and it thins to twelve-hourly, then drops out entirely below ~200 px of plot — the designed degradation, not a fault. Narrowing drops whole ticks rather than falling back to unlabelled gridlines: nothing is drawn on that axis that cannot say what hour it is. The author gutter is sticky precisely so the thread view stays readable at any of those widths.
-- Marker vocabulary: the accent ring means "marked", and filling that ring in means "released". A milestone is therefore a save's grey dot with an accent ring; a release is the same ring with an accent fill. One step to learn rather than two hues, and a release still reads as the heavier mark.
-- Day buckets are **local** calendar days. A 23:30 save must stay on the day its author saw on their own clock, not the UTC day it lands in east of Greenwich.
-- The palette shows a snapshot. There is deliberately no auto-refresh: reading the document model from an application event handler (`documentSaved` above all) can abort Fusion's background saver — see [Assembly Palette](Assembly%20Palette.md), "Attempted and parked".
-- The author colour is the one thing in the page not taken from the theme. It has to be a function of *who*, so the same person is the same colour in every row and in every session; the initials on top are solved against it, because HSL lightness is not perceptual.
+`DataFile.thumbnail` returns a `DataObjectFuture` and `adsk.core.Future` has no completion event, so a thumbnail can only be collected by polling, and polling inline would hold the UI thread while the palette is on screen. Each poll is one turn of `threading.Timer` → `fireCustomEvent` → `_ThumbTickHandler`, the same shape `commands/assemblypalette` uses.
 
-### Component diagram
+The page asks only for the version the pointer has rested on for `HOVER_DELAY_MS = 400`. `_action_request_thumbs` answers disk hits immediately (`recents.cached_thumbnail_data_url`) and queues the rest. `_pump_thumbs`: resets and stops if the palette is gone or hidden; `_collect_finished_thumbs` harvests settled futures (`FinishedFutureState` → `recents.store_thumbnail_object` → `png_to_data_url`; a failed or timed-out future → `""` and `_thumb_missing`); `_start_queued_thumbs` starts more up to eight in flight via `_start_thumb_download` (`_version_files` hit, else `_resolve_version_file` finds the version `DataFile` behind a `<fileId>:v<number>` key by guessing `latest - number` and verifying `versionNumber` before falling back to a scan); `_send_thumbs` pushes the batch; `_schedule_thumb_tick` re-arms only while work remains. `""` is sent for a version with no thumbnail so the hover card can tell "still downloading" from "no preview". `_reset_thumb_pump` also clears `_thumb_missing`, so a negative result never outlives the palette.
+
+`_fire_thumb_event` may touch nothing but `fireCustomEvent` — not even `ptutil.log`, which is not thread-safe. Its return value is ignored (it returns `False` even when it works); `_THUMB_TICK_STALE_SECONDS` re-arms a tick that was scheduled but never ran.
+
+## Visual vocabulary
+
+- The accent ring means "marked" and a filled ring means "released": a milestone is a save's grey dot with an accent ring, a release the same ring filled. One step to learn rather than two hues.
+- The author colour is the only colour not taken from the theme. It is a function of *who*, so the same person is the same colour in every row and session; the initials are solved against it because HSL lightness is not perceptual.
+- Narrowing the dock drops whole ticks rather than falling back to unlabelled gridlines; the author gutter is sticky so the thread view stays readable at any width.
+- The palette is a snapshot; there is no auto-refresh, for the saver-thread reason above.
+
+## Diagram
+
+The click-to-palette sequence with its three deferrals, then a thumbnail round trip.
 
 ```mermaid
-C4Component
-    title Document History – Component Architecture
-
-    Person(user, "Designer", "Fusion user working on a design")
-    Component(addin, "PowerTools Add-In", "Python, Fusion API", "Hosts and registers all PowerTools commands")
-    Component(cmd, "Document History", "dochistory/entry.py", "QAT button, palette lifecycle, version read, thumbnail pump")
-    Component(model, "History model", "dochistory/history_model.py", "Buckets versions into day rows, author tracks and gaps")
-    Component(page, "History palette", "resources/html/app.js", "Measures the panel, computes geometry, draws the SVG")
-    Component(dataFile, "DataFile", "Fusion Data API", "versions, milestones, sharedLink, thumbnail")
-
-    Rel(user, addin, "Loads add-in on Fusion start")
-    Rel(addin, cmd, "Calls start() – registers the QAT button")
-    Rel(user, cmd, "Clicks History on the QAT")
-    Rel(cmd, dataFile, "Walks versions; reads milestones and shared link once")
-    Rel(cmd, model, "bucket_by_day(records)")
-    Rel(cmd, page, "sendInfoToHTML: setHistory, setThumbs")
-    Rel(page, cmd, "incomingFromHTML: ready, requestThumbs")
-    Rel(user, page, "Toggles the thread, the other changes and the index; hovers a save")
+sequenceDiagram
+    participant U as User
+    participant E as entry.py main thread
+    participant T as threading.Timer
+    participant F as Fusion custom event
+    participant M as mfgdm_history / history_model
+    participant P as palette page app.js
+    U->>E: click History
+    E->>E: command_created: activeDocument? isSaved?
+    E->>T: _schedule_load (0.1 s)
+    T->>F: fireCustomEvent PTND_history_loadHistory
+    F->>E: _LoadHistoryHandler.notify
+    E->>M: _gather_history: fetch_records, merge_cloud_history, change_records
+    E->>M: _decorate_cloud_records, stamp_index_labels, bucket_by_day x2
+    M-->>E: state rows + rowsWithChanges
+    E->>E: _open_palette: deleteMe old, _write_init_js, palettes.add
+    P->>P: render from window.__ptInit
+    P->>E: htmlReady
+    E->>P: setHistory (_push_state from _last_state)
+    U->>P: rest pointer on a dot 400 ms
+    P->>E: requestThumbs ids
+    E->>P: setThumbs for cache hits
+    E->>T: _schedule_thumb_tick (0.15 s)
+    T->>F: fireCustomEvent PTND_history_thumbTick
+    F->>E: _ThumbTickHandler -> _pump_thumbs
+    E->>P: setThumbs for finished futures
 ```
+
+## Tests
+
+- `tests/test_dochistory_history_model.py` — 46 cases, a port of the vitest suite for the web view this palette mirrors: `author_key` preference and fallbacks; local-day bucketing (including a late-evening save east of UTC), newest-first order, oldest-first `index`, the undated bucket; track splitting, ordering by first save, the overflow cap; gap tiers and the calendar breakdown with its end-of-month clamp; `is_release_name`; every `stamp_index_labels` rule including that save labels do not move when changes are added and that labels line up with the thread index; `person_name`, `iso_to_epoch_ms`; `merge_cloud_history` by-position join and its refusal on a length mismatch; `change_label`, `change_records`, the duplicate drop, and that changes surface people who never saved.
+- `tests/test_dochistory_doc_switch.py` — 12 cases: `_document_identity` for saved, unsaved, missing, unreadable and empty-id documents; `_close_palette_if_stale` on a switch, a re-activation, a new unsaved document, the last document closing, no palette open, the palette already gone, and an offline document. `_close_palette_if_stale` is split out of the handler for exactly this reason: a `CustomEventHandler` subclass cannot be instantiated with `adsk` stubbed.
+- `tests/test_command_contract.py` — registry row, `CMD_Description`, docs pair, `CMD_ID` shape; the three custom event ids are pinned in `KNOWN_NON_COMMAND_PT_LITERALS`.
+- `tests/test_command_icons.py` — pins the `dochistory` icon set (16/32/64 px, light, dark and disabled) and that it differs from every other pinned set.
+
+Not covered: the GraphQL read and pagination, `_decorate_cloud_records`, the DataFile fallback, `init.js` generation, the palette lifecycle, the thumbnail pump, and all of `app.js` (its port of the geometry was verified locally against the same vitest cases; CI installs nothing that can run it). `entry.py` is Fusion-bound; apart from the two functions above it is not exercised by the suite, and nothing here is verified in Fusion on this branch except by the AST guards in `tests/test_command_contract.py` and `tests/test_command_abort.py`, which import it under the `adsk` stub.
+
+## Learnings
+
+- **Do not read `rootDataComponent.mfgdmModelId` from `commandCreated`.** Doing so and then showing a modal crashed Fusion (234b043, `commands/partnumber_shared/intent.py`). The read runs from a timer-fired custom event, which also keeps a multi-second cloud read off the click.
+- **`init.js` is the only channel proven to feed this page its first paint.** A build that opened the palette and waited for the page to ask over `adsk.fusionSendData` sat on its banner forever; a build that pushed the history with `sendInfoToHTML` to an already-open palette came up empty despite a logged 27-version read. The log counted zero `htmlReady` arrivals across every session while `requestThumbs`, sent later from a hover, did arrive. Hence read first, write `init.js`, then create the palette; `htmlReady` → `setHistory` stays wired as a cheap re-send because Fusion's embedded browser caches `init.js` by URL across palette recreations on Windows.
+- **The desktop Data API cannot attribute versions.** On a 27-version design saved by nine people, `DataFile.createdBy` returned one name for all 27 and `lastUpdatedBy` a different single name for all 27; there is no third `User` property. Per-version authorship exists only in MFGDM's `DesignItemVersion.createdBy`.
+- **MFGDM's two views stamp the same save up to 35 s apart, and page at different limits.** Join `designItem.versions` and `model.history` by position, only when the counts agree. `model.history` caps pagination at 50 while `designItem.versions` accepts 100; a shared limit of 100 was rejected outright and cost the whole cloud read.
+- **One request beats ~160 round trips.** The MFGDM read took 1.4 s against 21 s for the `DataFile` walk (every property read is a cloud call). Per-row `DesignItemVersion.thumbnail.signedUrl` cost ~1.4 s each — thirty rows aborted the transport at 30 s — so thumbnails stay lazy, one per hover.
+- **Never read the document model from an application event.** `documentActivated` and friends can run while Fusion's background saver is serialising the document graph and abort the saver thread — the reason the Assembly Palette gallery refresh is parked ([Assembly Palette](Assembly%20Palette.md)). Defer to a custom event and read there.
+- **A torn-down palette can linger in `ui.palettes`.** Toggling `isVisible` on that husk silently no-ops, so a stale palette is deleted, not hidden.
+- **A palette showing the wrong document's history is worse than no palette** (#8). It read correctly and named the wrong design; `_document_identity` compares `dataFile.id` because `Document` wrappers cannot be compared with `is`.
+- **Do not rename `CMD_ID`.** `PTND_history` predates the palette; renaming it would orphan every user's saved QAT pin (6789216).
+- **Index-label tuning that was tried and rejected.** Labels in the author's rail colour were illegible beside a rail of the same hue (two colours replaced them). A flat 44 px indexed pitch sized every row for the longest possible label (`indexedTrackPitch` derives it instead). Dropping the leading `0.` while major was zero made two- and three-figure labels ambiguous side by side (all three figures print). `INDEX_MIN_GAP` at 14 px let dense runs overlap by a pixel or two; an ~11 px line box at 45° needs ~16 px, which is `MIN_DOT_GAP`.
+
+---
+
+*Copyright © 2026 IMA LLC. All rights reserved.*

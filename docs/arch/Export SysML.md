@@ -2,651 +2,142 @@
 
 [← Export SysML Architecture Document guide](../Export%20SysML.md)
 
-## Architecture
-
-### Command ID
-
-`PTE_exportsysml`, in the QAT **File** drop-down beside the other two exports.
-No icons: that menu renders text, which is why `exportbomcsv`, `exportmermaid`
-and `closealldocuments` all ship without a `resources/` folder and none of them
-is pinned in `tests/test_command_icons.py`.
-
-### Files
-
-| File | Role |
+| | |
 |---|---|
-| `entry.py` | All Fusion contact: placement, the gate, the traversal, the dialogs, the writes |
-| `model.py` | `adsk`-free records and derivations: quantities, classification, traversal order, joint placement |
-| `render.py` | `adsk`-free renderers: SysML v2 text, the Markdown ADD, escaping, unit conversion, filename sanitising |
+| **Command ID** | `PTE_exportsysml` (`CMD_NAME = "Export SysML Architecture Document..."`) |
+| **Registry** | group `exports` (`Exports`); enabled by default |
+| **UI location** | QAT **File** dropdown via [`ptutil.get_qat_file_dropdown()`](architecture.md#ui_utils), `controls.addCommand(cmd_def, "ExportCommand", True)` — directly before Fusion's **Export**, beside the other two exports; no icon folder (that menu renders text) |
+| **Files** | `commands/exportsysml/entry.py` (all Fusion contact), `model.py` (`adsk`-free records and derivations), `render.py` (`adsk`-free SysML v2 and Markdown renderers) |
+| **Shared helpers** | [`ptutil.get_qat_file_dropdown`, `ptutil.remove_from_qat_file_dropdown`](architecture.md#ui_utils), [`ptutil.add_handler`](architecture.md#event_utils), [`ptutil.log`, `ptutil.handle_error`](architecture.md#general_utils) |
+| **Tests** | `tests/test_exportsysml_entry.py`, `tests/test_exportsysml_model.py`, `tests/test_exportsysml_render.py`, `tests/test_assemblybuilder_sysml_import.py` (round trip); `tests/test_command_contract.py`, `tests/test_command_abort.py` |
 
-The two-module split mirrors `flattensurface`'s `flatten.py` / `report.py`: the
-solver and the text renderer are independently testable, and neither imports
-`adsk`.
+## Purpose
 
-### System context
+Writes the active design as an Architecture Design Document on the 4+1 View Model (`<name>-ADD.md`) plus its Physical View as a SysML v2 textual model (`<name>-physical.sysml`), both into a folder the user picks. One `part def` per unique component with part number, material, body count, mass, volume, area, centre of mass and envelope; one usage per parent/child edge with multiplicity; one `connection` per expressible joint with kind, degrees of freedom, origin and axis; linked documents in the Development View; everything unreadable in an appendix of notes. The shaping constraint is that the output is a claim about someone's design consumed by tools that reject a malformed file: nothing is guessed, absent values stay absent, every user-authored string is escaped, and the model must parse.
 
-```mermaid
-C4Context
-    title Export SysML Architecture Document — System Context
+## How it is wired
 
-    Person(user, "Designer", "Autodesk Fusion user with an active assembly open.")
+- `start()`: reuses or creates the button definition, registers `command_created` on `commandCreated` (global handler list), and adds the control to the File dropdown before `ExportCommand` only if it is not already there.
+- `stop()`: `ptutil.remove_from_qat_file_dropdown(CMD_ID)`, then deletes the definition.
+- `command_created(args)`: the entire command — `_export()` inside one `try` routed to `ptutil.handle_error(CMD_NAME, show_message_box=True)`. No inputs are built and **no `execute` or `destroy` handler is registered**, so Fusion's auto-execute is a no-op and the `_command_abort` flag is unnecessary ([pattern](architecture.md#acting-from-commandcreated-when-there-are-no-inputs)). `tests/test_exportsysml_entry.py::test_no_execute_handler_is_registered` pins this, because the repo-wide guard in `tests/test_command_abort.py` only inspects `commandCreated` bodies.
+- `_export()`, in order:
+  1. `adsk.fusion.Design.cast(app.activeProduct)`; none -> message box, return.
+  2. `root.occurrences.count < 1` -> "This design has no child components." message box, log, return.
+  3. `document_name = design.parentDocument.name` or `"Untitled"`.
+  4. Folder dialog **before** the scan, so a cancelled dialog costs nothing; cancel -> return.
+  5. `_scan(design, root, document_name)` -> `model.AssemblyModel` or `None` (cancelled -> return, nothing written).
+  6. `stem = render.safe_filename(os.path.basename(document_name))`; writes `stem + "-physical.sysml"` (`render.sysml_document`) then `stem + "-ADD.md"` (`render.add_document(assembly, sysml_name)`), each with `encoding="utf-8", newline="\n"`.
+  7. Confirmation message box naming both files and the folder.
+- Every Fusion property is read through `_read(getter, default=None)`, which returns the default on any exception: a partial document that says which values are missing beats an aborted export.
 
-    System(addin, "Power Tools – Export SysML", "Walks the active design's component graph and writes an architecture design document plus a SysML v2 model.")
+### The scan (`_Scan`)
 
-    System_Ext(fusion, "Autodesk Fusion", "CAD platform. Provides the design API, the component graph, physical properties, bounding boxes, joints, external references, and the folder browser dialog.")
+`_scan` shows a cancellable `ui.createProgressDialog()` only when `design.allComponents.count >= PROGRESS_THRESHOLD` (25); `show()` is called with minimum 0 and `progressValue` set afterwards. It then runs `_Scan.visit(root, None, 0)` under `try/finally: progress.hide()`. `visit(component, occurrence, depth)`:
 
-    System_Ext(fs, "Local File System", "Receives {DocumentName}-ADD.md and {DocumentName}-physical.sysml.")
+1. `key = key_for(component, occurrence)`; return if already in `nodes` or cancelled.
+2. `_tick(label)` advances the progress bar and reads `wasCancelled`; no events are pumped inside the loop.
+3. Reads `bRepBodies.count`, `_physical()` (`getPhysicalProperties(LowCalculationAccuracy)` -> mass, volume, area, centre of mass), `_bounds()` (`boundingBox` min/max corners, cm).
+4. Records a frozen `model.CompNode` **before** recursing, so a self-containing or twice-reached component terminates; `_joints()` collects `component.joints` and `component.asBuiltJoints` as `model.JointEdge`s owned by this key.
+5. `depth >= model.MAX_DEPTH` (64) -> note and return without children.
+6. Walks `_occurrences(component)`, recursing into each child component, counting multiplicity per child key in first-appearance order (so output follows the browser and is stable between exports), and `_record_reference()` for referenced children; then `dataclasses.replace(node, children=...)`.
 
-    System_Ext(mbse, "SysML v2 tooling", "Consumes the generated .sysml model.")
+After the walk `_scan` emits one aggregated note for referenced occurrences whose document could not be named, computes `model.total_counts`, builds `model.ExternalRef`s (label, version, out-of-date flag, instance count) and `model.DocMeta` (design type, `defaultLengthUnits` string, ISO timestamp, `dataFile.versionNumber`), logs the counts and returns the `AssemblyModel`.
 
-    Rel(user, fusion, "Invokes the command from the File menu")
-    Rel(fusion, addin, "Fires CommandCreated")
-    Rel(addin, fusion, "Reads occurrences, physical properties, bounding boxes, joints, document references")
-    Rel(addin, fs, "Writes the document and the model")
-    Rel(user, mbse, "Opens the generated model")
-```
+## Data and state
 
-### Command processing flow
+- No module-level mutable state; each run builds a fresh `_Scan` (nodes, notes, joints, references, `_id_names`, `_unidentified_refs`, `cancelled`).
+- Output files: `<stem>-ADD.md`, `<stem>-physical.sysml` in the chosen folder; `render.safe_filename` replaces `<>:"/\|?*` and control characters, strips path separators, caps the stem at `MAX_FILENAME_STEM` (120). Nothing else touches disk. No settings keys, caches or custom events.
+
+## Identity is `Component.id` + reference suffix + name
+
+`_Scan.key_for` builds `"<Component.id><@fileId:version>|<name>"`. `entityToken` is not used: its documentation says the token for one entity can differ between reads and must never be compared, which as a dictionary key would emit a component twice and evaluate its properties per instance. `Component.id` is persistent and documented unique within one design, but may collide across externally referenced designs that are revisions or copies of one another, so a referenced component's key carries its source document id and version (`_reference_suffix`). The suffix is not sufficient on its own: a component copied from another inside a referenced document carries the original's `id`, differing only in `revisionId`, and `Occurrence.documentReference` raises for anything nested inside a referenced subassembly, so the suffix is empty exactly where it is most needed. The name completes the key; `revisionId` would also separate them but changes on every edit and would make an unchanged structure export differently. When one id carries two names the scan records a note (a rename in the source design would merge them). An empty `id` falls back to `name:<name>` and records a note.
+
+## The walk is over the component graph, not the occurrence tree
+
+A `part def` is emitted once per unique component, so each component is expanded once regardless of how many occurrences reference it: cost proportional to distinct components plus distinct parent-child edges, one physical-property evaluation per component by construction, and termination on a self-referential graph without a separate cycle set. Quantities are arithmetic over edge multiplicities — `model.total_counts` multiplies down the graph — rather than a second pass over `allOccurrences`. `model.classify` labels a node `part` (bodies, no children), `subassembly` (children, no bodies), `hybrid` (both) or `empty`; the hybrid class exists because `exportbomcsv` drops such rows. `model.definition_order` emits children before parents, each once.
+
+## Joints
+
+**Read per component, not from `allJoints`.** `Component.allJoints` returns proxies "in the context of" the caller whose end occurrences do not correspond to the native children recorded while walking; a connection is emitted inside the owning component's definition, so the ends must be nameable in that scope, which `Component.joints` and `asBuiltJoints` give.
+
+**Placement.** `model.usage_path(model, owner_key, target_key)` finds the chain of child usages from the owner to an end breadth-first (shortest path, stable between exports). A joint becomes a `connect` when both ends are descendants of its owner and it is not suppressed; `render.dotted_path` spells a nested end as `a.b.c`. Everything else is reported with `model.unplaced_reason` — in the ADD's interface table and as comments in the model — never dropped or emitted as a dangling reference.
+
+**Suppression has three signals** (`_Scan._is_suppressed`): `Joint.isSuppressed`; `Joint.healthState == SuppressedFeatureHealthState` (exact value only — a warning or error state is still a built joint); `joint.timelineObject.isSuppressed`. Any one suffices, cheapest first, and the second and third record a note saying which answered. `isLightBulbOn` is not consulted and `isVisible` is not read.
+
+**Kind, degrees of freedom, axis.** The kind comes from `jointMotion.jointType` through `_JOINT_TYPE_NAMES` (all eight `JointTypes`; an as-built joint with no motion defaults to `Rigid`, an ordinary one to `Unknown`). `model.JOINT_DOF` gives `(rotational, translational)` for the seven fixed kinds; `Inferred` and `Unknown` are absent and `model.joint_dof` returns `None`, so the definition omits the counts rather than claiming rigidity. `model.JOINT_AXIS` maps kind -> `(JointMotion property, role)`: `rotationAxisVector` for Revolute, Cylindrical and PinSlot, `slideDirectionVector` for Slider, `normalDirectionVector` for Planar, `pitchDirectionVector` for Ball; Rigid and Inferred get no axis. `entry._joint_axis` is one `getattr`; `model.unit_vector` normalises and returns `None` for a zero-length vector. Only the primary axis is exported; `axisRole` names it.
+
+**Origin.** `_joint_origin` casts `geometryOrOriginOne` / `Two` (a `Joint`) or `geometry` (an `AsBuiltJoint`) as `JointGeometry` or `JointOrigin` and takes the first end that yields a point. As-built joints carry no origin by construction — they are defined by the position their components already had — and the Process View says so in prose when any are present. Origins are in the **owning component's frame**: the value is written onto a `part def` shared by every instance, so a world coordinate would be right for one instance and wrong for the rest; `component.joints` returns native objects that carry no assembly context. Two origins under different definitions are not comparable without composing the occurrence transforms between them.
+
+## SysML modelling decisions (`render.py`)
+
+- **Local schema, no library.** Joint kinds are `connection def <Kind>Joint :> FusionJoint`; `FusionJoint`'s two ends are typed by a locally declared `abstract part def FusionComponent` that every component definition specialises. Typing against `SpatialItems::SpatialItem` would import the geometry domain library — the same trade rejected for ISQ. Both names go through `_unclashed` against every *emitted* component name (`render.schema_names`), because SysML treats `'FusionJoint'` and `FusionJoint` as one name. The base is emitted only when at least one joint is connectable; only used joint kinds are declared. Degrees of freedom and the placement attributes (`originXMm`… , axis, `axisRole`, frame statement) are declared once on `FusionJoint` and redefined per connection; a connection with nothing to place stays a one-line statement.
+- **Connector ends are positional**: `connect a to b`, no `occurrenceOne references` binding and no `end [1]` cross multiplicity (which would assert each component takes part in exactly one connection of that kind). The comment on each connection records the occurrence names Fusion gave its ends.
+- **Definition names deduplicated case-sensitively** (`render.definition_names`): two components with one display name become `'Bracket'` and `'Bracket (2)'`, and every usage referencing them is rewritten through the same map. Case-sensitive because SysML namespaces are; the counter only allocates a suffix when the unsuffixed name is taken, so Fusion's own `Model (1)` / `Model (2)` coexist with it. `test_every_part_def_name_is_unique_in_the_worked_example` asserts the invariant because CI has no SysML parser.
+- **Usage identifiers assigned once** (`render.usage_names`: `{(parent key, child key): identifier}`) before anything is emitted, since each is needed twice — to declare the usage and to spell a dotted path through it — and `render.identifier` disambiguates same-named children with a numeric suffix and avoids `RESERVED` words.
+- **Plain `ScalarValues`, not ISQ.** Attributes are `Real` and `String` with the unit in the name (`massKg`, `bboxLengthMm`); `ScalarValues` is kernel and always resolves, ISQ needs the systems library. Scalars only — no collection literals for centre of mass or envelope. `UNIT_NOTE` states the convention in both outputs.
+- **Everything user-authored is escaped**, four contexts, four functions — the same reasoning as `_csv_cell` in `exportbomcsv`, except a bad value here corrupts a model file:
+
+  | Function | Context | Guards against |
+  |---|---|---|
+  | `quoted_name` | a declared or referenced SysML name (always quoted; control characters stripped) | keyword collisions, spaces, quotes, backslashes, a second line |
+  | `sysml_string` | a double-quoted attribute value | an unescaped `"` |
+  | `comment_text` | inside `//` or `/* */` | `*/` closing the block early, `/*` opening one, a newline |
+  | `md_cell` | a Markdown table cell | `\|` breaking the table, `[..](..)` injecting a link |
+
+- **Absent values are absent, never zero.** Every physical field is optional; the SysML omits the attribute and the ADD prints an em dash. `render.number` prefers fixed point and falls back to exponent form only for a value too small for six decimals (a 1e-7 kg part is a real reading). `render.coordinate` additionally snaps `|x| < GEOMETRY_EPSILON` (1e-9) to `0` and is used for origins and axis components only — a joint origin comes out of a transform multiply and arrives as picometre noise that would otherwise read as a measurement and diff between exports. `model.extents_cm` treats an all-zero bounding box as absent (Fusion returns a degenerate box for a component that encloses nothing) but keeps a single zero dimension (a shim is flat).
+
+## What the ADD says about the figures
+
+`Component.physicalProperties` and `boundingBox` include children: a bodiless subassembly reports the envelope of everything inside it, and the root's mass is the assembly total. The ADD therefore names the root figures as the assembly total and envelope, computes no roll-up, and states under the component inventory that its Mass column is **not additive** — every subassembly already contains its parts — quoting the root mass and the naive column sum for the design in hand (`render._mass_sums`; omitted when the root has no mass). The Development View lists only occurrences whose `documentReference` resolves to a name or id, aggregated by document with an instance count; the rest are counted into one collection note, because Fusion marks the *contents* of a referenced subassembly as referenced too and then refuses `documentReference` for them. Of the five views, the Logical View and Scenarios carry only a heading and a verbatim statement that they must be authored: a Fusion design records decomposition, not intent.
+
+## Diagram
+
+The command path with the scan's per-component step; every box is a function in `entry.py` unless prefixed `model.` / `render.`.
 
 ```mermaid
 flowchart TD
-    A([User selects Export SysML Architecture Document]) --> B[commandCreated fires]
-    B --> C{Active product\nis a Fusion Design?}
-    C -- No --> D[Message: a design must be active] --> Z([End])
-    C -- Yes --> E{Root component has\nchild occurrences?}
-    E -- No --> F[Message: no child components] --> Z
-    E -- Yes --> G[Show folder dialog]
-    G --> H{Folder chosen?}
-    H -- No --> Z
-    H -- Yes --> I[Show progress dialog\nif the design is large]
-    I --> J[Walk the unique-component graph]
-    J --> K[Per component: identity, bodies,\nphysical properties, bounding box, joints]
-    K --> L{Already visited\nthis component?}
-    L -- Yes --> M[Reuse the node, do not recurse]
-    L -- No --> N[Recurse into child occurrences\ncounting multiplicity]
-    M --> O{Cancelled?}
-    N --> O
-    O -- Yes --> P[Write nothing] --> Z
-    O -- No --> Q[Derive totals, classification,\njoint placement, external refs]
-    Q --> R[Render the SysML model]
-    R --> S[Render the ADD]
-    S --> T[Write both files as UTF-8, LF]
-    T --> U[Confirm with both filenames] --> Z
+    CC["command_created()"] --> EX["_export()"]
+    EX --> D{"Design active and<br/>root.occurrences.count >= 1?"}
+    D -- no --> M1["messageBox; return"]
+    D -- yes --> FD["createFolderDialog()"]
+    FD -- cancel --> R0["return"]
+    FD -- OK --> SC["_scan(): progress dialog if allComponents >= 25"]
+    SC --> V["_Scan.visit(component, occurrence, depth)"]
+    V --> K["key_for(): id + reference suffix + name"]
+    K -- "seen or cancelled" --> RK["return key"]
+    K -- new --> P["_tick(); _physical(); _bounds(); record CompNode"]
+    P --> J["_joints(): joints + asBuiltJoints -> JointEdge<br/>(_is_suppressed, _joint_origin, _joint_axis)"]
+    J --> CH["children: recurse visit(); count multiplicity;<br/>_record_reference(); replace(children)"]
+    CH --> V
+    SC -- cancelled --> R1["log; return None"]
+    SC -- done --> AM["model.total_counts(); ExternalRef; DocMeta -> AssemblyModel"]
+    AM --> W1["render.sysml_document() -> stem-physical.sysml"]
+    W1 --> W2["render.add_document() -> stem-ADD.md"]
+    W2 --> OK["messageBox with both filenames"]
 ```
 
-## Design decisions
-
-### The whole command runs in `commandCreated`
-
-`execute` never fires when no document is open, so a QAT File-menu command that
-does its work there silently does nothing in exactly the case its precondition
-message exists for (f18b911, 11cfc51). `exportbomcsv` and `exportmermaid` both
-have that latent bug — their "A Design Must be Active." message box is
-unreachable. This command follows `closealldocuments` instead: everything runs
-in `command_created`, inside one `try` / `ptutil.handle_error`.
-
-No execute handler is registered, so the auto-execute of an input-less command
-is a no-op and the `_command_abort` flag machinery is unnecessary — that flag
-exists to stop a *later* execute from acting on a previous run's module state
-(5bae0e3). Adding an execute handler here would reintroduce both problems, and
-the repo-wide AST guard in `tests/test_command_abort.py` would not catch it
-because it only inspects `command_created`.
-`tests/test_exportsysml_entry.py::test_no_execute_handler_is_registered` guards
-it directly.
-
-### Identity is `Component.id`, not `entityToken`
-
-`entityToken`'s own API documentation states that the token returned for one
-entity "can be different over time" and that tokens must never be compared to
-decide what they represent. As a dictionary key it would emit the same component
-twice and re-evaluate its physical properties once per instance — the exact cost
-the memo exists to avoid.
-
-`Component.id` is the persistent id: created with the component, unchanged
-thereafter, and documented as unique within a single design. Its one documented
-limitation is that it may collide across externally referenced designs that are
-different revisions or copies of one another, which is reachable in any assembly
-carrying xrefs — so a referenced component's key also carries its source
-document id and version. An empty `id` falls back to the component name and
-records a collection note, because merging two components would be worse than
-saying the identification was weak.
-
-**The id is not unique even within one design, and the suffix does not always
-save you.** Verified against a live `Rear Hub ASSY R`: `CVD Pivot Pin` and
-`CVD Drive Pin` are two of the seventeen components `design.allComponents`
-reports, and they carry the *same* `Component.id`
-(`012331ee-63d2-46b6-b607-e74d637af56e`), differing only in `revisionId` and
-`partNumber` — the signature of one component having been copied from the other
-inside the referenced document. The source-document suffix cannot separate them,
-because both come from the same document at the same version. Worse, for an
-occurrence nested inside a referenced subassembly, `Occurrence.documentReference`
-*raises* `RuntimeError: 3 : Cannot get allDocumentReferences of a non-top-level
-document`, which `_read` absorbs, so the suffix is empty for exactly the
-components that most need it.
-
-Keying on the id alone therefore recorded sixteen nodes for seventeen
-components: the second component never entered the model, and joint `Rigid 5`
-— `CVD Drive Pin:1 → Dog Bone - Rear:1` in the design — was emitted as a
-connection naming `cvdPivotPin`. A wrong connection, not a missing one.
-
-So the key is `id + reference suffix + name`. `revisionId` would also separate
-the two, but it changes every time the component is modified, so as a key it
-would make the export differ between runs over an unchanged structure. The name
-is stable, and the two together were unique across every component in the
-design. When one id does carry two names the scan records a note, because the
-remaining failure mode — a rename in the source design collapsing them again —
-is one the reader has to know about rather than discover from a wrong joint.
-
-### The walk is over the component graph, not the occurrence tree
-
-A `part def` is emitted once per unique component, so the traversal expands each
-component once regardless of how many occurrences reference it. That makes the
-cost proportional to distinct components plus distinct parent-child edges, gives
-one physical-property evaluation per component by construction, and terminates
-on a self-referential graph without a separate cycle set. `MAX_DEPTH` guards a
-pathologically deep or corrupt graph and surfaces as a `truncated` row plus a
-note, rather than a hang.
-
-Quantities are then pure arithmetic over the edge multiplicities —
-`total_counts` multiplies down the graph — rather than a second pass over
-`rootComponent.allOccurrences`. That keeps the derivation unit-testable and
-costs no further Fusion calls.
-
-### Joints come from each component, not from `allJoints`
-
-`Component.allJoints` returns joints "in the context of" the calling component,
-so joints owned by a subassembly come back as proxies whose end occurrences do
-not correspond to the native children recorded while walking. Because a
-connection is emitted inside the owning component's definition, the ends have to
-be nameable in that scope — which means reading `Component.joints` and
-`Component.asBuiltJoints` during the same per-component pass.
-
-A joint becomes a connection when both ends are *descendants* of its owner and
-the joint is not suppressed. It used to require direct children, which dropped
-every joint crossing a subassembly boundary — a third of the two-ended joints in
-a real hub assembly. A SysML connection end may name a nested usage by a dotted
-path, so a common ancestor is sufficient; `model.usage_path` finds the chain
-breadth-first, so the shortest path wins and the output stays stable between
-exports, and it is the same function that decides placeability and spells the
-path. Everything else is reported with a reason, in the document's interface
-table and as comments in the model, rather than being dropped or emitted as a
-dangling reference. Suppression is treated as a deliberate exclusion, not a
-failure: a suppressed joint is not part of the built configuration, so a
-`connect` for it would assert an interface the design denies.
-
-### The joint schema is local, so it needs no library
-
-Joint kinds are emitted as connection definitions specialising a locally
-declared `FusionJoint`, whose two ends are typed by a locally declared
-`abstract part def FusionComponent` that every component definition specialises.
-Typing the ends against a library base such as `SpatialItems::SpatialItem` would
-read better but would import the geometry domain library, which is the same
-trade rejected below for ISQ. Both names are allocated through `_unclashed`
-against every component name in the design, because SysML treats `'FusionJoint'`
-and `FusionJoint` as one name and a component genuinely called that would
-otherwise redefine the schema out from under the model. The base is emitted only
-when the design has at least one connectable joint.
-
-Degrees of freedom live in the definitions rather than on each connection:
-they are a property of the kind, so that is one line per kind instead of two per
-joint. `model.JOINT_DOF` covers Fusion's seven fixed kinds; `Inferred` is
-deliberately absent and `joint_dof` returns `None` for it, so the definition
-omits the counts rather than claiming a joint is rigid.
-
-### Joint placement: origin and one axis
-
-A joint's kind says how it moves; its geometry says where it is and which way it
-acts. Without the second, the Physical View can tell a reader that two parts are
-hinged but not where the hinge is, which was the largest remaining content gap.
-
-The origin comes from `Joint.geometryOrOriginOne` / `Two`, which is either a
-`JointGeometry` (carrying `origin`) or a `JointOrigin` (wrapping one), so both
-are cast for. An `AsBuiltJoint` has a single `geometry` instead. The first end
-that yields a point wins and the second is the fallback, because a joint made to
-root-level geometry can have nothing on one side.
-
-The axis is read off the `JointMotion`, and *which* vector to read depends on the
-kind — `rotationAxisVector` for revolute and cylindrical, `slideDirectionVector`
-for slider, `normalDirectionVector` for planar, `pitchDirectionVector` for ball.
-That mapping is data in `model.JOINT_AXIS` rather than a chain of `isinstance`
-checks in `entry.py`: it keeps the knowledge testable and reduces the Fusion side
-to a single `getattr`. Rigid is absent from the mapping because it permits no
-motion, and Inferred because its motion is not fixed by its kind — neither gets
-an axis rather than getting a wrong one. A test asserts that every kind carrying
-an axis also reports a non-zero degree of freedom, so the two tables cannot
-drift apart.
-
-Vectors are normalised in `model.unit_vector`, which returns `None` for a
-zero-length vector: an axis of `(0, 0, 0)` is not a direction, and publishing it
-would be indistinguishable from a real one. Only the primary axis is exported;
-pin-slot and planar joints have a second, and `axisRole` names which one the
-reader is looking at.
-
-The attributes are declared once on the abstract `FusionJoint` base and
-redefined per connection, the same shape the degree-of-freedom counts already
-use. A connection with nothing to place stays a one-line statement rather than
-opening an empty body, and an absent origin leaves the inherited attribute unset
-rather than zero.
-
-### Definition names are deduplicated, case-sensitively
-
-Two different Fusion components can carry the same display name — that is the
-whole reason identity is keyed on `Component.id`. SysML requires the members of
-a namespace to be distinguishable by name, so emitting both as
-`part def 'Bracket'` produces a model a parser rejects outright with `RES017`.
-The second and later collisions are suffixed (`'Bracket (2)'`), and the usages
-that reference them are rewritten through the same map — a suffixed definition
-nothing points at would be worse than the collision it fixed. The schema names
-are then allocated clear of the *emitted* names rather than the raw ones, since
-a suffixed name could otherwise land on `FusionComponent`.
-
-Matching is case-sensitive because SysML namespaces are: a validator accepts
-`Bracket` and `bracket` side by side, so folding them would rename a pair the
-model is entitled to keep apart.
-
-This reached the output and was caught only by running a real validator, which
-is why `tests/test_exportsysml_render.py` now asserts the uniqueness invariant
-directly — CI has no SysML parser.
-
-### Usage identifiers are assigned once, up front
-
-`render.usage_names` builds `{(parent key, child key): identifier}` for every
-declared usage before anything is emitted. The renderer needs each name twice —
-to declare the usage, and to spell a dotted path through it for a connection end
-further down — and deriving them twice risked the two disagreeing whenever
-`identifier` had to disambiguate two same-named children.
-
-### Plain `ScalarValues`, not ISQ quantities
-
-Attributes are `Real` and `String` with the unit in the attribute name
-(`massKg`, `bboxLengthMm`) rather than ISQ quantity types with unit literals.
-`ScalarValues` is part of the kernel library and always resolves; ISQ comes from
-the systems library, and a tool without it on the default path fails to parse
-rather than warning. Scalars only, too — no collection literals for the centre
-of mass or the envelope, since that is a second syntax surface to get wrong for
-no gain. The unit convention is stated in the file's `doc` block and in the
-document.
-
-### Everything user-authored is escaped
-
-Component names, part numbers and descriptions come out of documents other
-people wrote, so they are untrusted input to a text generator — the same
-reasoning as `_csv_cell` in `exportbomcsv`, except that here a bad value
-corrupts a model file instead of a spreadsheet. Four contexts, four functions in
-`render.py`:
-
-| Function | Context | Guards against |
-|---|---|---|
-| `quoted_name` | a declared or referenced SysML name | keyword collisions, spaces, quotes, backslashes |
-| `sysml_string` | a double-quoted attribute value | an unescaped `"` |
-| `comment_text` | inside `//` or `/* */` | `*/` closing the doc block early; a newline appending a second line |
-| `md_cell` | a Markdown table cell | `\|` breaking the table, `[..](..)` injecting a link |
-
-Declared names are quoted *unconditionally* rather than only when necessary, so
-the reserved-word list cannot be incomplete in a way that breaks a file. It is
-kept only to stop the generated usage identifiers colliding with a keyword.
-
-### Absent values are absent, never zero
-
-Every physical field is optional. Where Fusion could not evaluate one, the SysML
-omits the attribute and the document prints an em dash; neither writes `0`,
-which no reader could distinguish from a measurement (c8c0382). The
-`number` helper prefers fixed-point but falls back to exponent notation for a
-value too small to show at six decimal places, for the same reason.
-
-## Scope and limits
-
-- **No mass roll-up.** The Fusion API does not document whether a component's
-  `physicalProperties` and `boundingBox` include its child components, so the
-  document reports per-component figures as returned and computes no total. A
-  summed mass that double-counted subassemblies would be a plausible wrong
-  answer.
-- **Connections name a usage, not an instance.** Sibling occurrences of one
-  component collapse to a multiplicity (`part shaft : 'Shaft'[2];`), so a joint
-  to one specific instance is modelled as a connection to the collapsed usage.
-  Per-occurrence fidelity would need one usage per occurrence and is not done.
-- **Two of the five views are scaffolding.** The Logical View and Scenarios
-  carry a heading and an explicit statement that they must be authored. This is
-  deliberate: a Fusion design records decomposition, not intent.
-
-### Still unverified in Fusion
-
-The command has been run in Fusion on `ADSKMVG91G2F5W` against several real
-designs — an espresso machine, a rear hub assembly, a gearbox — and the findings
-above came out of those runs. CI still stubs `adsk`, so a green suite proves the
-text renderers and the arithmetic and nothing about the collection pass. What
-those runs have not covered:
-
-- **A suppressed joint.** The concern for every joint variant is that the
-  identity key derived from `occurrenceOne`/`occurrenceTwo` matches the one the
-  walk recorded for that component. A mismatch either reports the joint as not
-  expressible — safe, because it is visible — or names the wrong component,
-  which is silent and is exactly what the `CVD Drive Pin` collision did. The
-  suffix is the fragile part: `documentReference` raises for an occurrence
-  nested inside a referenced subassembly, so a joint end and a walk step that
-  disagree about whether they can read it would key differently.
-
-  Current-code exports now cover all four, and the fourth found a bug. An espresso machine
-  (52 joints) exercises joints owned by subassemblies and 29 as-built joints,
-  all resolved; a Center Slipper assembly (18 joints) exercises an end anchored
-  to geometry owned by no occurrence. Two joints across the 69 are reported as
-  not expressible, both with an honest reason. A Rear Hub export taken with a
-  joint suppressed showed the suppressed path was broken; it is fixed and
-  re-confirmed by export — see the suppression section. All four variants have
-  now been exercised against Fusion.
-
-  `Overall Assembly` has been re-exported and is the strongest evidence for the
-  dotted-path work: 178 joints, of which 21 could be expressed before and 118
-  can now. The 60 that remain are 59 ends anchored to geometry owned by no
-  occurrence and one end unreachable from its owner — genuinely inexpressible
-  rather than missed, and 118 + 60 accounts for every joint. 89 of the 118
-  connections name at least one end by a dotted path, which is the mechanism
-  doing the work.
-
-  It is also the largest artefact checked end to end: 2437 lines, 104
-  components, 118 connections, validating clean and round-tripping through
-  `sysml_import` to 104 nodes and 109 edges with nothing skipped and no
-  warnings. More edges than nodes because components are shared, which is what
-  a DAG keyed on identity is for. Its 2.68x inventory over-count is the largest
-  seen and the clearest argument for the non-additive note.
-
-  `Rear Hub ASSY R` has been re-exported and the identity fix holds. The
-  earlier run was the *before* artifact for the collision: 16 definitions for
-  17 components, no `CVD Drive Pin`, the two pins merged into
-  `part cvdPivotPin : 'CVD Pivot Pin'[2]`, and `Rigid 5` emitted as a
-  connection to `cvdPivotPin` where the design joins the drive pin. The current
-  export gives 17 definitions, both pins as separate defs and separate usages,
-  no spurious `[2]`, and `connection 'Rigid 5' : RigidJoint connect cvdDrivePin
-  to dogBoneRear`.
-- That `Component.id` is non-empty in a Direct (non parametric) design, so the
-  name fallback stays unused. Non-empty inside an xref is confirmed; *unique*
-  inside an xref is confirmed false — see the identity section.
-- Progress-dialog repaint and `wasCancelled` on a large assembly with no
-  `doEvents` in the scan loop.
-- On `g16win.local`, the parts no test can reach. What *is* covered from here:
-  an AST guard asserts every write in `entry.py` pins `encoding="utf-8"` and
-  `newline="\n"`, and the importer is tested against CRLF input, since a model
-  authored on Windows arrives with carriage returns that survive the byte-level
-  read. What is left is runtime behaviour:
-  - that the written `.sysml` really lands with LF rather than CRLF;
-  - a non-ASCII document name surviving the folder dialog, the filename and the
-    file contents;
-  - a destination deep enough to push the path past 260 characters. The stem is
-    capped at 120 and the suffix adds 15, so the user's chosen folder decides
-    it, and a Windows without long-path support will fail the write;
-  - the Assembly Builder palette's Import button and file dialog under QT
-    WebEngine, which is a different browser build from macOS.
-
-### Verified against a real SysML v2 parser
-
-The emitted notation is no longer taken on trust. On 2026-09-09, on
-`ADSKMVG91G2F5W`, six generated models were checked with the headless
-`sysml-validate` npm package (a SysML v2 / KerML parser and linker), all
-passing:
-
-| Model | Covers |
-|---|---|
-| worked example | the ordinary shape: schema, defs, usages, one connection |
-| hostile names | `'`, `\`, `*/`, non-ASCII, a component called `part`, a document name containing `*/ package evil {` |
-| joints | all eight `JointTypes`, a suppressed joint, an unresolved end, a dotted path across a subassembly boundary |
-| minimal | root plus one child, no joints, no physical data |
-| collide | two components sharing a display name, a 1e-7 mass, a zero volume |
-| cycle | a component that contains itself |
-| geometry | all eight kinds carrying an origin and an axis, a rigid joint with an origin and no axis, an axis with no origin, and a joint with neither |
-| schema clash | components genuinely named `FusionComponent` and `FusionJoint` |
-
-A real export has since been checked the same way: `Rear Hub ASSY R`, 17
-components and 17 connections, validates clean and round-trips back through
-`sysml_import` to 17 nodes and 16 edges with nothing skipped and no warnings.
-It also gave the cleanest confirmation that mass includes children — its root
-is a pure subassembly with no bodies of its own, so its leaf parts sum to
-0.024365 kg against a root reporting 0.024365 kg, a ratio of exactly 1.0000.
-Summing every inventory row instead gives 0.060391 kg, 2.48 times the truth,
-which is what the non-additive note under the table exists to prevent.
-
-Constructs the OMG BNF made look doubtful, confirmed legal by the parser:
-
-- `abstract connection def`, `connection def X :> Y`, `attribute :>> n = 1`, and
-  a body on a connection usage after the `connect` clause.
-- `end part occurrenceOne : FusionComponent;` — reading the BNF strictly
-  suggests `end` cannot prefix a `part` usage, since `OccurrenceUsagePrefix`
-  starts from `BasicUsagePrefix`. The parser accepts it. Trust the parser.
-
-### Physical properties and bounding boxes include children
-
-Confirmed against live designs rather than the API reference, which does not
-say. Components with **no bodies of their own** still report substantial boxes:
-in one espresso machine, `Water Tank` (bodiless) reports 285 x 127 x 66 mm and
-`Bottom Assembly` 312 x 152 x 76 mm; 33 of that design's components are in the
-same position, and a bodiless component has no geometry a box could otherwise
-come from.
-
-So a subassembly's extents are the envelope of everything inside it, and the
-root's are the envelope of the whole assembly — which is what the document now
-calls it. The remaining hedge in the mass-and-envelope caveat is about mass,
-volume and area only.
-
-`Component.physicalProperties` behaves the same way, and the espresso machine
-proves it arithmetically: the root reports 8.667 kg, its leaf parts sum to
-8.630 kg, and the 0.037 kg difference is the root's own single body. Volume and
-area track identically, at 0.998 and 0.995 of the root figure. `Generator`, a
-subassembly, reports exactly the mass of its one child.
-
-So the root's own reading *is* the assembly total and nothing needs summing —
-the earlier "declines to compute a roll-up" hedge is gone, replaced by naming
-the figures for what they are. The hazard moved rather than disappeared: the
-component inventory's Mass column is **not additive**, because every
-subassembly already contains its parts. Adding that column over the espresso
-machine gives 23.629 kg for a machine that weighs 8.667 kg, a 2.7x over-count,
-and volume and area are worse at 2.8x and 2.9x. The document now says so
-directly under the table, quoting both numbers for the design in hand, because
-the comparison is what stops someone doing it.
-
-The same sweep turned up a second thing. Two components in an "Overall Assembly"
-export came out as `0 x 0 x 0 mm`: Fusion returns a *degenerate* box for a
-component that encloses nothing rather than returning no box, so the emitter was
-publishing a measurement of nothing. `extents_cm` now treats an all-zero box as
-absent, by the same rule that omits an unevaluated mass. A single zero dimension
-is kept — a shim really is flat. Re-exporting that design confirms it:
-`Drive Shaft v4` and `Output Shaft v4` now carry no envelope at all, and no
-`bbox*Mm = 0` remains anywhere in the file.
-
-### Joint origins are in the owning component's frame, and that is the right one
-
-The origin is written onto a `part def`, which every instance of that component
-shares, so the coordinate is only meaningful in the owning component's frame. A
-world coordinate would be right for one instance of a repeated component and
-wrong for the rest — a plausible wrong answer, which is worse than none.
-
-`PTJointFrameProbe` (a throwaway script in Fusion's Scripts folder, outside this
-repo) answered it against the espresso machine. The intended A/B — the same
-joint read natively and again as a root-context proxy — did not run, because
-`rootComponent.allJoints` raised on that design. The moved subassemblies settled
-it anyway:
-
-| Component | 1st occurrence translation (cm) | Joint origin (cm) |
-|---|---|---|
-| Controls | `(0, -11.78, 6.81)` | `(0.02, -1.90, 1.16)` |
-| Frother Mechanism | `(-5.52, -8.80, 1.36)` | `(10.92, 3.10, 4.38)` |
-
-Read as world, the Controls joint would sit roughly 100 mm in y away from the
-component that owns it. Read as component-local, it is 2 cm from that
-component's own origin — where a joint inside Controls belongs. Every other
-origin-carrying component in the design has an identity transform, so the two
-frames coincide there and only these two discriminate.
-
-The API's structure says the same thing independently: `component.joints`
-returns *native* objects, and a native object carries no assembly context,
-because its component can sit in many places. Having no world position to give
-is exactly why the proxy form exists.
-
-So the export was already correct and only its wording was wrong; `render.py`,
-`model.py` and the user doc now say "the coordinate space of the component that
-owns it". Two consequences worth stating where a reader will meet them: the
-value is correct for every instance of a repeated component, and two origins
-under different definitions are not comparable without composing the occurrence
-transforms between them.
-
-That `rootComponent.allJoints` raised is a second, smaller finding, and it
-reinforces the existing decision to read joints per component: the flattened
-collection is not dependable on a real design.
-
-### The Development View lists documents, not the contents of one
-
-Fusion marks the *contents* of a referenced subassembly as referenced too, and
-then refuses `Occurrence.documentReference` for them — the same
-"Cannot get allDocumentReferences of a non-top-level document" that defeats the
-identity suffix. All that is left is the occurrence name, and the first version
-of the collection fell back to it.
-
-A Rear Hub export showed the cost: 14 rows for 8 real documents, six of them
-being the parts inside a linked `CVD ASSY - Rear`, labelled `Axle Rear:1`,
-`CVD Barrel:1` and so on, with no version and no status. That over-reports the
-module structure by three quarters, and the one document those six actually
-belong to was already in the table.
-
-Only occurrences whose document resolves to a name or an id are recorded now.
-The rest are counted into a single collection note rather than one note each,
-because inside a linked subassembly every part hits this and a note apiece
-would bury the appendix.
-
-### Suppression has two flags, and the joint's own one is not the whole story
-
-A `connect` statement asserts a physical interface, so a suppressed joint must
-never become one — it is a joint the design has switched off. The emitter
-checked `Joint.isSuppressed`.
-
-That is not what the browser's **Suppress** sets. A Rear Hub export taken with
-`Rigid 10` suppressed still emitted
-`connection 'Rigid 10' : RigidJoint connect iso7380M3X12 to c6MmBallNut`, and
-the only difference from the previous export was the joint's *origin* moving
-from `(12.68, -3.12, 21.5)` to `(3.69, 0, 3.69)` — the screw falling back to
-where it sits unjointed. The suppression was real and visible in the geometry;
-`isSuppressed` reported `False`.
-
-`PTJointSuppressProbe` settled which flags do fire. Against that live design,
-with `Rigid 10` suppressed and the other eighteen joints healthy:
-
-| Property | `Rigid 10` | The other 18 |
-|---|---|---|
-| `Joint.isSuppressed` | `False` | `False` |
-| `Joint.healthState` | `3` (`SuppressedFeatureHealthState`) | `0` |
-| `TimelineObject.isSuppressed` | `True` | `False` |
-| `Joint.isVisible` | *raises* | `False` |
-| `Joint.isLightBulbOn` | `False` | `False` |
-
-So the property named after the concept is the one that does not carry it, and
-two others do. The collection checks all three, cheapest first, and records a
-note saying which answered. Any one is sufficient: asserting an interface the
-design denies is the worse error, and a joint suppressed by any route is
-equally not built. Only the *exact* suppressed health state counts — a joint
-that merely errors or warns is still meant to be there, and dropping its
-connection would understate the design.
-
-Re-exported with the fix, that design drops from 17 connections to 16.
-`Rigid 10` appears only in the not-expressed list, as
-`Rigid Rigid 10: ISO 7380 - M3 x 12:1 <-> 6 mm Ball Nut:1 -- suppressed in the
-design, so not part of the built configuration`, and the file still validates
-and still round-trips to 17 nodes and 16 edges with nothing skipped.
-
-Two smaller notes from the same run. `isLightBulbOn` is `False` for every
-joint, healthy or not, so it says nothing about suppression and is not
-consulted. And `Joint.isVisible` *raises* on a suppressed joint, which is worth
-knowing before reaching for it: the guarded reads absorb it, but an unguarded
-one would take the export down over a joint that is switched off.
-
-### As-built joints carry no origin, and the document says so
-
-29 of the 52 joints in a real espresso-machine export had no origin, all of them
-rigid, which looked like a gap in the reads. Correlating the generated
-document's Origin and State columns settled it: all 29 are as-built, all 23 with
-an origin are ordinary joints, and there is no joint that lacks an origin
-without being as-built.
-
-That is correct behaviour rather than a gap. An as-built joint is defined by the
-position its components were already in, not by geometry someone picked, so
-`AsBuiltJoint.geometry` has nothing to return. The Process View now says this in
-prose when as-built joints are present, because a column of em dashes otherwise
-reads as a failure to collect rather than as nothing to collect.
-
-### Parsing is not rendering: connector ends are positional
-
-An earlier revision bound the ends by name:
-
-```sysml
-connection 'Rigid 3' : RigidJoint
-    connect occurrenceOne references controlTop to occurrenceTwo references controlBottom;
-```
-
-That is legal — `ConnectorEnd` is `(multiplicity)? (NAME REFERENCES)? reference`,
-and the validator passes it. It nonetheless **stopped a SysML viewer showing the
-joints as relationships at all**, reported against a real espresso-machine
-export. Five hand-built variants of the same two-part model all parse and link
-cleanly, so `sysml-validate` cannot distinguish them: it checks parse and link,
-not how a tool derives an interconnection view. Reverting to the shorthand
-restored the relationships in that viewer, confirmed 2026-09-09.
-
-The named form carries no information the order does not already carry —
-`BinaryConnectorPart` is `ConnectorEndMember 'to' ConnectorEndMember`, so the
-first end *is* `occurrenceOne`. It was pure verbosity with a compatibility cost,
-and the emitter is back to the shorthand every tool renders:
-
-```sysml
-connection 'Rigid 3' : RigidJoint connect controlTop to controlBottom;
-```
-
-The lesson worth keeping: a green validator is necessary and not sufficient. The
-only check that covers rendering is opening the file in the tool the output is
-for.
-
-The cross multiplicity went with it. `end [1] part occurrenceOne` asserts that
-each component takes part in exactly one connection of that kind, which is false
-for any part carrying two joints — a claim the design does not make, and not one
-worth risking on a reader that enforces it.
-
-Two namespace rules were established by probe rather than by reading, and the
-emitter depends on both: SysML is **case-sensitive** (`Bracket` and `bracket`
-coexist), and a definition and a usage **may** share a name (`part def 'gearbox'`
-alongside `part gearbox : 'gearbox'`).
-
-#### The duplicate-name bug was real, not hypothetical
-
-Two exports of the same 118-component espresso machine, taken before and after
-the fix, settle it. The earlier file declares `part def 'Connector'` twice — at
-lines 851 and 1784 — because the design contains two distinct components that
-share that display name. The validator rejects it:
-
-```
-before.sysml  1784:14  error  RES017  ''Connector'' is already declared in this
-namespace. Members must be distinguishable by name.
-```
-
-The later file emits `'Connector'` and `'Connector (2)'`, with each usage
-pointing at the right one, and passes. Note the design also legitimately
-contains components Fusion itself named `Model (1)`, `Model (2)`, `Model (3)`
-and `Gasket (1)`: the suffix scheme has to coexist with names that already look
-like it, which it does because the counter only allocates a suffix when the
-unsuffixed name is taken.
-
-#### Float noise in a coordinate
-
-The same pair exposed a second defect. A joint origin comes out of a transform
-multiply, so a coordinate that is mathematically zero arrives as noise, and the
-real export contained `originXMm = 5.68989e-15`, `3.55271e-14` and
-`-1.06606e-13`. `number` printed them in exponent form on purpose — its rule is
-that a tiny value must never read as zero — but that rule was written for mass,
-where 1e-7 kg is a real reading. For a coordinate it is wrong twice over: it
-looks like a measurement, and it makes two exports of an unchanged design differ.
-`coordinate` now snaps anything below `GEOMETRY_EPSILON` (1e-9) to zero, and is
-used for origins and axis components only. Mass keeps the old behaviour.
-
-To repeat the check — CI cannot, since the add-in and `tools/` are stdlib-only
-and the validator is an npm package:
-
-```bash
-mkdir -p /tmp/sysmlcheck && cd /tmp/sysmlcheck && npm install sysml-validate
-./node_modules/.bin/sysml-validate *.sysml
-```
+## Tests
+
+- `tests/test_exportsysml_entry.py` (27) — command identity and registry/docs/README contract; no `execute` handler registered and no `doExecute` anywhere; `model.py` / `render.py` import no `adsk`; `_JOINT_TYPE_NAMES` / `_DESIGN_TYPE_NAMES` cover every enum member; distinct output suffixes; `_read` swallows failures; `key_for` keeps two components sharing an id distinct and notes it, falls back to the name; every `open()` pins `encoding="utf-8"` and `newline="\n"`; `_record_reference` records resolvable references, drops unnameable ones, aggregates instances per document; `_is_suppressed` on each of the three signals, the timeline route consulted only after the joint says no, an unhealthy joint not treated as suppressed.
+- `tests/test_exportsysml_model.py` (46) — `classify` over every combination; `total_counts` (root is one, multiply down, shared subassembly sums across parents, missing child skipped); termination on self-reference, mutual recursion and the depth cap; `walk` and `definition_order`; joint placement (siblings, unresolved end, suppressed, dotted path across a subassembly, end not below owner, owner not recorded); `usage_path` (direct child, unreachable, owner itself, missing key, shortest route, cycle, depth cap); `JOINT_DOF` / `JOINT_AXIS` coverage and mutual consistency; `unit_vector`; `extents_cm` (largest first, straddling origin, malformed corner, degenerate box absent, flat component kept, bodiless envelope).
+- `tests/test_exportsysml_render.py` (93) — the four escaping functions; `number` and `coordinate` (tiny mass kept, float noise snapped, mass not snapped); `identifier` (bare lowerCamel, never reserved, collisions suffixed); `safe_filename`; unit conversion; the worked example's exact structure and brace balance; one definition per component, multiplicity only when not one, absent measurements omitted; joint schema, dotted-path connections, positional ends without cross multiplicity, suppressed joints commented, unresolved ends never dangling, unplaced reasons listed, placement attributes and frame statement; deterministic rendering; hostile document names; definition-name deduplication (case-sensitive, referenced correctly); the ADD's five views in order, verbatim undeliverable-view notes, root figure as total, em dashes, the non-additive warning, provenance banner, no stray pipes, as-built prose agreeing in number.
+- `tests/test_assemblybuilder_sysml_import.py` — feeds `render.sysml_document` output through the Assembly Builder importer and checks the graph round-trips.
+- `tests/test_command_contract.py`, `tests/test_command_abort.py` — the registry-wide contract and `doExecute` guard.
+
+`entry.py`'s Fusion contact — the property reads, joint collection, progress dialog and `wasCancelled` without pumped events, folder dialog and the writes — is not exercised by the suite; the pure `_Scan` methods above are tested on fakes under the `adsk` stub. Not verified on `g16win.local`: that the `.sysml` lands with LF, a non-ASCII document name through the folder dialog and filename, and a destination pushing the path past 260 characters (stem 120 + 15-character suffix). No icon set exists to pin.
+
+## Learnings
+
+- **A green validator is necessary and not sufficient; open the file in the tool the output is for.** Named connector ends (`connect occurrenceOne references a to occurrenceTwo references b`) parse and link in `sysml-validate` yet stopped a SysML viewer showing joints as relationships (2026-09-09). Positional ends carry the same information (`BinaryConnectorPart` is `ConnectorEndMember 'to' ConnectorEndMember`).
+- **Duplicate display names produce `RES017` ("already declared in this namespace").** A 118-component espresso machine declared `part def 'Connector'` twice; caught only by running `sysml-validate`, which CI cannot (npm, not stdlib), hence the uniqueness test in `test_exportsysml_render.py`. To repeat: `npm install sysml-validate && ./node_modules/.bin/sysml-validate *.sysml`. Established by probe there: SysML is case-sensitive, and a definition and a usage may share a name.
+- **`Component.id` collides inside one referenced design.** `Rear Hub ASSY R`: `CVD Pivot Pin` and `CVD Drive Pin` share `012331ee-63d2-46b6-b607-e74d637af56e`; keyed on id alone the model had 16 definitions for 17 components and joint `Rigid 5` was emitted against the wrong pin — a wrong connection, not a missing one. The name suffix fixed it (17 definitions, correct `connect cvdDrivePin to dogBoneRear`).
+- **`Joint.isSuppressed` is not what the browser's Suppress sets.** With `Rigid 10` suppressed on a live Rear Hub: `isSuppressed=False`, `healthState=3` (`SuppressedFeatureHealthState`), `timelineObject.isSuppressed=True`; `isVisible` *raises* on a suppressed joint; `isLightBulbOn` is `False` for every joint. Reading only the flag published a switched-off joint as a live connection, the only visible sign being its origin falling back to the unjointed position.
+- **`rootComponent.allJoints` raised on a real design**, reinforcing the per-component read. The joint-frame question was settled by moved subassemblies instead (`PTJointFrameProbe`, outside the repo): the Controls joint origin `(0.02, -1.90, 1.16)` cm is 2 cm from its owner, versus the owner's `(0, -11.78, 6.81)` translation — component-local, not world.
+- **Physical properties and bounding boxes include children** — confirmed on live designs, not the API reference: bodiless `Water Tank` reports 285 x 127 x 66 mm; espresso root 8.667 kg vs leaf sum 8.630 kg (the difference is the root's own body); summing the inventory column gives 23.629 kg, a 2.7x over-count — hence the non-additive warning. Two components exported as `0 x 0 x 0 mm` led to the degenerate-box rule.
+- **Requiring joint ends to be direct children dropped a third of two-ended joints** in a real hub; descendants with dotted paths raised `Overall Assembly` from 21 to 118 expressible of 178 (the remaining 60 anchor to geometry owned by no occurrence or are unreachable from the owner).
+- **`Occurrence.documentReference` raises for anything nested inside a referenced subassembly** (`RuntimeError: 3 : Cannot get allDocumentReferences of a non-top-level document`). Listing those by occurrence name gave 14 Development View rows for 8 documents; only resolvable references are listed now.
+- **Float noise in coordinates** (`5.68989e-15`) reached a real export and made unchanged designs diff; `coordinate` snaps below 1e-9, mass does not.
+- Constructs the OMG BNF made look doubtful but a real parser accepts: `abstract connection def`, `connection def X :> Y`, `attribute :>> n = 1`, a body on a connection usage after `connect`, and `end part occurrenceOne : FusionComponent;`.
 
 ---
 

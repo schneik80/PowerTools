@@ -2,59 +2,61 @@
 
 [← Get Open on Desktop Link guide](../Get%20Open%20on%20Desktop%20Link.md)
 
-## Architecture — command flow
+| | |
+|---|---|
+| **Command ID** | `PTSHD_shareopenondesktop` |
+| **Registry** | group `share` (`Share Document`); enabled by default |
+| **UI location** | the `shareDropMenu` ("Share Menu") flyout on `QATRight`; appended (`addCommand(cmd_def, "", False)`) |
+| **Files** | `commands/OpenDesktop/entry.py`; `resources/` (16 light/dark, `16x16@2x-dark`, 32 dark PNGs) |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.isSaved`, `clipText`, `log`, `handle_error`](architecture.md#general_utils); [`ptutil.remove_from_qat_right_flyout`](architecture.md#ui_utils); [`config`](architecture.md#config) (workspace/panel constants are imported but unused) |
+| **Tests** | none beyond `tests/test_command_contract.py` |
 
-The following diagram shows what the add-in does when you select **Get Open on Desktop Link**.
+## Purpose
 
-```mermaid
-C4Context
-    title Get Open on Desktop Link — System Interactions
+Builds a `fusion360://` deep link for the active document and copies it to the clipboard, so a teammate who has access can open the document directly in their Fusion desktop client. The link carries the document's lineage URN, the hub URL and the document name; the document must be saved for the first two to exist.
 
-    Person(designer, "Designer", "Autodesk Fusion user selecting the command")
-    Person(recipient, "Team Member", "Receives the link and opens the document in their Fusion client")
-    System(addin, "Share Menu Add-in", "Constructs the fusion360:// deep link")
-    System_Ext(fusionApi, "Autodesk Fusion API", "Provides document ID, Hub URL, and document name")
-    System_Ext(clipboard, "System Clipboard", "Receives the generated fusion360:// link")
-    System_Ext(fusionDesktop, "Autodesk Fusion (Recipient)", "Handles the fusion360:// protocol and opens the document")
+## How it is wired
 
-    Rel(designer, addin, "Selects Get Open on Desktop Link")
-    Rel(addin, fusionApi, "Reads dataFile.id, parentProject.parentHub.fusionWebURL, document name")
-    Rel(addin, clipboard, "Copies fusion360:// link via futil.clipText()")
-    Rel(addin, designer, "Shows confirmation dialog")
-    Rel(recipient, fusionDesktop, "Selects the pasted link")
-    Rel(fusionDesktop, fusionApi, "Resolves document by lineageUrn and opens it")
+- `start()`: `addButtonDefinition`; `commandCreated` → `command_created`; find-or-create the `shareDropMenu` flyout on `QATRight` (see [Get a Share Link](Get%20a%20Share%20Link.md)); `dropDown.controls.addCommand(cmd_def, "", False)`.
+- `stop()`: [`ptutil.remove_from_qat_right_flyout(CMD_ID, "shareDropMenu")`](architecture.md#ui_utils), then delete the definition.
+- `command_created(args)`: wires `execute` → `command_execute` and `destroy` → `command_destroy`; no inputs, so `execute` runs immediately when a document is open.
+- `command_execute(args)`: [`ptutil.isSaved()`](architecture.md#general_utils) false → return. Then, inside a `try` ending in `ptutil.handle_error(CMD_NAME)`: `ui.progressBar.showBusy("Generating Share Link")`; assemble the link (below); `ptutil.log` it; `clipText(shareLink)`; build the HTML result with `html.escape(app.activeDocument.name)`; when `app.activeProduct.productType == "DesignProductType"` and `has_external_child_reference(rootComponent)` (recursive over `occurrences`, true on any `isReferencedComponent`), append a note that referenced designs may be shared depending on the recipient's permissions; `progressBar.hide()`; `ui.messageBox(resultString, "Share Document", 0, 2)`.
+- `command_destroy(args)`: resets `local_handlers`.
+
+## Link construction
+
+```
+fusion360://lineageUrn=<quote(dataFile.id)>&hubUrl=<quote(hub)>&documentName=<quote(document.name)>
 ```
 
-### Detailed command flow
+- `lineageUrn`: `app.activeDocument.dataFile.id`, URL-encoded with `urllib.parse.quote`.
+- `hubUrl`: `app.activeDocument.dataFile.parentProject.parentHub.fusionWebURL` with spaces removed, then `.rstrip(url[-3:])` — `str.rstrip` strips every trailing character that is in the set formed by the URL's last three characters, not a fixed three-character cut — then upper-cased and URL-encoded.
+- `documentName`: `app.activeDocument.name`, URL-encoded; display only on the receiving side.
 
-```mermaid
-flowchart TD
-    A([User selects Get Open on Desktop Link]) --> B{Document saved?\napp.activeDocument.isSaved}
-    B -- No --> C[Show save-required dialog\nCommand exits]
-    B -- Yes --> D[Show progress indicator]
-    D --> E[Read dataFile.id\nURL-encode as lineageUrn parameter]
-    E --> F[Read parentHub.fusionWebURL\nRemove trailing 3 chars, uppercase, URL-encode]
-    F --> G[Read document name\nURL-encode as documentName parameter]
-    G --> H[Assemble fusion360:// URI:\nlineageUrn + hubUrl + documentName]
-    H --> I[Copy link to clipboard\nfutil.clipText shareLink]
-    I --> J{Design has external references?\nhas_external_child_reference rootComp}
-    J -- Yes --> K[Append external-references note\nto result message]
-    J -- No --> L[Prepare standard result message]
-    K --> L
-    L --> M[Hide progress indicator]
-    M --> N[Show confirmation dialog]
-```
+## Data and state
 
----
+None. Clipboard writes go through `ptutil.clipText`.
+
+## Diagram
+
+None: the flow is linear (guard, build, copy, report).
 
 ## Key API surface
 
 | API element | Purpose |
 |---|---|
-| `futil.isSaved()` | Guards against operating on unsaved documents (checks `app.activeDocument.isSaved`; shows a "Please Save" prompt if not) |
-| `app.activeDocument.dataFile.id` | The document's lineage URN, used as the primary deep-link identifier |
-| `app.activeDocument.dataFile.parentProject.parentHub.fusionWebURL` | The Hub URL encoded into the link so the recipient's client connects to the correct Hub |
-| `app.activeDocument.name` | The document name encoded into the link for display purposes |
-| `urllib.parse.quote(string)` | URL-encodes each link parameter |
-| `futil.clipText(text)` | Copies the assembled link to the system clipboard |
-| `has_external_child_reference(component)` | Recursive function that checks the component tree for linked external files |
+| `app.activeDocument.dataFile.id` | Lineage URN, the primary identifier in the link |
+| `app.activeDocument.dataFile.parentProject.parentHub.fusionWebURL` | Hub URL so the recipient's client connects to the right hub |
+| `app.activeDocument.name` | Document name parameter |
+| `urllib.parse.quote` | URL-encodes each parameter |
+| `Occurrence.isReferencedComponent` | External-reference detection in `has_external_child_reference` |
+
+## Tests
+
+- `tests/test_command_contract.py` — registry/doc/description contract; `PTSHD_shareopenondesktop` is checked against the ID shape.
+
+Not covered: `entry.py` is Fusion-bound and is not exercised by the suite; nothing here is verified in Fusion on this branch except by the AST guards in `tests/test_command_contract.py` and `tests/test_command_abort.py`, which import it under the `adsk` stub. The icon set is not pinned in `tests/test_command_icons.py`.
+
+---
+
+*Copyright © 2026 IMA LLC. All rights reserved.*

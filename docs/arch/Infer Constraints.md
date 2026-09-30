@@ -1,90 +1,104 @@
 # Infer Constraints — Architecture
+
 [← Infer Constraints guide](../Infer%20Constraints.md)
 
-## How it works
+| | |
+|---|---|
+| **Command ID** | `PTAT_inferConstraints` |
+| **Registry** | group `assembly` (`Assembly`); **beta** — starts only when `general.beta_mode` is on ([command_registry](architecture.md#command_registry), [commands/__init__](architecture.md#commands__init__)) |
+| **UI location** | Shared **Power Tools** panel ([`_ui_bootstrap.get_power_tools_panel`](architecture.md#_ui_bootstrap)), appended with no anchor, `isPromoted = False` |
+| **Files** | `commands/inferconstraints/entry.py`; `resources/` (button icons) and `resources/joints/<JointRigid…JointBall>/` (dropdown icons) |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`](architecture.md#general_utils) |
+| **Tests** | none |
 
-When the command opens, it traverses every leaf occurrence (and any root-level solid bodies) and collects analytic faces using occurrence **body proxies**, whose geometry is reported in the root component's (world) coordinate system. Each planar and cylindrical face is recorded with its world-space parameters.
+## Purpose
 
-Detection runs in two phases:
+Scans an assembly whose components already sit in their final pose but carry no relationships — typically a STEP import — and proposes concentric (coaxial cylinders) and coincident (flush planes) relationships from the geometry that is already mating, with a confidence score per pair. On OK it grounds the first browser component and applies the selected rows without moving anything, dropping any relationship Fusion's own solver reports as over-constrained. The shaping constraint is that assembly-constraint creation is a Fusion **preview** API, so all of it is confined to `_apply_candidate` and its helpers; detection and the preview table use only released API.
 
-- **Broad phase** — faces are grouped by type (planar/cylindrical, since cross-type pairs never mate) and each group is sorted by bounding-box min-x and swept: the inner loop stops once a later face starts beyond the current face's x-extent plus the linear tolerance. Surviving pairs are confirmed with a full three-axis bounding-box overlap test (using bounds cached as plain floats on each face record to avoid per-pair API reads) so only nearby faces are tested in detail. This keeps the candidate set identical to an exhaustive all-pairs scan while bringing the practical cost well below O(n²). The collected faces are cached for the life of the dialog, so changing a tolerance and re-scanning re-runs only the inference, not the geometry collection.
-- **Narrow phase** — the analytic surface parameters are compared:
-  - *Concentric:* both cylinder axes are parallel (within the angular tolerance) and collinear (axis-to-axis distance within the linear tolerance). Differing radii are allowed and reported as shaft-in-hole. Applied as a **coincident assembly constraint** between the cylindrical faces.
-  - *Coincident:* both plane normals are parallel and the signed gap along the normal is within the linear tolerance. Applied as a **coincident assembly constraint** (which leaves the in-plane sliding free).
-  - *Centered (Joint):* a coincident pair whose face centroids also coincide is applied as a **Joint** with both inputs on the face centers, using the motion type chosen in the row's dropdown (Rigid by default). For a planar-face joint the motion axis is the face normal.
+## How it is wired
 
-Each candidate gets a confidence score from its angular and positional residuals, and only the strongest candidate is kept per pair of parts and relationship type.
+- `start()`: `addButtonDefinition` with the `resources/` icon folder, attaches `command_created`, adds the control to the Power Tools panel. `stop()` removes the control and deletes the definition.
+- `command_created(args)`: `adsk.fusion.Design.cast(app.activeProduct)`; with no design it shows a message box and returns before attaching handlers or building inputs (Fusion ends the input-less command; no [abort helper](architecture.md#_command_abort) is used). Otherwise it attaches `command_execute`, `command_input_changed`, `command_destroy` and builds:
+  - `ic_lin_tol` (mm, default `DEFAULT_LIN_TOL_CM` = 0.01 cm) and `ic_ang_tol` (deg, default 0.5°) value inputs;
+  - `ic_rescan`, a momentary bool button;
+  - `ic_preview_sel`, a `SelectionCommandInput` filtered to `Occurrences` with limits `(0, 0)`. It is never read; it exists because `SelectionCommandInput.addSelection` highlights entities in the viewport while a dialog is open and `ui.activeSelections` does not;
+  - `ic_table`, four columns `2:3:7:2` (Apply, Type, Components, Conf.), `hasGrid = False` because joint rows are taller than constraint rows, with a read-only header row;
+  - `ic_summary`, a four-line text box.
+  It then runs the first `_rescan(design, inputs)` inside a `try`; a failure is written into the summary.
+- `_rescan(design, inputs)`: reads the tolerances, shows a busy indicator with `_begin_scan_progress` (`ui.progressBar.showBusy` followed by exactly **one** `adsk.doEvents()` so the bar paints before the blocking scan), collects faces through `_collect_faces_cached`, and if the face count is at least `FACE_CONFIRM_COUNT` (4000) and the user has not yet confirmed this session, hides the bar and asks with a Yes/No message box (No clears the table and writes a "Scan skipped" summary). It then calls `_infer`, hides the bar in a `finally`, rebuilds the rows with `_add_candidate_row` and writes the diagnostic summary (occurrences, root bodies, face counts, pairs tested, matches).
+- `_add_candidate_row(inputs, table, cand)`: per row a checkbox `ic_chk_<n>` (checked when `default_checked`), a Type cell — a `LabeledIconDropDownStyle` dropdown `ic_jt_<n>` over `JOINT_TYPES` for centered rows, otherwise read-only text — a momentary `ic_comp_<n>` button labelled with the pair, and a read-only confidence cell. The candidate dict remembers its input ids and table row.
+- `command_input_changed(args)`: a `ic_table` change highlights the selected row's pair (`_highlight_selected_row`); a change on any row's checkbox, joint dropdown or Components button resets the button and highlights that candidate (`_highlight_candidate` → `clearSelection` + `addSelection` of the occurrences from `face.assemblyContext`); a change to either tolerance or `ic_rescan` re-runs `_rescan`. Errors go to [`ptutil.handle_error`](architecture.md#general_utils) with a message box.
+- `command_execute(args)`: re-casts the design; collects the checked candidates, reading the chosen motion off the joint dropdown for centered rows; with none selected it reports and returns. It then captures position (`design.snapshots.add()` when `hasPendingTransforms`) and, in table order, calls `_apply_candidate`; a returned constraint that `_is_sick` reports as Warning/Error health is deleted and counted as redundant. The closing message box reports created, redundant, moved (movement above `POS_TOL_CM` = 0.001 cm) and failed counts.
+- `command_destroy(args)`: clears `local_handlers`, `_candidates`, `_large_scan_confirmed`, `_faces_cache`, `_stats_cache`.
 
-**Applying without moving parts.** Before anything is created, the command captures the current pose (the API equivalent of *Capture Position*). The first selected relationship grounds the first browser component to its parent (`Occurrence.isGroundToParent`), fixing a reference for everything that follows. The "first browser component" is taken from the timeline (parametric designs) because `root.occurrences` is not in browser order. For each relationship the command tries the small set of offset/flip (and joint isFlipped) options, measures how far the affected components move — translation **and** rotation — and keeps the option that preserves position. On typical positioned assemblies this is zero movement.
+## Data and state
 
-**Avoiding over-constraint.** Relationships are applied **strongest-first** (rigid joints, then concentric, then coincident), and after each one Fusion's own solver is asked whether it is healthy. A relationship that adds no independent constraint — it closes a cycle already covered by stronger ones — is marked over-constrained ("sick") and the command removes it. Using the solver as the rank oracle keeps the largest non-redundant set — a spanning structure plus the independent extra relationships that further locate parts — which mirrors the spanning-tree / degree-of-freedom approach from the underlying research. Order matters: applying the strongest relationships first keeps them healthy and lets the redundant weaker ones drop, rather than the reverse. Pruning is **incremental** (checked and dropped one relationship at a time); the command never batches a deferred `computeAll()` health sweep, which previously let over-constrained relationships pile up and crash the solver.
+- Module globals, reset in `command_destroy`: `_candidates` (list of candidate dicts), `_row_counter`, `_large_scan_confirmed`, `_faces_cache` / `_stats_cache` (faces collected once per dialog; a rescan re-runs only the inference), `local_handlers`.
+- No files, settings keys, custom events or temp files.
 
-> **Parametric vs. direct designs:** the over-constraint check reads each relationship's health state, which Fusion only reports in **parametric** designs. In a **direct** design there is no timeline, so relationships report an *Unknown* health state and the redundancy check cannot prune them — everything selected is applied. Grounding and position preservation work in both.
+## Detection
 
-The Assembly Constraints creation API is a Fusion preview capability. To keep the dependency contained, all relationship creation lives in `_apply_candidate` (and its joint/constraint helpers) in `commands/inferconstraints/entry.py`; detection and the preview UI do not depend on it.
+**Face collection** (`_collect_faces`). Leaf occurrences that are visible (`childOccurrences.count == 0`, `isVisible`) contribute the faces of their `bRepBodies` proxies, whose geometry is reported in the root component's coordinate system, so no transform math is needed; solid bodies directly in the root are added under the key `root::body::<i>` so two root bodies can pair but one body cannot pair with itself. Each planar or cylindrical face becomes a `_FaceRec` with origin, unit direction (normal or axis), radius, area and its bounding box cached as six plain floats.
 
-## Architecture
+**Broad phase** (`_infer`). Faces are grouped by type (a plane never mates a cylinder), each group sorted by `min_x` and swept: the inner loop breaks once a later face starts beyond the current face's `max_x + lin_tol`, faces on the same `src` are skipped, and `_bbox_near` (three-axis overlap on the cached scalars) gates every surviving pair. The candidate set is identical to an all-pairs scan; the practical cost is far below O(n²).
 
-The following diagrams show how the Infer Constraints command interacts with Autodesk Fusion.
+**Narrow phase.**
+- `_test_concentric`: axes parallel within the angular tolerance (`|a × b| ≤ sin(ang_tol)`) and collinear within the linear tolerance (perpendicular axis-to-axis distance). Differing radii are allowed and labelled `shaft-in-hole`.
+- `_test_coincident`: normals parallel and the signed gap along A's normal within the linear tolerance. If the two face centroids also lie within the tolerance the pair is marked **centered**. `is_flipped` records whether the normals oppose; `offset_cm` records the gap.
+- Confidence is `0.5 · angular score + 0.5 · positional score`, each `1 − residual/tolerance`, clamped to `[0, 1]`. Rows at or above `AUTO_CHECK_CONF` (0.6) are pre-checked.
+
+**Ranking.** Only the best candidate per `(sorted part pair, type)` survives. Candidates are sorted by `_candidate_strength` (centered = 3, Concentric = 2, Coincident = 1) then confidence, descending, and a `Ground` row from `_ground_candidate` is inserted at the top. `_first_browser_occurrence` takes the first top-level occurrence in **timeline** order for a parametric design, because `root.occurrences` is not in browser order, and falls back to `root.occurrences.item(0)` in a direct design.
+
+## Applying without moving parts
+
+`_apply_candidate(root, cand)`:
+
+- **Ground** → `occ.isGroundToParent = True`; returns `None` (nothing to health-check).
+- **Centered coincident** → `_apply_rigid_centered_joint`: `JointGeometry.createByPlanarFace(face, None, CenterKeyPoint)` for both faces, `joints.createInput`, `_set_joint_motion` for the dropdown choice (`Rigid` default; Revolute/Slider/Cylindrical/Planar about the face normal, Pin-Slot and Ball with the X axis as secondary), `joints.add`.
+- **Everything else** → `root.assemblyConstraints.createInput()`, `geometricRelationships.add(face_a, face_b, isMate, ValueInput.createByReal(offset))`, `rel.isFlipped`, `assemblyConstraints.add`. The offset is the measured gap for Coincident and `0` for Concentric.
+
+For joints and constraints alike the `isFlipped` value that preserves position is not derivable from the face normals, so both values are trialled: the affected occurrences' `transform2` matrices are saved, the relationship is created, `_max_move_cm` measures the worst displacement of four probe points (origin plus three at the part's bounding radius, so rotation counts as movement), the relationship is deleted and the transforms restored, and the trial stops early at the first value that moves nothing. The least-moving value is then applied for real and the residual stored in `cand["applied_move_cm"]`.
+
+## Avoiding over-constraint
+
+After each applied constraint `_is_sick` reads `healthState` and treats only `WarningFeatureHealthState` and `ErrorFeatureHealthState` as sick; a sick constraint adds no independent degree-of-freedom reduction (it closes a cycle already covered) and `command_execute` deletes it. Using the solver as the rank oracle keeps the maximal non-redundant set without computing a constraint Jacobian. Ordering matters: strongest-first keeps the joints healthy and lets the weaker redundant constraints drop rather than the reverse. Pruning is incremental — one relationship checked and dropped at a time.
+
+> **Parametric vs. direct designs.** Health is only reported in parametric designs. In a direct design there is no timeline, every constraint reports `Unknown`, `_is_sick` returns `False`, and everything selected is applied. Grounding and position preservation work in both.
+
+## Diagram
+
+The apply loop in `command_execute`, with the three relationship kinds and the flip trial.
 
 ```mermaid
-C4Context
-  title Infer Constraints – System Context
-
-  Person(user, "Design Engineer", "Autodesk Fusion user with a positioned but unconstrained assembly")
-  System(addin, "PowerTools Assembly", "Autodesk Fusion add-in")
-  System_Ext(fusion, "Autodesk Fusion", "Host application and Python API (adsk.core, adsk.fusion)")
-
-  Rel(user, addin, "Runs Infer Constraints; picks joint types; selects relationships to apply")
-  Rel(addin, fusion, "Reads analytic faces; grounds first component; creates joints and assembly constraints")
+flowchart TD
+  EX["command_execute()"] --> SNAP["design.snapshots.add() if hasPendingTransforms"]
+  SNAP --> LOOP{"next selected candidate"}
+  LOOP -->|Ground| G["occ.isGroundToParent = True"]
+  LOOP -->|centered| J["_apply_rigid_centered_joint()<br/>JointGeometry CenterKeyPoint, _set_joint_motion()"]
+  LOOP -->|"Concentric / Coincident"| C["assemblyConstraints.createInput()<br/>geometricRelationships.add(face_a, face_b, isMate, offset)"]
+  J --> T["trial isFlipped False then True:<br/>create → _max_move_cm() → deleteMe → _restore()"]
+  C --> T
+  T --> K["re-create with the least-moving flip"]
+  K --> H{"_is_sick()?"}
+  H -->|"Warning / Error"| D["con.deleteMe(); redundant += 1"]
+  H -->|otherwise| OK["created += 1; track applied_move_cm"]
+  G --> LOOP
+  D --> LOOP
+  OK --> LOOP
+  LOOP -->|done| MSG["messageBox: created / redundant / moved / failed"]
 ```
 
-```mermaid
-C4Component
-  title Infer Constraints – Component View
+## Tests
 
-  Person(user, "Design Engineer")
-  Component(cmd, "inferconstraints/entry.py", "PowerTools Command", "Builds the dialog, runs detection, highlights pairs, applies relationships strongest-first with over-constraint pruning")
-  Component(api_occ, "adsk.fusion.Occurrence", "Fusion API", "allOccurrences, bRepBodies proxies (world-space geometry), transform2, isGroundToParent")
-  Component(api_face, "adsk.fusion.BRepFace", "Fusion API", "geometry (Plane / Cylinder), centroid, boundingBox")
-  Component(api_con, "adsk.fusion.AssemblyConstraints", "Fusion API (preview)", "createInput, geometricRelationships, add, healthState")
-  Component(api_joint, "adsk.fusion.Joints", "Fusion API", "createInput, JointGeometry, setAs<Motion>JointMotion")
+None. `entry.py` is Fusion-bound and is not exercised by the suite; nothing here is verified in Fusion on this branch except by the AST guards in `tests/test_command_contract.py` and `tests/test_command_abort.py`, which import it under the `adsk` stub. The broad phase, the two narrow-phase tests and the scoring live in `entry.py` next to the API calls, so they have no `adsk`-free module and no unit tests (see [the pure-logic split](architecture.md#the-pure-logic-split)). The icon sets are not pinned in `tests/test_command_icons.py`. The `isMate` / `isFlipped` / offset semantics of the preview API are marked `VERIFY AT RUNTIME` in the source.
 
-  Rel(user, cmd, "Selects relationships, picks joint motion")
-  Rel(cmd, api_occ, "Traverses parts; grounds; preserves position")
-  Rel(cmd, api_face, "Reads analytic surface parameters")
-  Rel(cmd, api_con, "Creates concentric/coincident constraints; checks health")
-  Rel(cmd, api_joint, "Creates joints for centered pairs")
-```
+## Learnings
 
-### User flow
+- **Prune incrementally; never batch a deferred `computeAll()` health sweep.** Letting several over-constrained relationships accumulate before checking health crashed the solver. Each relationship is now checked and, if sick, deleted before the next one is created.
+- **One `adsk.doEvents()` to paint the busy bar, never one per iteration.** Per-iteration `doEvents` inside a command handler is the re-entrancy crash vector removed in `ce4e768`; `_begin_scan_progress` calls it exactly once, during a read-only phase, and the scan loop never does ([rule 2](../dev/lessons.md)).
+- **`Unknown` health is not sickness.** A direct design has no timeline, so a perfectly valid constraint reports `Unknown` rather than `Healthy`; `_is_sick` keys off Warning and Error only, and never reads `errorOrWarningMessage`, which can itself raise.
+- **The published preview-API docs were incomplete.** The call shape that works on a live build is `createInput()` with no arguments followed by `geometricRelationships.add(entityOne, entityTwo, isMate, offsetOrAngle)` and `rel.isFlipped`; it is recorded in the `_apply_candidate` docstring.
 
-```mermaid
-sequenceDiagram
-  autonumber
-  actor User
-  participant Panel as Utilities › Power Tools
-  participant Cmd as Infer Constraints
-  participant API as Fusion API
+---
 
-  User->>Panel: Click "Infer Constraints"
-  Panel->>Cmd: command_created fires
-  Cmd->>API: Traverse parts, read analytic faces
-  Cmd->>Cmd: Broad phase + narrow phase + scoring + Ground row
-  Cmd-->>User: Show preview table (ranked candidates)
-  opt Inspect / adjust
-    User->>Cmd: Click a Components button
-    Cmd->>API: Highlight that pair in the graphics
-    User->>Cmd: Change tolerance / Re-scan, pick joint types
-    Cmd->>API: Re-run detection
-    Cmd-->>User: Refresh table
-  end
-  User->>Cmd: Check rows, click OK
-  Cmd->>API: Capture position; ground first component
-  loop Each selected relationship (strongest first)
-    Cmd->>API: Create joint or assembly constraint (position-preserving)
-    API-->>Cmd: healthState
-    Cmd->>API: Delete it if over-constrained (sick)
-  end
-  Cmd-->>User: Report created / skipped-redundant / moved
-```
+*Copyright © 2026 IMA LLC. All rights reserved.*

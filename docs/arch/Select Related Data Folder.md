@@ -2,61 +2,57 @@
 
 [← Select Related Data Folder guide](../Select%20Related%20Data%20Folder.md)
 
-## Architecture
+| | |
+|---|---|
+| **Command ID** | `f"{config.COMPANY_NAME}_{config.ADDIN_NAME}_configHub"`, which resolves to `IMA LLC_PowerTools_configHub` when the add-in folder is named `PowerTools`. The space breaks rule 9; the module is allowlisted in `KNOWN_NONLITERAL_CMD_IDS` in `tests/test_command_contract.py`, and the ID is not fixed because renaming a `CMD_ID` orphans users' QAT pins. `commands/preferences/entry.py` builds the same f-string as `CONFIGHUB_CMD_ID` to launch it. |
+| **Registry** | group `related` (`Related Data`); enabled by default |
+| **UI location** | none — no toolbar control. Launched from the Preferences palette's Hub Settings section: the `browseHubFolder` HTML action runs `ui.commandDefinitions.itemById(CONFIGHUB_CMD_ID).execute()` (`commands/preferences/entry.py`). |
+| **Files** | `commands/confighub/entry.py`; `resources/` (16/32/64 light, dark, disabled PNGs) |
+| **Shared helpers** | [`config`](architecture.md#config) (`CACHE_PATH`, `reload_hub_config` / `loadHub`); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.read_json`, `write_json_atomic`](architecture.md#json_utils); [`ptutil.log`](architecture.md#general_utils) |
+| **Tests** | `tests/test_command_contract.py`, `tests/test_command_icons.py`; `tests/test_config_hub.py` covers the reader of the file this command writes |
 
-### How the command works
+## Purpose
 
-When you run **Select Related Data Folder**, the add-in follows this sequence:
+Records, once per hub and per machine, which cloud folder holds the templates that [Create Related Data](Related%20Data.md) copies. The user picks the folder in Fusion's cloud folder dialog; the command works out which hub and project own it and writes the three IDs (plus display names) to `cache/hub.json`. The constraint: `config.loadHub` reads that file at import time, so the command reloads it in memory after writing and the sibling command sees the new hub without a restart.
 
-1. Loads the current `hub.json` and looks up the active hub. If an entry already exists, an OK / Cancel prompt shows the current project and folder so you can either keep the configuration or proceed and overwrite it.
-2. Displays an informational prompt instructing you to browse to the cloud folder that contains your start parts or templates.
-3. Opens Fusion's cloud folder picker. If a saved document is open, the picker starts in that document's parent folder.
-4. Reads the selected folder's parent project, then iterates through the available data hubs to find the one that owns that project.
-5. Builds a hub entry containing the hub, project, and folder IDs and names, and upserts it into the `hubs` array in `hub.json` (replacing any previous entry with the same hub ID).
-6. Reloads the in-memory configuration so all commands immediately see the new hub, then displays a success message that says whether the entry was added or updated.
+## How it is wired
 
-### System context
+- `start()`: `ui.commandDefinitions.addButtonDefinition(CMD_ID, ...)` (no reuse of an existing definition), then `commandCreated` → `command_created` via [`ptutil.add_handler`](architecture.md#event_utils). No control is placed anywhere.
+- `stop()`: deletes the definition.
+- `command_created(args)` does the whole job and adds no command inputs, so Fusion auto-terminates the command afterwards and `execute` never runs ([acting from `commandCreated`](architecture.md#acting-from-commandcreated-when-there-are-no-inputs)); this is also what lets it run from the Preferences palette with no document open. In order:
+  1. `active_hub = app.data.activeHub`; `hubs = _load_hubs()` (the `hubs` list from `cache/hub.json`, `[]` when absent).
+  2. `_find_hub_entry(active_hub.id, hubs)` non-`None` → OK/Cancel message box "Hub Already Configured" showing the stored project and folder names; Cancel returns.
+  3. Information message box telling the user to browse to the templates folder.
+  4. `ui.createCloudFolderDialog()`, title "Select Templates Folder"; when a saved document is active, `initialFolder = app.activeDocument.dataFile.parentFolder`. Anything but `DialogOK` returns.
+  5. `selected_folder = dialog.dataFolder`; `project = selected_folder.parentProject`; `hub = _resolve_hub_for_folder(selected_folder)`, which walks `app.data.dataHubs` and returns the first hub whose `dataProjects.itemById(project.id)` is not `None` — the owning hub is derived from the pick, not assumed to be the active hub. Either `None` → "Hub Not Found" warning, return.
+  6. Builds `{"id", "name", "project_id", "project_name", "folder_id", "folder_name"}` and upserts it into `hubs` by `id` (replace in place, else append).
+  7. `ptutil.write_json_atomic(HUB_JSON_PATH, {"hubs": hubs})`, then `config.reload_hub_config()`.
+  8. "Hub Configured" message box saying whether the entry was added or updated.
 
-```mermaid
-C4Context
-  title System Context — Select Related Data Folder
+## Data and state
 
-  Person(user, "Fusion User", "Runs Select Related Data Folder once per hub, per machine")
+- `cache/hub.json` (`HUB_JSON_PATH = config.CACHE_PATH/hub.json`):
 
-  System_Boundary(addin, "PowerTools Add-in") {
-    System(configHub, "Select Related Data Folder Command", "Opens a cloud folder picker, resolves the owning hub and project, and writes hub configuration to disk")
-  }
+  ```json
+  {"hubs": [{"id": "...", "name": "...", "project_id": "...", "project_name": "...", "folder_id": "...", "folder_name": "..."}]}
+  ```
 
-  System_Ext(fusionTeam, "Autodesk Fusion Team", "Hosts the hub, projects, folders, and template .f3d files")
-  SystemDb(hubJson, "hub.json", "Local file in the add-in cache/ folder — stores registered hub IDs, project IDs, and folder IDs")
+  `config.loadHub` filters entries to dicts with an `id` and tolerates a truncated or missing file (`COMPANY_HUB = []`), because it runs at import time where a raise would stop the add-in loading with nothing logged.
+- Module state: none beyond the constants. Settings keys: none. Custom events: none.
+- The templates cache `cache/<hub_id>.json` written by Create Related Data is not touched here; repointing a hub to a new folder leaves the old template list in place until that file is deleted.
 
-  Rel(user, configHub, "Runs the command and selects the templates folder")
-  Rel(configHub, fusionTeam, "Browses cloud folders; resolves the owning hub and project via Fusion API")
-  Rel(configHub, hubJson, "Upserts the hub entry by hub id")
-```
+## Diagram
 
-### Container detail
+None: the flow is a single linear pass with early returns, listed above in order.
 
-```mermaid
-C4Container
-  title Container Diagram — Select Related Data Folder
+## Tests
 
-  Person(user, "Fusion User")
+- `tests/test_command_contract.py` — registry/doc/description contract; pins `confighub` in `KNOWN_NONLITERAL_CMD_IDS` and asserts the resolved `CMD_ID` still violates the ID shape.
+- `tests/test_command_icons.py` — `confighub` is the `placeholder` for the two Team Add-ins icon sets, which are asserted to differ from this command's art.
+- `tests/test_config_hub.py` — `config.loadHub` degrades a truncated file, a missing file, an entry without `id`, and non-dict entries to "no hub configured" and still loads a well-formed entry.
 
-  Container_Boundary(addin, "PowerTools Add-in") {
-    Container(cmdCreated, "command_created handler", "Python / Fusion API", "Prompts for confirmation if the hub is already configured; opens the cloud folder picker; resolves the owning hub via _resolve_hub_for_folder(); upserts hub.json")
-    Container(resolveHub, "_resolve_hub_for_folder()", "Python / Fusion API", "Walks app.data.dataHubs and returns the DataHub whose dataProjects include the selected folder's parent project")
-    Container(configModule, "config.py", "Python", "Loads and exposes COMPANY_HUB and COMPANY_HUB_CONFIGS in memory from hub.json")
-  }
+Not covered: `entry.py` is Fusion-bound and is not exercised by the suite; nothing here is verified in Fusion on this branch except by the AST guards in `tests/test_command_contract.py` and `tests/test_command_abort.py`, which import it under the `adsk` stub.
 
-  SystemDb(hubJson, "hub.json", "Local JSON configuration file in the add-in cache/ folder")
-  System_Ext(fusionApi, "Fusion API (adsk.core)", "Provides createCloudFolderDialog(), DataFolder.parentProject, app.data.dataHubs, and DataProjects.itemById()")
+---
 
-  Rel(user, cmdCreated, "Runs the command and picks the templates folder")
-  Rel(cmdCreated, fusionApi, "Opens cloud folder picker; reads parentProject of the selection")
-  Rel(cmdCreated, resolveHub, "Calls _resolve_hub_for_folder(folder)")
-  Rel(resolveHub, fusionApi, "Iterates dataHubs and matches by project id")
-  Rel(cmdCreated, hubJson, "Upserts the hubs array on success")
-  Rel(cmdCreated, configModule, "Calls reload_hub_config()")
-  Rel(configModule, hubJson, "Reads hub entries on load or reload")
-```
+*Copyright © 2026 IMA LLC. All rights reserved.*

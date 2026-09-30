@@ -1,314 +1,376 @@
 # Assembly Palette — Architecture
+
 [← Assembly Palette guide](../Assembly%20Palette.md)
 
-## Architecture
+| | |
+|---|---|
+| **Command ID** | none — this is a palette. Its launch button is `LAUNCH_CMD_ID = "PTAT_assemblyPalette"`; the palette id is `config.assembly_palette_id` |
+| **Registry** | group `assembly` (`Assembly`); enabled by default. `settings_store.RENAMED_COMMANDS` maps the former key `assemblyintent` to this module so stored preferences carry over |
+| **UI location** | Launch button in two places (`LAUNCH_PLACEMENTS`): ASSEMBLY tab › INSERT panel (`InsertAssemblePanel`, created if missing, positioned after `PTAT_insertSTEP`) and SOLID tab › ASSEMBLE panel (`AssemblePanel`, Fusion's own, looked up only, after `FusionCreateNewComponentCommand`). Palette docked left, 420 × 720. Also pops automatically for a new, empty, unsaved Assembly-intent document |
+| **Files** | `commands/assemblypalette/entry.py`; `resources/html/index.html`, `app.js`, `style.css`; generated per open and git-ignored: `resources/html/init.js`, `resources/html/intent-icons.css` |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`, `pump_events_for`](architecture.md#general_utils); [`cache_utils.resolve_target_folder`, `target_project_label`, `get_active_project`](architecture.md#cache_utils); [`recents_utils`](architecture.md#recents_utils) (`THUMB_DIR`, `design_intent`, `intent_name`, `list_recent`, `touch_recent`, `remember_recent_if_eligible`, `cached_thumbnail_data_url`, `render_thumbnail_for_doc`, `store_thumbnail_object`, `png_to_data_url`); [`intent_icons.write_stylesheet`](architecture.md#intent_icons); [`config`](architecture.md#config) |
+| **Tests** | `tests/test_assemblypalette_open_docs.py`, `tests/test_assemblypalette_thumbnails.py`, `tests/test_assemblypalette_edit_initial_position.py`, `tests/test_assemblypalette_fasteners.py`, `tests/test_assemblypalette_builder_gate.py` |
 
-Assembly Palette bridges an HTML/JS palette (running in Fusion's QT WebEngine) and the Fusion Python API. The palette hosts the three quick-start sections; the Python backend watches for new empty Assembly documents, enumerates open and recent documents, renders thumbnails, and performs component creation and insertion.
+## Purpose
 
-```mermaid
-C4Context
-  title Assembly Palette – System Context
+A docked quick-start palette for populating a new assembly: create an external
+Part / Hybrid / Assembly component in place, insert an open or recent document
+from a thumbnail gallery, or hand off to Assembly Builder, Global Parameters or
+Fusion's Fasteners. It opens on its own when a new, empty Assembly-intent
+document is activated and on demand from the launch button. The constraint that
+shapes it is that everything here starts from a palette event: any Fusion
+command it launches, and any cloud future it waits on, has to be moved to a
+later main-loop turn through a timer-fired custom event.
 
-  Person(user, "Design Engineer", "Autodesk Fusion user starting a new assembly")
-  System(addin, "PowerTools Assembly", "Autodesk Fusion add-in")
-  System_Ext(fusion, "Autodesk Fusion", "Host application and Python API (adsk.core / adsk.fusion)")
-  System_Ext(hub, "Autodesk Hub", "Cloud documents inserted by reference and created in place")
+## How it is wired
 
-  Rel(user, addin, "Creates a new empty Assembly; creates/inserts components from the palette")
-  Rel(addin, fusion, "Watches documentActivated; creates and inserts components; renders thumbnails")
-  Rel(fusion, hub, "Resolves DataFiles for insertion; stores created external components")
-```
+- `start()`: `app.documentActivated -> _on_document_activated` (primary trigger)
+  and, when the build exposes it, `app.documentOpened -> _on_document_opened`
+  (backup; the dedup gate handles overlap). The launch definition is reused if
+  it already exists, otherwise `addButtonDefinition(LAUNCH_CMD_ID, …)`;
+  `commandCreated -> _launch_command_created`; one control per
+  `LAUNCH_PLACEMENTS` entry (`addCommand(cmd_def, position_ref, False)`, not
+  promoted). Two custom events are unregistered-then-registered so a reload
+  without a Fusion restart cannot stack handlers: `PTAT_assemblyPalette_finishInsert`
+  (`_FinishInsertHandler`) and `PTAT_assemblyPalette_thumbTick`
+  (`_ThumbTickHandler`).
+- `stop()`: deletes the palette, removes the launch controls (panels and tabs
+  are left: `insertSTEP` owns the shared INSERT panel's cleanup, the ASSEMBLE
+  panel is Fusion's), deletes the definition, unregisters both events, resets
+  the thumbnail pump, clears `_inserted_in_session` and `_palette_was_open_for`.
+- `_launch_command_created` (no inputs, so the work is done here): toggles —
+  a visible palette is torn down with `_tear_down_palette`, otherwise
+  `_show_palette()`.
+- `_maybe_show_palette_for(doc, source)` (both document events): a saved
+  document is only passed to `recents.remember_recent_if_eligible`; an unsaved
+  one must have a Design product with Assembly intent, be empty
+  (`_design_is_empty`), and not be the object in `_palette_was_open_for`
+  (compared with `is`), then `_show_palette()`.
+- `_show_palette()`: clears `_inserted_in_session`, `_reset_thumb_pump()`,
+  `deleteMe()` on any existing palette (a palette left in `ui.palettes` after
+  `closed` can be internally torn down, and `isVisible` on it no-ops),
+  `_write_init_js(_gather_palette_state())`, `_write_intent_icons_css()`,
+  `palettes.add(...)`, handlers `closed -> _palette_closed`,
+  `navigatingURL -> _palette_navigating`, `incomingFromHTML -> _palette_incoming`,
+  re-dock left if floating, `isVisible = True`.
+- `_gather_palette_state()`: `docName`, `theme` (`_theme_str`, Device theme via
+  `_os_is_dark`), `showChildren`, `openDocs` (`_list_open_docs`), `recentDocs`
+  (`_list_recent_docs`), `hasTargetProject` / `targetProject`
+  (`cache.resolve_target_folder`, `cache.target_project_label`),
+  `activeDocSaved` (`_active_doc_is_saved`, reads only `isSaved`).
+- The page paints from `window.__ptInit`, then sends `htmlReady`; the backend
+  answers with `_send_palette_init` (`setDocumentName`, `setTheme`,
+  `setOpenDocs`, `setRecentDocs`, `setTargetProject`, `setActiveDocSaved`),
+  because the embedded browser on Windows can serve a cached `init.js`.
+- `_palette_incoming` actions (every one sets `returnData = "OK"`):
 
-```mermaid
-C4Container
-  title Assembly Palette – Container View
+  | Action | Handler | Effect |
+  |---|---|---|
+  | `htmlReady` | `_send_palette_init` | full state push after page load |
+  | `createComponent` `{name, intent}` | `_action_create_component` | `addNewExternalComponent` into `cache.resolve_target_folder()`, sets `designIntent`; then `_send_palette_init` |
+  | `insertDoc` `{dataFileId, intent}` | `_action_insert_doc` | see the insert chain below; then `_send_palette_init` |
+  | `setShowChildren` `{showChildren}` | sets `_show_children` | re-sends only `setOpenDocs` |
+  | `requestThumbs` `{ids}` | `_action_request_thumbs` | answers from cache / live render, queues the rest for the pump |
+  | `recheckProject` | `_send_target_project` | re-resolves the folder only; from the banner's Re-check button and the page's focus / visibility handlers |
+  | `recheckDocSaved` | `_send_active_doc_saved` | from the same focus / visibility handlers |
+  | `launchAssemblyBuilder` | `_execute_command("PTAT_AssemblyBuilder")` | refused with a message and a fresh `setActiveDocSaved` when the document is saved; otherwise hides the palette first |
+  | `launchGlobalParameters` | `_execute_command("PTAT_globalParameters")` | hides the palette first |
+  | `launchFasteners` | `_action_launch_fasteners` | `FusionFastenersCommand`; see below |
+  | `refresh` (↻) | `_send_palette_init` | the only gallery repaint besides `htmlReady`, create and insert |
 
-  Person(user, "Design Engineer")
+- `_palette_closed` → `_tear_down_palette`: clears the session set, pins
+  `_palette_was_open_for = app.activeDocument` (so a spurious
+  `documentActivated` right after close does not re-pop), `deleteMe()`.
+- `_palette_navigating`: `http*` opens externally.
 
-  Container_Boundary(cmd, "Assembly Palette command") {
-    Container(python, "Python Backend", "commands/assemblypalette/entry.py", "Trigger gate, open/recent enumeration, thumbnails, target-project resolution, create + insert")
-    Container(palette, "HTML Palette", "resources/html/index.html", "Create form, no-project banner, Open/Recent tabbed galleries, theme")
-    ContainerDb(init, "init.js", "Generated sidecar", "window.__ptInit: theme, doc name, open + recent docs, target project")
-    ContainerDb(recent, "recent_docs.json", "Local cache (recents_utils)", "Recently-touched part/hybrid/assembly DataFile ids; shared with Open Recent")
-    ContainerDb(thumbs, "Thumbnail cache", "cache/thumbs PNGs (recents_utils)", "Per-DataFile thumbnails keyed by md5(id); shared with Open Recent")
-  }
+### The insert chain
 
-  System_Ext(fusion, "Fusion API", "adsk.core, adsk.fusion")
+`_action_insert_doc` refuses the active document's own `DataFile` id
+(`_active_data_file_id`), resolves the `DataFile` (`_find_data_file_by_id`:
+`findFileById` on `cache.get_active_project()` then `app.data`), ends any
+running command (`_end_active_command`: `ui.terminateActiveCommand()` unless
+`ui.activeCommand` is in `_IDLE_CMD_IDS`; safe here because a palette event has
+no command of its own on the stack), calls
+`rootComponent.occurrences.addByInsert(data_file, transform, True)` — which
+returns `None` rather than raising, most often for a document in another
+project — then `recents.touch_recent`, adds the id to `_inserted_in_session`
+and calls `_schedule_finish_insert(occurrence)`.
 
-  Rel(user, palette, "Fills create form; clicks document cards; toggles Show referenced children")
-  Rel(palette, python, "fusionSendData('createComponent' / 'insertDoc' / 'setShowChildren' / 'requestThumbs' / 'refresh')")
-  Rel(python, palette, "sendInfoToHTML('setOpenDocs' / 'setRecentDocs' / 'setThumbs' / 'setTheme')")
-  Rel(python, init, "Writes state before palette open")
-  Rel(python, recent, "Reads / appends recent entries")
-  Rel(python, thumbs, "Renders, downloads + reads cached thumbnails")
-  Rel(python, fusion, "addNewExternalComponent, addByInsert, createThumbnail, DataFile.thumbnail")
-```
+`_schedule_finish_insert` stores the occurrence in `_pending_finish` and starts
+a `threading.Timer(_FINISH_DELAY_SECONDS = 0.35, _fire_finish_event)`; the
+worker calls only `app.fireCustomEvent(_FINISH_EVENT_ID)` and ignores its
+return value. `_FinishInsertHandler.notify` (main thread, a later turn) runs
+`_finish_insert_like_fusion`: `_select_only(occurrence)` (logs the bool
+`Selections.add` returns), `activeViewport.fit()`, reads
+`isVaildForEditInitialPosition` (the API's own spelling; only an explicit
+`False` blocks), then `_start_edit_initial_position` tries
+`_EDIT_POSITION_CMD_IDS` in order (`FusionDcEditInitialPositionCommand`, then
+`FusionEditInitialPositionCommand`) through `_try_start_command`, which calls
+`execute()` and *observes* the outcome with `_active_command_id()` —
+`pump_events_for(_COMMAND_START_WAIT_SECONDS = 0.4)` then `ui.activeCommand` —
+falling back to `execute()`'s return only when `activeCommand` is unreadable.
+Each step degrades independently; the component is already in the assembly.
+The pattern is written up in
+[Insert and position a component from a palette](../dev/Insert%20and%20position%20a%20component%20from%20a%20palette.md)
+and [Deferring work to a later main-loop turn](architecture.md#deferring-work-to-a-later-main-loop-turn).
 
-```mermaid
-C4Component
-  title Assembly Palette – Python Backend
-
-  Container_Boundary(python, "Python Backend") {
-    Component(trigger, "documentActivated gate", "Trigger", "Pops palette once per new empty Assembly-intent doc; _palette_was_open_for dedup")
-    Component(launch, "Launch button", "Toolbar", "PTAT_assemblyPalette control in Assembly > Insert and Solid > Assemble; toggles the palette: closes it via _tear_down_palette when visible, else _show_palette")
-    Component(state, "Palette state", "_gather_palette_state", "Theme, doc name, open docs, recent docs, target project")
-    Component(open, "Open enumerator", "_list_open_docs", "Top-level filter (documentReferences), dedup by DataFile id, excludes the active doc by DataFile id + unsaved/inserted")
-    Component(recent, "Recent enumerator", "_list_recent_docs", "Cache filtered to not-open + not-inserted; newest-first; dedup")
-    Component(thumbs, "Thumbnail pump", "_pump_thumbs", "Disk cache / createThumbnail / DataFile.thumbnail future -> PNG cache -> data URL")
-    Component(project, "Target-project resolver", "cache.resolve_target_folder", "Saved doc's folder -> activeProject.rootFolder; None -> no-project banner + Create disabled")
-    Component(actions, "Action router", "_palette_incoming", "createComponent / insertDoc / setShowChildren / requestThumbs / launch handoffs / launchFasteners / refresh / recheckProject / recheckDocSaved")
-  }
-
-  System_Ext(fusion, "Fusion API")
-
-  Rel(trigger, state, "Builds state, shows palette")
-  Rel(launch, state, "Builds state, shows palette")
-  Rel(state, open, "Lists open documents")
-  Rel(state, recent, "Lists recent documents")
-  Rel(state, project, "Resolves target folder + label")
-  Rel(actions, thumbs, "requestThumbs queues the cards on screen")
-  Rel(actions, project, "recheckProject re-resolves (no Fusion event)")
-  Rel(actions, fusion, "addNewExternalComponent / addByInsert")
-  Rel(project, fusion, "activeDocument.dataFile / activeHub / activeProject.rootFolder")
-  Rel(open, fusion, "documentReferences (top-level test)")
-```
-
-### User flow
+This sequence shows the insert and the deferred chain, with the delay that
+separates them.
 
 ```mermaid
 sequenceDiagram
-    autonumber
-    actor User
-    participant Fusion
-    participant Trigger as documentActivated gate
-    participant Python as Python Backend
-    participant Palette as HTML Palette
-
-    User->>Fusion: File > New Design (Assembly intent)
-    Fusion->>Trigger: documentActivated
-    Trigger->>Trigger: Empty + unsaved + Assembly? not already shown?
-    Trigger->>Python: _show_palette()
-    Python->>Python: _gather_palette_state() (open + recent docs as metadata, target project)
-    Python->>Palette: write init.js + palettes.add()
-
-    opt No target project (activeProject raises id.size())
-        Palette->>Palette: Show "no target project" banner + disable New Component
-        User->>Palette: Select project in Data Panel; return to palette (focus) or click Re-check
-        Palette->>Python: fusionSendData('recheckProject')
-        Python->>Palette: sendInfoToHTML('setTargetProject') (clears banner, enables Create)
-    end
-
-    alt Create a component
-        User->>Palette: Name + intent + New Component
-        Palette->>Python: fusionSendData('createComponent')
-        Python->>Python: cache.resolve_target_folder()
-        Python->>Fusion: addNewExternalComponent + designIntent
-    else Insert an open / recent document
-        opt Show referenced children
-            User->>Palette: Toggle checkbox
-            Palette->>Python: fusionSendData('setShowChildren')
-            Python->>Palette: sendInfoToHTML('setOpenDocs')
-        end
-        User->>Palette: Click document card
-        Palette->>Python: fusionSendData('insertDoc', dataFileId)
-        Python->>Fusion: occurrences.addByInsert(dataFile)
-    else Hand off
-        User->>Palette: Assembly Builder… / Global Parameters…
-        Palette->>Python: fusionSendData('launch…')
-        Python->>Fusion: commandDefinition.execute()
-    else Fasteners
-        User->>Palette: Fasteners ↗
-        Palette->>Python: fusionSendData('launchFasteners')
-        Python->>Fusion: itemById('FusionFastenersCommand').controlDefinition.isEnabled
-        alt Enabled
-            Python->>Fusion: commandDefinition.execute()
-        else Disabled for this document
-            Python->>User: messageBox explaining why
-        end
-    end
-
-    Python->>Palette: sendInfoToHTML refresh (open + recent)
+    participant Page as app.js
+    participant In as _palette_incoming
+    participant T as threading.Timer (0.35 s)
+    participant H as _FinishInsertHandler
+    participant F as Fusion
+    Page->>In: insertDoc {dataFileId}
+    In->>In: _action_insert_doc: refuse active doc id, _find_data_file_by_id
+    In->>F: _end_active_command (terminateActiveCommand if not idle)
+    In->>F: occurrences.addByInsert(dataFile, transform, True)
+    In->>In: touch_recent, _inserted_in_session.add, _schedule_finish_insert
+    In->>T: start
+    In->>Page: _send_palette_init (galleries repaint)
+    T->>F: app.fireCustomEvent(PTAT_assemblyPalette_finishInsert)
+    F->>H: notify (later main-loop turn)
+    H->>F: _select_only, activeViewport.fit
+    H->>F: isVaildForEditInitialPosition
+    H->>F: _try_start_command(Dc id): execute, pump 0.4 s, read ui.activeCommand
+    H->>F: fallback to plain id if idle
 ```
 
-## Design decisions
+### The thumbnail pump
 
-### Why `documentActivated` instead of `documentOpened`?
-`documentOpened` is not reliably emitted for **File > New** across Fusion builds (notably on macOS), while `documentActivated` fires consistently. It also fires on every tab switch, so a `_palette_was_open_for` gate (compared by Python object identity, not `id()`) suppresses re-popping the palette for a document it already handled. `documentOpened` is attached as a harmless backup when the running build exposes it.
+Galleries are metadata only (`dataFileId`, `name`, `intent`). The page watches
+cards with an `IntersectionObserver` and asks for a batch shortly before each
+scrolls into view. `_action_request_thumbs` answers in the same turn what is on
+disk (`recents.cached_thumbnail_data_url`) or renderable from an open document
+(`_open_docs_by_data_file_id` built once per batch, then
+`recents.render_thumbnail_for_doc`), queues the rest in `_thumb_queue` and
+arms a tick. `_schedule_thumb_tick` starts a
+`threading.Timer(_THUMB_TICK_SECONDS = 0.15, _fire_thumb_event)` unless a tick
+is already pending and younger than `_THUMB_TICK_STALE_SECONDS = 2.0`.
+`_ThumbTickHandler.notify` → `_pump_thumbs`: bail and reset if the palette is
+gone or hidden; `_collect_finished_thumbs` (a `FinishedFutureState` future's
+`dataObject` goes through `recents.store_thumbnail_object`; any other settled
+state, or `ProcessingFutureState` older than `_THUMB_FUTURE_TIMEOUT_SECONDS =
+20`, lands in `_thumb_missing`); `_start_queued_thumbs` starts at most
+`_THUMB_START_PER_TICK = 3` downloads (`_find_data_file_by_id` is the cloud
+round-trip; reading `.thumbnail` only starts the download) while
+`len(_thumb_inflight) < _THUMB_MAX_INFLIGHT = 12`; `_send_thumbs` pushes
+`setThumbs {id: dataURL}`; re-arm only while work remains. The page memoises
+answers, so filtering and tab switches repaint from memory.
 
-### How does an insert continue into Edit Initial Position?
-Fusion's own **Insert Component** is not one command but a chain: `FusionImportCommand` → `CommitCommand` → `SelectCommand` → `FitCommand` → `FusionMoveCommand`. `addByInsert` is only the import and commit, so a palette insert would otherwise land the component unselected at the origin.
+## Data and state
 
-`_finish_insert_like_fusion` adds the remaining three steps — select the new occurrence, `fit()` the viewport, then start the position command — and `_end_active_command` ends that command when a second card is clicked, so back-to-back inserts never call `addByInsert` from inside a running command. The final step is **Edit Initial Position** (`FusionDcEditInitialPositionCommand`) rather than Move/Copy: it edits the placement the insert itself recorded instead of stacking a separate Move feature on top of it. `FusionEditInitialPositionCommand` — Fusion ships two definitions with the same label and identical HUD and marking-menu entries, the `Dc` ("double click") variant and the plain one — is kept as a fallback in case a build ever differs; both resolve to the same command for the user.
+- Module state: `_palette_was_open_for` (Document object, `is`-compared),
+  `_inserted_in_session` (DataFile ids, cleared on every open and close),
+  `_show_children` (persists for the session), `_pending_finish`,
+  `_finish_event_handler`, thumbnail pump state (`_thumb_queue`,
+  `_thumb_inflight` `id -> (future, started)`, `_thumb_missing`,
+  `_thumb_event_handler`, `_thumb_tick_pending`, `_thumb_tick_scheduled_at`).
+  All pump state is touched only on the main thread.
+- Constants: `RECENT_PAYLOAD_LIMIT = 300`, `_IDLE_CMD_IDS = ("", "SelectCommand")`,
+  `_FUTURE_PROCESSING = 0`, `_FUTURE_FINISHED = 1`.
+- Custom events: `PTAT_assemblyPalette_finishInsert`, `PTAT_assemblyPalette_thumbTick`.
+- Disk, all owned by `recents_utils`: `cache/recent_docs.json`
+  (`RECENT_CACHE_PATH`); thumbnails in `cache/thumbs/<md5(dataFileId)>.png`
+  (`THUMB_DIR`, chosen once at import by writing a probe file, with
+  `<tempdir>/powertools_assembly_thumbs` as the fallback and still read on a
+  miss). Both stores are shared with Open Recent.
+- Generated files: `resources/html/init.js` (`window.__ptInit`),
+  `resources/html/intent-icons.css` (data-URI CSS variables from the SVGs in
+  `lib/ptAddInUtils/assets`).
+- No settings keys.
 
-**The whole difficulty was *when* the command is started, not which one.** Three false leads cost real time, so they are recorded here rather than re-derived:
+## Design notes
 
-- **Deferral, in two stages.** Running the chain straight from the palette's `incomingFromHTML` handler did nothing visible. Deferring it through a `customEvent` (`PTAT_assemblyPalette_finishInsert`, the same trick `commands/externalize/entry.py` needs for its `saveCopyAs` pipeline) was *still* not enough: fired inline, Fusion dispatches the handler within the same event turn, and the command that started was torn down again when the HTML event finished and the palette repainted — visible on screen as a dialog that flashed up and died together with the selection. The fire is therefore delayed on a `threading.Timer` (`_FINISH_DELAY_SECONDS`, 0.35s), which lands the handler on a later main-loop turn. `fireCustomEvent` is the one `Application` call documented as safe off the main thread and is all the worker does — **not** `ptutil.log`, which calls `Application.log`.
-- **`controlDefinition.isEnabled` is not a usable gate for these two.** Both report `False` even when the command starts perfectly well, because they exist only in the marking menus and Fusion resolves that kind of command's availability while it builds the menu. The Fasteners handoff *does* gate on `isEnabled`, but that one is a real ribbon button where the flag means something; copying the pattern here skipped both ids outright. `execute()`'s own return value is no better — it answers `True` whether or not the command appears. `_try_start_command` therefore **observes** `ui.activeCommand`, and only falls back on `execute()`'s answer when activeCommand cannot be read at all.
-- **`ui.activeCommand` does not update in the turn a command starts.** Read after a single `doEvents()` it reported `SelectCommand` for a command that visibly came up. `_active_command_id` pumps for `_COMMAND_START_WAIT_SECONDS` (0.4s) via `ptutil.pump_events_for` before believing an idle answer.
+### Why `documentActivated` is the trigger
+`documentOpened` is not reliably emitted for **File > New** on every build
+(notably macOS); `documentActivated` is, but it also fires on every tab
+switch, so `_palette_was_open_for` suppresses re-popping for a document already
+handled. It holds the `Document` object and is compared with `is`, not `id()`:
+`id()` of a garbage-collected wrapper can be reused.
 
-Two more Fusion behaviours worth knowing, both caught in `cache/powertools-debug.log`:
+### Why the active document is matched by `DataFile` id everywhere else
+`app.activeDocument` and `Documents.item(i)` return different Python wrappers
+around the same native document, so `id()` / `is` never match across two API
+calls. `_list_open_docs` and `_list_recent_docs` both exclude
+`_active_data_file_id()` (guarded: an unsaved document has no `DataFile`), and
+`_action_insert_doc` re-checks at click time because the galleries repaint only
+on ↻ and a Fusion tab switch can leave a stale card on screen. Without the
+guard `addByInsert` returns `None` and the error path reports the misleading
+"same project" message.
 
-- `fireCustomEvent` is documented to return `True` on success but **returns `False` even when the event fires**. Treating `False` as "never fired" and clearing `_pending_finish` on it starved the handler that was already on its way — it arrived to an empty slot and returned. The return value is now ignored; only a raise counts as a failure to schedule.
-- `Selections.add` returns a bool as well as being able to raise, so a selection can fail *silently* and leave every downstream command reading nothing. `_select_only` logs that return.
+### Open tab: top-level documents
+`Document.documentReferences` raises "Cannot get documentReferences of a
+non-top-level document" for a reference-loaded child and returns the collection
+for a document the user opened directly; `_is_top_level_doc` touches `.count`
+so the accessor evaluates. It is an in-memory check with no cloud round-trip.
+**Show referenced children** (`_show_children`) skips the filter. Unsaved
+documents are excluded (`addByInsert` needs a `DataFile`), non-design and
+non-part/hybrid/assembly documents are skipped, and cards are deduplicated by
+`DataFile` id.
 
-Things that turned out **not** to matter: `groundToParent` is `False` on a fresh insert and the dialog opens on it anyway, despite Fusion's tips text scoping the command to a grounded component; `isEnabled` is `False` on the id that works. `Occurrence.isVaildForEditInitialPosition` — spelled with the API's own typo — is still read first and blocks only when it answers `False` outright, since Fusion does refuse the edit for some occurrences such as patterned ones. Selecting the insert's **timeline node** instead of the occurrence was tried and is a dead end: `Selections.add` rejects a `TimelineObject` with `3 : invalid argument entity`.
+### Recent tab
+`_list_recent_docs` is `recents.list_recent(exclude_ids, limit=300,
+file_types=("f3d",))` — Fusion's own recents file overlaid with the shared
+cache — so the gallery and the Open Recent flyout are the same list. Only the
+active document and the session's inserts are excluded; open documents are
+listed. The 300-entry payload lets the page filter across everything while
+rendering the newest slice.
 
-### How are top-level documents told apart from referenced children?
-Fusion answers this directly and instantly: `Document.documentReferences` raises *"Cannot get documentReferences of a non-top-level document"* for a reference-loaded child and returns the reference collection for a top-level document. The Open tab uses that in-memory check (no cloud round-trip) to show only the documents you opened directly. **Show referenced children** simply skips the filter.
+### Why a per-session "inserted" filter
+A document inserted from the palette is not open in a tab, so the next refresh
+would re-list it and a second click would silently add a duplicate occurrence.
+Inserted ids are hidden from both galleries until the palette is reopened, so
+deliberate re-insertion stays possible.
 
-### Why a generated `init.js` instead of a message handshake?
-As with Assembly Builder, the palette loads asynchronously and `palettes.add()` rejects a query string on the URL. Writing `resources/html/init.js` (theme, document name, open docs, recent docs) **before** creating the palette lets the page read `window.__ptInit` synchronously and apply the correct theme before the first paint. A reopened palette is refreshed via `sendInfoToHTML` instead.
+### Why thumbnails come from two sources and a pump
+`Component.createThumbnail` renders a live root component — local and instant,
+but only for an open document. `DataFile.thumbnail` downloads the 256 × 256 PNG
+Fusion holds in the cloud and is the only route for a closed document, which is
+most of the Recent gallery and all of it after a hub switch; a
+`FailedFutureState` is the documented answer for "no thumbnail", a per-file
+miss. That call returns a `DataObjectFuture`, and `adsk.core.Future` exposes only
+`state` — no completion event — so a result can only be polled. Reference
+Manager polls inline behind a modal progress bar; a palette the user is
+scrolling cannot, hence one poll per timer-fired custom event with the
+per-tick and in-flight throttles above. `_thumb_missing` is cleared on every
+palette open because Fusion generates cloud thumbnails after a save.
 
-### Where do thumbnails come from?
-Two sources, because neither covers the whole gallery on its own:
+### Why Edit Initial Position, and why it is observed rather than asked
+Fusion's own Insert Component is a chain — `FusionImportCommand`,
+`CommitCommand`, `SelectCommand`, `FitCommand`, `FusionMoveCommand`.
+`addByInsert` is the import and commit; `_finish_insert_like_fusion` adds
+select, fit and a position command, choosing Edit Initial Position over
+Move/Copy because it edits the placement the insert recorded instead of
+stacking a Move feature. Both Edit Initial Position definitions report
+`controlDefinition.isEnabled == False` even when they start: they exist only in
+marking menus and Fusion resolves their availability while building the menu.
+`execute()` returns `True` whether or not the command appears. So
+`_try_start_command` reads `ui.activeCommand` after a 0.4 s pump; read after a
+single `doEvents()` it still says `SelectCommand` for a command that visibly
+started. `isGroundToParent == False` is not a blocker despite the tips text.
 
-* **`Component.createThumbnail`** renders the live root component. Local and instant, but it needs an open design — so it only serves the Open tab (and pre-warms the cache on `documentActivated`).
-* **`DataFile.thumbnail`** downloads the 256×256 PNG Fusion already holds in the cloud. This is the only route for a **closed** document, which is most of the Recent gallery and *all* of it right after a hub switch.
+### Fasteners
+There is no public insert API (`FastenerOccurrenceDefinition` exposes only
+`updateSize()` / `isSizeUpToDate`), so the palette executes Fusion's own
+`FusionFastenersCommand`, the ASSEMBLY › INSERT button. Unlike the marking-menu
+commands above it is a ribbon button whose `isEnabled` means something, and it
+is often legitimately disabled (part intent, direct modeling, Form environment,
+library or AnyCAD components, off-hub); `execute()` on a disabled definition is
+a silent no-op, so `_action_launch_fasteners` reports the state and leaves the
+palette open instead. An unreadable `controlDefinition` defaults to enabled.
 
-An earlier note here claimed the DataFile-backed thumbnail "did not resolve reliably in the target build", and the palette was built on `createThumbnail` alone as a result. That was wrong, and the cost was severe: a card only ever had a thumbnail if that document had been opened on *this machine* since the cache was last wiped. Switching hubs produced a gallery of placeholders that could only be filled by opening several hundred documents one at a time. `commands/refrences/entry.py` had a working `DataFile.thumbnail` implementation the whole time, and the debug log records it succeeding. A `FailedFutureState` is the API's documented answer for *"this DataFile has no thumbnail"* — a per-file miss, not a broken mechanism.
+### No target project banner
+`addNewExternalComponent` needs a `DataFolder`. `cache.resolve_target_folder`
+tries the saved active document's own folder, then `activeProject.rootFolder`
+(which raises `InternalValidationError('id.size()')` with no project in the
+Data Panel). Fusion has no active-project-changed event, so the page re-checks
+on focus, on visibility change and via the banner's Re-check button, and
+`_action_create_component` re-resolves and returns an actionable message if the
+gate was bypassed.
 
-### Why a thumbnail *pump* rather than a straight fetch?
-`DataFile.thumbnail` returns a `DataObjectFuture`, and `adsk.core.Future` exposes only `state` — there is no completion event, so a result can only be collected by polling. Reference Manager polls inline (`adsk.doEvents()` + `time.sleep` against a 5 s deadline), which is fine behind a modal progress bar and unacceptable in a palette the user is scrolling.
+### Assembly Builder only for an unsaved document
+`activeDocSaved` disables the handoff button and swaps its hint. No
+`documentSaved` handler exists (see Learnings), so the state is refreshed where
+the palette already refreshes — open, `htmlReady`, ↻, after create — and on
+every focus / visibility return via `recheckDocSaved`; `launchAssemblyBuilder`
+re-checks at click time. Assembly Builder itself also accepts a saved-but-empty
+document; the palette deliberately does not.
 
-So each poll is one turn of a timer-fired `customEvent` (`_THUMB_EVENT_ID`), reusing the deferral mechanism the post-insert chain already needed. Each turn harvests whatever settled, starts a few more downloads, pushes the batch to the page, and re-arms only while work remains. The UI thread is never held.
+### Galleries repaint only on ↻
+No application document event refreshes the galleries; a tab switch while the
+palette is open leaves them stale until ↻, `htmlReady`, a create or an insert.
+The reason is recorded under Learnings.
 
-The throttles matter for one reason: `Data.findFileById` is a cloud round-trip on the main thread, and it is the *only* expensive call — reading `.thumbnail` afterwards merely starts an async download. Hence `_THUMB_START_PER_TICK` (few new resolutions per turn, spreading the cost over several turns instead of one stall) against a much larger `_THUMB_MAX_INFLIGHT` (waiting on a future is free).
+## Tests
 
-Failure modes are all bounded: a future stuck in `ProcessingFutureState` is abandoned after `_THUMB_FUTURE_TIMEOUT_SECONDS`; an id with no cloud thumbnail goes into a negative cache so it is never retried; and because `fireCustomEvent` is observed to return `False` even when it works, a tick that never arrives is re-armed once it goes stale rather than wedging the queue.
+- `tests/test_assemblypalette_open_docs.py` — `_list_open_docs`: active
+  document excluded by `DataFile` id (distinct and same wrapper), unsaved and
+  non-design documents skipped, every intent listed, dedup, session-insert
+  filter, `_show_children` behaviour; `_action_insert_doc` refuses the active
+  document and passes another.
+- `tests/test_assemblypalette_thumbnails.py` — `_pump_thumbs` turn by turn with
+  fake futures: cache hits answer immediately, open documents render locally,
+  queueing and dedup, per-tick cap, finished / failed / wedged futures, negative
+  cache, stop when the palette is gone, idempotent and stale-tick re-arm,
+  `_reset_thumb_pump` clears the negative cache.
+- `tests/test_assemblypalette_edit_initial_position.py` — `_try_start_command`
+  routing (Dc preferred, `isEnabled False` ignored, fallbacks, unreadable
+  `activeCommand`), the select → fit → position chain and its degradation, and
+  `_schedule_finish_insert` (delayed fire, `False` return keeps the occurrence
+  pending, a raising fire stays quiet on the worker thread).
+- `tests/test_assemblypalette_fasteners.py` — `_action_launch_fasteners`:
+  enabled hides and executes, disabled reports and leaves the palette open,
+  missing definition, unreadable control definition, missing palette.
+- `tests/test_assemblypalette_builder_gate.py` — `launchAssemblyBuilder` and
+  `recheckDocSaved` routing on saved / unsaved / no document.
+- `tests/test_command_abort.py` pins `_launch_command_created` in its guarded
+  set; `tests/test_command_contract.py` lists this module in `KNOWN_NO_CMD_ID`
+  and allows the two custom-event ids and `LAUNCH_CMD_ID`.
+- Everything else in `entry.py` is Fusion-bound and not exercised by the suite;
+  nothing here is verified in Fusion on this branch except by the AST guards in
+  `tests/test_command_contract.py` and `tests/test_command_abort.py`, which
+  import it under the `adsk` stub. The icon set is not pinned in
+  `tests/test_command_icons.py`.
 
-### Why are thumbnails fetched per card instead of shipped with the gallery?
-The Recent payload carries up to 300 entries so the page can filter across all of them, but it renders 40 and shows about a dozen. Embedding every cached PNG as a data URI made the payload scale with the *cache* rather than with what the user can see — megabytes to paint a handful of cards. Galleries are now metadata only; the page watches cards with an `IntersectionObserver` and asks for a batch (`requestThumbs`) shortly before each scrolls into view, and the backend answers with `setThumbs` as results land. Answers are memoised in the page, so filtering and tab switches repaint from memory without re-asking.
+## Learnings
 
-### Why did the thumbnail cache move out of the OS temp dir?
-It was in `$TMPDIR` because the bundled add-in folder can be read-only on locked-down installs. That trade cost more than it bought: macOS purges `/var/folders/…/T` on its own schedule, so a cache that could only be refilled by re-opening each document individually was being wiped out from under the user. `cache/thumbs` is now preferred and the temp dir is the fallback, chosen once at import by writing a probe file rather than by guessing at permissions (`os.access` lies on Windows network shares). The old location is still *read* on a cache miss, so thumbnails from earlier builds are not re-downloaded. Lineage URNs are globally unique, so the flat `md5(dataFileId)` keying needs no per-hub namespace.
-
-### Why is the recents cache shared with Open Recent?
-The recents cache (`cache/recent_docs.json`) and the per-document thumbnail store (`cache/thumbs`) were originally private to this command. The [Open Recent](./Open%20Recent.md) File-menu flyout surfaces the same list, so the data layer — cache format/location, thumbnail key scheme and rendering, and the `read`/`write`/`touch`/`list`/`remember` helpers — was extracted into `lib/ptAddInUtils/recents_utils` (mirroring how `cache_utils` owns the Global Parameters cache formats). Assembly Palette now delegates its recents helpers to that module, keeping one source of truth so the palette gallery and the File-menu flyout can never drift.
-
-### Why a "no target project" banner (and manual re-check)?
-A new external component needs a target `DataFolder` for its eventual save. The backend resolves one via `cache.resolve_target_folder()` — the active document's own folder when it is already saved, otherwise `app.data.activeProject.rootFolder`. That `activeProject` access raises `InternalValidationError('id.size()')` when the Data Panel has no project in context. Because a raise inside the palette's `incomingFromHTML` handler is swallowed by the `DEBUG`-gated `handle_error()`, this previously read to the user as **nothing happening** on *New Component*. The palette now surfaces an unresolved project as a banner and disables *New Component* until one is available. Fusion exposes **no active-project-changed event** (`Data.activeProject` is a plain property with no event), so the palette can't observe the user picking a project: it re-checks on demand instead — via a **Re-check** button on the banner and automatically when the palette page regains focus (a lightweight `recheckProject` message that re-resolves only the target folder). The same resolver and banner back the Assembly Builder's *Create Assembly* gate.
-
-### Why does the Fasteners link execute a native command id, and why the `isEnabled` check?
-Fasteners has no public insert API — `FastenerOccurrenceDefinition` is a preview class exposing only `updateSize()` / `isSizeUpToDate` for occurrences that already exist — so the only route is executing Fusion's own command definition. Its id, `FusionFastenersCommand`, is the button Fusion itself places in the `InsertAssemblePanel` (confirmed in Fusion's shipped `Resources/Toolbar/TabToolbars.xml` and `Resources/CommandDefinitions/CommandDefinitions.xml`); the editing variants use a bare `Fasteners*` prefix instead, so the naming is not symmetric and the insert id should not be guessed from them. Unlike the two PowerTools handoffs, this command is often legitimately **present but disabled** — Fusion blocks it for part-intent and direct-modeling designs, in the Form environment, for library and AnyCAD-derived components, and off-hub. `execute()` on a disabled definition is a silent no-op, which reads as a dead link, so `controlDefinition.isEnabled` is read first and the palette is left open with an explanation when it is false. The check is wrapped in `try/except` and defaults to *enabled* so a build that does not expose the control definition still lets Fusion make the call.
-
-### Why a per-session "inserted" filter?
-A document inserted from the palette is not "open in a tab," so the next refresh would re-list it under Recent and a second click would silently add a duplicate occurrence. Inserted DataFile ids are tracked for the current palette session and hidden from both galleries; the set is cleared each time the palette is opened so deliberate re-insertion is still possible in a fresh session.
-
-### Why is the active document matched by DataFile id and not object identity?
-Because two wrappers for the same document are different Python objects. `app.activeDocument` and `Documents.item(i)` each construct a **fresh** `adsk.core.Document` around the same native document, so `id()` and `is` cannot identify a document across two API calls — the original `if id(doc) == active_key: continue` in `_list_open_docs` therefore never fired, and the document being assembled into was listed in its own Open gallery. Clicking that card asks Fusion to insert a document into itself: `addByInsert` returns `None` rather than raising, which the error path reads as the far more common "different project" cause and reports the wrong message. `_list_recent_docs` already excluded by `dataFile.id`; both enumerators now share `_active_data_file_id()`, and it is the same rule the parked auto-refresh note below states for `documentClosing`. Because the galleries repaint only on ↻, the filter alone cannot cover a Fusion tab switch made while the palette is open — so `_action_insert_doc` re-checks the id at click time and refuses with an accurate message.
+- **Starting a Fusion command from `incomingFromHTML` needs a later main-loop
+  turn, and firing the custom event inline is not enough.** Fired inline, Fusion
+  dispatched the handler in the same turn and the position command was torn down
+  when the HTML event finished and the palette repainted — visible as a dialog
+  that flashed and died with the selection. The 0.35 s `threading.Timer` is what
+  buys the deferral (c440ad3).
+- **Off the main thread, call only `app.fireCustomEvent`, and ignore its return
+  value.** It returns `False` even when the event fires; clearing
+  `_pending_finish` on that return starved a handler that was already on its
+  way. `ptutil.log` calls `Application.log` and is not thread-safe (266e2c2).
+- **`controlDefinition.isEnabled` is meaningless for marking-menu commands and
+  `ui.activeCommand` does not update in the turn a command starts.** Gating on
+  `isEnabled` skipped both Edit Initial Position ids; reading `activeCommand`
+  after one `doEvents()` reported idle for a command that came up. Selecting the
+  insert's timeline node instead of the occurrence is a dead end:
+  `Selections.add` rejects a `TimelineObject` with `3 : invalid argument entity`.
+- **`DataFile.thumbnail` does work; a `FailedFutureState` is a per-file miss.**
+  An earlier belief that it "did not resolve reliably" left the gallery on
+  `createThumbnail` alone, so a card only had a thumbnail if that document had
+  been opened on this machine since the cache was last wiped; a hub switch gave
+  a gallery of placeholders. `commands/refrences/entry.py` had it working the
+  whole time (14f42ca).
+- **Do not keep the thumbnail cache only in the OS temp dir.** macOS purges
+  `/var/folders/…/T` on its own schedule and the cache could only be refilled by
+  reopening each document; `recents_utils` prefers `cache/thumbs` and probes by
+  writing, because `os.access` lies on Windows network shares.
+- **Do not ship thumbnails inline with the gallery payload.** Data URIs for
+  every cached PNG made a 300-entry Recent list scale with the cache rather than
+  with the dozen cards on screen.
+- **A two-wrapper comparison by `id()` never matches.** The original
+  `if id(doc) == active_key` in `_list_open_docs` never fired, so the document
+  being assembled into was listed in its own gallery and inserting it returned
+  `None`, misreported as the "different project" cause (6772f31).
+- **Do not read the document model from application event handlers; the
+  gallery auto-refresh built on them is parked because it took Fusion down.**
+  A refresh driven by `documentActivated` / `Opened` / `Closing` / `Closed` /
+  `Saved` read `documentReferences` and `dataFile` on the main thread while
+  Fusion's background saver serialised the document, and the CER dump aborted
+  on the autosave thread (`Ns::_AutoSaveTask -> SegmentSaver::save ->
+  PassiveRefMetaType::doSave -> std::terminate`) during insert + Edit Initial
+  Position. Any revival must: (1) drop the `documentSaved` handler; (2) route
+  every refresh through `fireCustomEvent` + `threading.Timer`, never inside a
+  Fusion event or `incomingFromHTML`; (3) drop the focus-driven flush — clicking
+  back into the palette while Edit Initial Position was open is what crashed;
+  (4) guard `addByInsert` itself, since `_pending_finish` is set only after it
+  returns; (5) log through `ptutil.log` (`_diag` wraps it) so decisions reach
+  `cache/powertools-debug.log`. Push only `setDocumentName` / `setOpenDocs` /
+  `setRecentDocs` (never `setTargetProject`, a cloud call), look the palette up
+  by id first (`PowerTools.stop()` clears handlers before `commands.stop()`),
+  and on `documentClosing` exclude the closing document by `DataFile` id. The
+  parked diff predates the rename from `assemblyintent` (7dee722); port, do not
+  merge.
 
 ---
 
-## Assembly Builder is offered only for an unsaved document
-
-`_gather_palette_state` carries `activeDocSaved` (`Document.isSaved` of the
-active document, nothing else read), and the page disables **Assembly
-Builder…** and swaps its hint when it is true. The palette has no
-`documentSaved` handler -- that is exactly the handler parked below -- so the
-state is refreshed where the palette already refreshes: on open (`init.js`
-and the `htmlReady` push), on ↻, after *New Component*, and on every focus or
-visibility return, where the page sends a lightweight `recheckDocSaved`. A save
-made while the palette is not focused is therefore caught when the user comes
-back to it; clicking the button focuses the page first, and
-`launchAssemblyBuilder` re-checks at click time anyway, refusing with a
-message and re-pushing `setActiveDocSaved`. Assembly Builder itself also
-accepts a saved-but-empty document; the palette deliberately does not.
-
-## Attempted and parked: automatic gallery refresh
-
-The Open and Recent galleries repaint only on the ↻ button. That is wrong the
-moment the user switches tabs, because both lists are computed relative to the
-active document — Open excludes whichever document is active and Recent
-excludes its `DataFile` — so a tab switch changes what both should show. An
-implementation that followed `documentActivated` / `Opened` / `Closing` /
-`Closed` / `Saved` was written, tested live, and **parked after it took Fusion
-down**. The reasoning is recorded here because the branch it lives on may not
-outlive this note.
-
-### What the implementation did
-
-- `_refresh_galleries(reason, *, exclude_ids=None, force=False)` pushed only the
-  two galleries and the banner name to the palette **looked up by id** — never
-  `_show_palette`, which rebuilds the palette and would lose the active tab,
-  scroll position, filter text and the per-session `_inserted_in_session` set.
-- `_gallery_signature` suppressed the identical repaints a tab switch would
-  otherwise trigger.
-- `_refresh_is_safe` deferred while `_pending_finish` was set or
-  `ui.activeCommand` was busy.
-- `_strip_sent_thumbs` sent each base64 thumbnail once per page load, with
-  `app.js` caching them by `dataFileId`.
-
-That shape is sound and worth keeping. The failure was in *when* it ran.
-
-Three constraints on the push itself, which any future attempt still has to
-respect:
-
-- **Push `setDocumentName` / `setOpenDocs` / `setRecentDocs` only — never
-  `setTargetProject`.** That one calls `cache.resolve_target_folder`
-  (`entry.py:531`, `:628`), the only cloud-touching call anywhere on the
-  refresh path, and the page already re-checks the target project on focus.
-  Including it would put a network round-trip on every tab switch.
-- **Look the palette up by id first and bail unless it is visible.**
-  Application-level handlers registered through `ptutil.add_handler` live in a
-  module-global list that `PowerTools.py:69` clears via `clear_handlers()`
-  *before* `commands.stop()`; `stop()` itself detaches nothing. The palette
-  lookup is what makes a stray handler call after teardown a harmless no-op, so
-  it has to come before any work.
-- **On `documentClosing`, exclude the closing document by `DataFile` id, not by
-  object identity.** The event fires *before* the document leaves
-  `app.documents`, so it would otherwise still be listed — and identity
-  comparison is unreliable here, since `id()` of Fusion's short-lived
-  `Document` wrappers can collide once a wrapper is garbage collected (the same
-  trap already documented at `entry.py:248`, `:420`). Note also that an unsaved
-  document has no `DataFile` at all and is filtered out; saving is what makes it
-  insertable, which is why `documentSaved` looked like a necessary trigger in
-  the first place.
-
-### Why it is parked
-
-The first live test — insert, click back into the palette, second insert — took
-Fusion down. The CER dump aborts on Fusion's own autosave thread, with no
-Python, palette or CEF frame on the stack:
-
-```
-Ns::_AutoSaveTask -> DocumentMgrImpl::backupToDisk -> _saveAssets
-  -> SegmentSaver::save -> tbb -> BinaryBulkSaveVisitor::onVisit
-  -> PassiveRefMetaType::doSave -> std::terminate -> abort
-```
-
-Two earlier dumps were checked and are a *different*, benign shape: their
-`_AutoSaveTask` thread sits idle in `condition_variable::wait_for` and neither
-contains an abort frame. So this was not a pre-existing crash.
-
-What implicates the change: it added main-thread data-model reads
-(`Document.documentReferences`, `Document.dataFile`) on five application
-events, including `documentSaved`. That can walk the document graph exactly
-while the background saver serialises it, inside the insert + Edit Initial
-Position window where the crash happened. Unproven, but unshippable as it
-stood.
-
-### Constraints if this is revived
-
-1. **Drop the `documentSaved` handler.** It is the one that reads the model
-   during a save.
-2. **Route every refresh through `fireCustomEvent` + `threading.Timer`** — the
-   same deferral `_schedule_finish_insert` already uses — so nothing runs
-   inside a Fusion event handler or the palette's `incomingFromHTML`.
-3. **Drop the focus-driven `flushGalleries`.** Clicking back into the palette
-   while Edit Initial Position was open is what the crash run did.
-4. **Guard `addByInsert` itself, not just the window after it.**
-   `_pending_finish` is set only once `addByInsert` has returned.
-5. **Log through `ptutil.log`, not `_diag`.** `_diag` only reaches the Text
-   Commands window, so none of the refresh decisions survived in
-   `cache/powertools-debug.log` and the investigation had to work from the CER
-   stack alone.
-
-### The code needs porting, not merging
-
-The parked work predates `7dee722`, which renamed the command from **New
-Assembly** to **Assembly Palette**. It patches `commands/assemblyintent/entry.py`,
-`docs/New Assembly.md` and `docs/arch/New Assembly.md` — paths that no longer
-exist. Reviving it means porting ~750 lines across that rename (including a
-382-case `tests/test_assemblyintent_autorefresh.py`), not merging a branch.
-Given the constraints above rewrite the trigger layer anyway, treat the old
-diff as reference material rather than a starting point.
+*Copyright © 2026 IMA LLC. All rights reserved.*

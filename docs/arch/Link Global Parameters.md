@@ -1,149 +1,86 @@
 # Link Global Parameters — Architecture
+
 [← Link Global Parameters guide](../Link%20Global%20Parameters.md)
 
-## Architecture
+| | |
+|---|---|
+| **Command ID** | `PTAT_linkGlobalParameters` |
+| **Registry** | group `assembly` (`Assembly`); enabled by default. Member of the `globalParameters` `COMMAND_SETS` entry, so it starts on Global Parameters' enabled flag and has no checkbox of its own ([settings_store](architecture.md#settings_store)) |
+| **UI location** | Shared **Power Tools** panel ([`_ui_bootstrap.get_power_tools_panel`](architecture.md#_ui_bootstrap)), inserted directly after `PTAT_globalParameters` (`addCommand(cmd_def, "PTAT_globalParameters", False)`), `isPromoted = False` |
+| **Files** | `commands/linkGlobalParameters/entry.py`; `resources/` (button icons) |
+| **Shared helpers** | [`cache_utils`](architecture.md#cache_utils): `get_active_project`, `list_param_docs`, `read_param_set_sidecar`, `safe_activate`; [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`, `perf_timer`](architecture.md#general_utils) |
+| **Tests** | `tests/test_settings_command_sets.py` |
 
-The following diagrams show how the Link Global Parameters command interacts with the parameter set documents and the active design.
+## Purpose
 
-```mermaid
-C4Context
-  title Link Global Parameters – System Context
+Derives a parameter set created by Global Parameters into the active design as a Derive feature that carries only the set's favourite parameters, so the values are available in expressions and in the Favorites section of the Parameters dialog. The constraint that shapes it is that `DeriveFeatures.createInput` needs the source `Design`, which means the parameter document has to be opened from the Hub inside the running command and kept open until the feature is added; everything else in the dialog is arranged to avoid that open until OK is pressed.
 
-  Person(user, "Design Engineer", "Autodesk Fusion user who wants to consume shared project parameters")
-  System(addin, "PowerTools Assembly", "Autodesk Fusion add-in")
-  System_Ext(fusion, "Autodesk Fusion", "Host application and Python API (adsk.core / adsk.fusion)")
-  System_Ext(hub, "Autodesk Hub", "Cloud project storage — hosts the _Global Parameters folder containing parameter set documents")
+## How it is wired
 
-  Rel(user, addin, "Opens Link Global Parameters dialog; selects a parameter set")
-  Rel(addin, fusion, "Lists Hub project folders; opens parameter set doc for preview; creates DeriveFeature in active design")
-  Rel(fusion, hub, "Resolves _Global Parameters folder contents; opens and reads parameter set documents")
-```
+- `start()`: deletes any stale definition, `addButtonDefinition` with the `resources/` icon folder, attaches `command_created`, adds the control after `PTAT_globalParameters` on the Power Tools panel. `stop()` removes the control and deletes the definition.
+- `command_created(args)`:
+  1. If `app.activeDocument.isSaved` is false it shows a message box, sets `args.isCancelled = True` and returns — the command never opens.
+  2. [`cache_utils.get_active_project`](architecture.md#cache_utils); with none it adds the `lgp_error` text box, attaches only `command_destroy` and returns.
+  3. Calls `cache.list_param_docs(project, CMD_NAME)` — a Hub enumeration of the `_Global Parameters` folder on every open (folder id from the `gp_folder` cache when valid); the result populates `_param_doc_map` and `_param_doc_entries` and rewrites `gp_docs_<key>.json`. An empty result adds an `lgp_error` text box pointing at Global Parameters and returns with only `command_destroy` attached.
+  4. Builds `lgp_project_name` (read-only), the `lgp_source` dropdown (first entry selected) and the read-only four-column preview table `lgp_preview_table` (`3:4:2:4`: Name, Expression, Unit, Comment), then pre-loads the preview for the first entry with `_load_preview`.
+  5. Attaches `command_execute`, `command_input_changed`, `command_validate_input`, `command_destroy`.
+- `_load_preview(data_file, inputs, table)`: clears the data rows, then
+  - **fast path** — [`cache_utils.read_param_set_sidecar`](architecture.md#cache_utils) returns the rows Global Parameters wrote at save time (`gp_params_<safe-doc-id>.json`), and the table is filled without touching the Hub;
+  - **fallback** (no sidecar, e.g. a set made outside the add-in) — `app.documents.open(data_file, False)`, read `userParameters`, `close(False)`. The original document is not re-activated on this path. Any exception becomes a red `lgp_warn_<row>` text box inside the table.
+  - `_populate_preview_table` strips the `PT-globparm` tag from comments and uses `_row_counter` for unique input ids.
+- `command_input_changed(args)`: on `lgp_source` it resolves the selected name with `_resolve_selected_data_file` — the in-memory map first, otherwise `_refresh_param_doc_map` re-runs `list_param_docs` and retries — and calls `_load_preview`.
+- `command_validate_input(args)`: valid when the dropdown has a selected item.
+- `command_execute(args)`: resolves the selected `DataFile` the same way and calls `_derive_into_active(data_file, _active_doc_ref or app.activeDocument)`:
+  1. Snapshots the active design's existing user-parameter names.
+  2. `app.documents.open(data_file, False)` and casts its `DesignProductType` product.
+  3. `active_design.rootComponent.features.deriveFeatures.createInput(params_design)` with `isIncludeFavoriteParameters = True`; nothing is added to `sourceEntities` or `excludedEntities`.
+  4. Moves `timeline.markerPosition` to `0`, calls `deriveFeatures.add`, then sets the marker to `timeline.count` — the derive is always the first timeline entry.
+  5. Marks every user parameter that did not exist before the derive `isFavorite = True` (derived parameters do not inherit the flag, and chained derives and the Favorites panel need it).
+  6. `finally`: `close(False)` on the parameter document and [`cache_utils.safe_activate`](architecture.md#cache_utils) on the original.
+  Exceptions go to [`ptutil.handle_error`](architecture.md#general_utils) with a message box.
+- `command_destroy(args)`: clears `local_handlers` and all module state.
 
-```mermaid
-C4Component
-  title Link Global Parameters – Component View
+## Data and state
 
-  Person(user, "Design Engineer")
+- Module globals: `_param_doc_map` (name → `DataFile`), `_param_doc_entries` (`[{name, id}]` mirroring the dropdown), `_active_doc_ref`, `_active_project_ref`, `_row_counter`, `local_handlers`.
+- Files read under `cache/`: `gp_folder_<project-key>.json` (through `list_param_docs`), `gp_params_<safe-doc-id>.json` (preview). Written: `gp_docs_<project-key>.json` (through `list_param_docs`). The command never reads `gp_docs` itself.
+- Settings keys, custom events, temp files: none. `config.PERF_TRACE` gates the `perf_timer` blocks around each open/derive.
 
-  Component(cmd, "linkGlobalParameters/entry.py", "PowerTools Command", "Registers the toolbar button; builds the dialog; handles command lifecycle events")
-  Component(folder_scan, "Project folder helpers", "Internal Module", "_find_global_params_folder / _list_param_docs — locate the _Global Parameters folder and enumerate available parameter set documents")
-  Component(preview, "_load_preview", "Internal Module", "Opens the selected parameter set document in the background, reads its user parameters into the preview table, then closes the document")
-  Component(derive, "_derive_into_active", "Internal Module", "Creates a DeriveFeature on the active document's rootComponent using the parameter set document as the source; sets isIncludeFavoriteParameters = True; removes physical geometry from the derive scope via excludedEntities")
-  Component(safe_activate, "_safe_activate", "Internal Module", "Re-activates the original document after background open/close operations; guards against InternalValidationError")
+## Diagram
 
-  Component(api_design, "adsk.fusion.Design", "Fusion API", "rootComponent.features.deriveFeatures — createInput(), add()")
-  Component(api_data, "adsk.core.Data / DataFolder", "Fusion API", "Browses project root to locate the _Global Parameters folder and its DataFile children")
-  Component(api_docs, "adsk.core.Documents", "Fusion API", "open() for preview and derive; close() after each use")
-
-  Rel(user, cmd, "Selects parameter set; confirms with OK")
-  Rel(cmd, folder_scan, "Calls on dialog open to populate the Parameter Set dropdown")
-  Rel(cmd, preview, "Calls on dropdown selection change to refresh the preview table")
-  Rel(cmd, derive, "Calls on execute to derive parameters into the active document")
-  Rel(derive, safe_activate, "Calls after closing the parameter set document")
-  Rel(preview, api_docs, "Opens/closes parameter set document for read-only inspection")
-  Rel(derive, api_design, "Creates DeriveFeature with isIncludeFavoriteParameters = True")
-  Rel(derive, api_docs, "Opens parameter set document; kept open until DeriveFeature add() completes")
-  Rel(folder_scan, api_data, "Iterates rootFolder.dataFolders and dataFiles")
-```
-
-## Caching and Discovery Logic
-
-Link Global Parameters now uses a cache-first startup path:
-
-1. Read `gp_docs_<project-key>.json` to populate the Parameter Set dropdown.
-2. Read `gp_folder_<project-key>.json` for fast `_Global Parameters` folder resolution.
-3. Attempt direct id-based `DataFile` resolve for initial preview.
-4. Resolve dropdown selection by name using cache-id fast path first.
-5. If a selected set is still unresolved (for example, partial in-memory map), force a full Hub refresh and retry.
-
-This reduces command-created latency in large projects where root folder enumeration is expensive.
-
-```mermaid
-C4Component
-  title Link Global Parameters – Cache-Aware Components
-
-  Component(cmd, "Link Global Parameters command", "commands/linkGlobalParameters/entry.py", "Dialog lifecycle + derive execution")
-  Component(docs_cache, "Docs cache", "gp_docs_<project-key>.json", "Cached parameter-set names and ids")
-  Component(folder_cache, "Folder cache", "gp_folder_<project-key>.json", "Cached _Global Parameters folder id")
-  Component(cache_id_resolve, "Cache-id resolver", "findFileById / findFolderById", "Best-effort direct resolve via Fusion API")
-  Component(selected_resolver, "Selected-doc resolver", "_resolve_selected_data_file", "Resolves selected name via map, cache-id, then Hub refresh")
-  Component(forced_refresh, "Forced Hub refresh", "_refresh_param_doc_map", "Full docs-map rebuild when selected set is unresolved")
-  Component(derive_exec, "Derive executor", "_derive_into_active", "Derives favorite parameters into active design")
-
-  Rel(cmd, docs_cache, "Read on open, write after scan")
-  Rel(cmd, folder_cache, "Read on open, write after scan")
-  Rel(cmd, cache_id_resolve, "Resolve initial preview doc by id")
-  Rel(cmd, selected_resolver, "Invoke on inputChanged and execute")
-  Rel(selected_resolver, forced_refresh, "Fallback when selected name not resolved")
-  Rel(cmd, derive_exec, "Execute after selected set resolves to DataFile")
-```
+The OK path: which document is open at each step, and where the original is restored.
 
 ```mermaid
 sequenceDiagram
-  autonumber
-  actor User
-  participant Cmd as Link Global Parameters
-  participant Cache as Local Cache
-  participant Hub as Fusion Hub API
-
-  User->>Cmd: Open command
-  Cmd->>Cache: Read gp_docs for project
-  alt Warm docs cache
-    Cache-->>Cmd: names + ids
-    Cmd->>Cmd: Build dropdown immediately
-    Cmd->>Cache: Resolve first doc by cached id
-  else Cache miss
-    Cmd->>Hub: Scan _Global Parameters docs
-    Hub-->>Cmd: DataFile map
-    Cmd->>Cache: Write gp_docs
-  end
-
-  alt Initial preview doc resolved
-    Cmd->>Hub: Open selected parameter-set doc
-    Cmd->>Cmd: Populate preview table
-    Cmd->>Hub: Close doc
-  else Not resolved by id
-    Cmd->>Cmd: Wait for dropdown change or execute
-  end
-
-  User->>Cmd: Change dropdown selection
-  Cmd->>Cmd: Resolve selected name from map/cache-id
-  alt Selected set unresolved
-    Cmd->>Hub: Force full docs refresh
-    Hub-->>Cmd: Return complete docs map
-    Cmd->>Cache: Rewrite gp_docs
-  end
-  Cmd->>Hub: Open resolved selected doc
-  Cmd->>Cmd: Refresh preview table
-  Cmd->>Hub: Close doc
-
-  User->>Cmd: Click OK
-  Cmd->>Hub: Resolve selected DataFile (cache-id or refreshed map)
-  Cmd->>Hub: Open selected parameter-set doc
-  Cmd->>Cmd: Add DeriveFeature with favorite parameters
-  Cmd->>Hub: Close doc and reactivate active design
+  participant E as command_execute
+  participant D as _derive_into_active
+  participant Hub as app.documents
+  participant A as active Design
+  E->>E: _resolve_selected_data_file(name)
+  E->>D: data_file, active_doc
+  D->>A: snapshot userParameters names
+  D->>Hub: open(data_file, False)
+  Hub-->>D: params_doc / params_design
+  D->>A: deriveFeatures.createInput(params_design), isIncludeFavoriteParameters = True
+  D->>A: timeline.markerPosition = 0
+  D->>A: deriveFeatures.add(input)
+  D->>A: timeline.markerPosition = timeline.count
+  D->>A: isFavorite = True on new parameters
+  D->>Hub: params_doc.close(False)
+  D->>A: cache_utils.safe_activate(active_doc)
 ```
 
-```mermaid
-sequenceDiagram
-  actor User
-  participant Dialog as Link Global Parameters Dialog
-  participant Hub as Autodesk Hub (_Global Parameters folder)
-  participant ActiveDoc as Active Fusion Document
+## Tests
 
-  User->>Dialog: Open Link Global Parameters
-  Dialog->>Hub: List parameter set documents in _Global Parameters folder
-  Hub-->>Dialog: Return {name → DataFile} map
-  Dialog->>User: Show Parameter Set dropdown populated with available sets
-  User->>Dialog: Select a parameter set
-  Dialog->>Hub: Open selected parameter set document (background, read-only)
-  Hub-->>Dialog: Return parameter list
-  Dialog->>Dialog: Populate preview table (Name, Expression, Unit, Comment)
-  Dialog->>Hub: Close parameter set document
-  User->>Dialog: Click OK
-  Dialog->>Hub: Open parameter set document (for derive)
-  Dialog->>ActiveDoc: Create DeriveFeature (isIncludeFavoriteParameters = True, no geometry)
-  ActiveDoc-->>Dialog: Derive complete — favorite parameters now available
-  Dialog->>Hub: Close parameter set document
-  Dialog->>ActiveDoc: Re-activate active document
-```
+- `tests/test_settings_command_sets.py` — `linkGlobalParameters` is a member of the `globalParameters` set: it is registered in the same group, follows the lead's enabled flag over its own stale flag, and `commands._should_start` gates it on the lead.
+
+`entry.py` is Fusion-bound and is not exercised by the suite; nothing here is verified in Fusion on this branch except by the AST guards in `tests/test_command_contract.py` and `tests/test_command_abort.py`, which import it under the `adsk` stub. The sidecar preview, the derive sequence and the favourite marking have no unit tests. The icon set is not pinned in `tests/test_command_icons.py` (`tests/test_release_build.py` only references the folder's `fusion_icon_resources` files as release-zip exclusions).
+
+## Learnings
+
+- **Read the preview from the sidecar, not by opening the document.** `app.documents.open` switches the active document and is unreliable while a command dialog is up; Global Parameters therefore writes `gp_params_<safe-doc-id>.json` on every save so this command can show the rows without an open. The open remains only as the fallback for sets created outside the add-in.
+- **Derive API rules established by debugging** (recorded in the `_derive_into_active` docstring): `createInput` takes a `Design`, not a `DataFile`; `deriveFeatures` lives on `rootComponent.features`; `isIncludeFavoriteParameters = True` alone limits the derive to parameters; the source document must stay open until the feature has been added.
+
+---
+
+*Copyright © 2026 IMA LLC. All rights reserved.*

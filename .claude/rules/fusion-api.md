@@ -69,9 +69,9 @@ explains it. Full write-ups: `docs/dev/lessons.md`.
   background saver serialises it, aborting the saver thread
   (`Ns::_AutoSaveTask` -> `SegmentSaver::save` -> `doSave` ->
   `std::terminate`). `documentSaved` is the worst case: it fires during a save.
-  Defer the work through `fireCustomEvent` + `threading.Timer`. This parked the
-  Assembly Palette gallery auto-refresh -- see
-  `docs/arch/Assembly Palette.md`, "Attempted and parked".
+  Defer the work through `fireCustomEvent` + `threading.Timer`. This is why
+  the Assembly Palette has no gallery auto-refresh -- see the Learnings in
+  `docs/arch/Assembly Palette.md`.
 - **Starting a Fusion command from a palette `incomingFromHTML` handler needs
   a later main-loop turn**: `threading.Timer` -> `fireCustomEvent` -> handler.
   Firing the custom event inline is not enough (c440ad3,

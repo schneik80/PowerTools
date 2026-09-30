@@ -44,27 +44,14 @@ UNREGISTERED_ENTRY_MODULES = ("preferences",)
 
 # --- Allowlists (the gaps) --------------------------------------------------
 
-# Rule 15: docs/arch/<Doc>.md missing. Both commands have a user guide and a
-# README row but no architecture note.
-KNOWN_ARCH_GAPS = frozenset(
-    {
-        "Animation Named View.md",
-        "Set Up Shared Add-ins Folder.md",
-    }
-)
+# Rule 15: docs/arch/<Doc>.md missing. Empty: every registered command has an
+# architecture note. Add to this set only for a brand-new command whose note
+# is genuinely pending, and remove it in the commit that adds the note.
+KNOWN_ARCH_GAPS: frozenset[str] = frozenset()
 
-# Rule 15: registered command with no row in docs/arch/index.md. The first two
-# also lack the arch note itself (above); the other three have a note that the
-# index never picked up.
-KNOWN_ARCH_INDEX_GAPS = frozenset(
-    {
-        "Animation Named View.md",
-        "Set Up Shared Add-ins Folder.md",
-        "Close All Documents.md",
-        "Sync Item to Part Number.md",
-        "Team Add-ins.md",
-    }
-)
+# Rule 15: registered command with no row in docs/arch/index.md. Empty: the
+# index lists every note.
+KNOWN_ARCH_INDEX_GAPS: frozenset[str] = frozenset()
 
 # Rule 9: CMD_ID built as an f-string from ``config.COMPANY_NAME`` ("IMA LLC")
 # and ``config.ADDIN_NAME``, so the resolved ID contains a space. Renaming a

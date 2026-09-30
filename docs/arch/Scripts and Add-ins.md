@@ -2,52 +2,41 @@
 
 [← Scripts and Add-ins guide](../Scripts%20and%20Add-ins.md)
 
-## Architecture
+| | |
+|---|---|
+| **Command ID** | `PT_scriptsmanager` |
+| **Registry** | group `tools` (`Tools`); enabled by default |
+| **UI location** | QAT File dropdown (`FileSubMenuCommand`), inserted directly before `PT_preferences` (`controls.addCommand(cmd_def, "PT_preferences", True)`); appended to the dropdown when that anchor is absent |
+| **Files** | `commands/scriptsmanager/entry.py` only; `ICON_FOLDER = ""`, so the item renders Fusion's default menu glyph |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.handle_error`](architecture.md#general_utils). The File dropdown is resolved by a local `_qat_file_dropdown()` (`ui.toolbars.itemById("QAT")` → `DropDownControl.cast(controls.itemById("FileSubMenuCommand"))`), the same lookup as [`ptutil.get_qat_file_dropdown`](architecture.md#ui_utils). |
+| **Tests** | `tests/test_command_contract.py` |
 
-The Scripts and Add-ins command registers a single button control in the QAT
-File dropdown (`FileSubMenuCommand`) and positions it directly before the
-PowerTools Preferences control (`PT_preferences`). It is a launcher: on
-execution it dispatches to the built-in Fusion `ScriptsManagerCommand` and
-terminates immediately, presenting no dialog of its own.
+## Purpose
 
-Because the Preferences command is infrastructure that always starts first (see
-`commands/__init__.py`), the `PT_preferences` anchor exists by the time this
-command's `start()` runs. If the anchor is ever missing, `start()` falls back to
-appending the control to the dropdown.
+Puts Fusion's built-in Scripts and Add-Ins manager (`ScriptsManagerCommand`, otherwise Shift+S or Utilities → Add-Ins) one click away in the File menu, directly above PowerTools Preferences. It is a pure launcher with no dialog of its own; the constraint is that it must work on the start screen with no document open, so it fires the target from `commandCreated`.
 
-The command is registered under the **Tools** group in `command_registry.py`, so
-it can be enabled or disabled from the **Tools** section of PowerTools
-Preferences. When disabled, the start-up gating in `commands/__init__.py` skips
-its `start()` and the menu item is not added.
+## How it is wired
 
-### Command ID
+- `start()`: deletes any existing `PT_scriptsmanager` definition, then `addButtonDefinition(CMD_ID, CMD_NAME, CMD_Description, "")`; wires `commandCreated` → `command_created`. If the File dropdown resolves and does not already hold `CMD_ID`: `controls.addCommand(cmd_def, "PT_preferences", True)` when the Preferences control exists, else `controls.addCommand(cmd_def)`. Preferences is infrastructure that `commands/__init__.py` starts before any registered command, so the anchor exists on a normal start.
+- `stop()`: deletes the control from the File dropdown, then the definition.
+- `command_created(args)`: adds no inputs and does the whole job ([acting from `commandCreated`](architecture.md#acting-from-commandcreated-when-there-are-no-inputs)) — `ui.commandDefinitions.itemById("ScriptsManagerCommand")`; found → `target.execute()`; not found → message box "The Scripts and Add-Ins manager is not available in this version of Fusion."; any exception → `ptutil.handle_error(CMD_NAME)`. The launcher command then terminates on its own; no `execute` handler is wired.
 
-`PT_scriptsmanager` (launches built-in `ScriptsManagerCommand`)
+When the `tools` group or the command is disabled in Preferences, `commands/__init__.py` skips `start()` and the menu item is not added.
 
-### Execution flow
+## Data and state
 
-1. The add-in registers the command definition and inserts a control in the QAT
-   File dropdown, positioned before `PT_preferences`.
-2. The user selects **Scripts and Add-ins** from the File menu.
-3. The `command_created` handler resolves `ScriptsManagerCommand` by ID.
-4. If found, it calls `execute()` to open the built-in Scripts and Add-Ins
-   manager; otherwise it shows a message that the manager is unavailable.
+None. `local_handlers` exists but is never appended to.
 
-### Component diagram
+## Diagram
 
-```mermaid
-C4Component
-    title Scripts and Add-ins – Component Architecture
+None: the flow is one lookup and one `execute()`.
 
-    Person(user, "Designer", "Fusion user working on a design")
-    Component(addin, "PowerTools Add-In", "Python, Fusion API", "Hosts and registers all PowerTools commands")
-    Component(cmd, "Scripts and Add-ins", "scriptsmanager/entry.py", "Registers QAT File-menu launcher before Preferences")
-    Component(qat, "QAT File dropdown", "FileSubMenuCommand", "Hosts the launcher and PowerTools Preferences controls")
-    Component(target, "ScriptsManagerCommand", "Fusion Internal API", "Opens the Scripts and Add-Ins manager")
+## Tests
 
-    Rel(user, addin, "Loads add-in on Fusion start")
-    Rel(addin, cmd, "Calls start() – inserts control before PT_preferences")
-    Rel(cmd, qat, "Adds control positioned before Preferences")
-    Rel(user, cmd, "Selects Scripts and Add-ins from File menu")
-    Rel(cmd, target, "Executes ScriptsManagerCommand")
-```
+- `tests/test_command_contract.py` — registry/doc/description contract; `PT_scriptsmanager` is checked against the ID shape; the literal walk self-check asserts that `commands/scriptsmanager/entry.py` is where the foreign anchor `PT_preferences` is seen, which guards the anchor against a rename.
+
+Not covered: `entry.py` is Fusion-bound and is not exercised by the suite; nothing here is verified in Fusion on this branch except by the AST guards in `tests/test_command_contract.py` and `tests/test_command_abort.py`, which import it under the `adsk` stub. There is no icon set to pin.
+
+---
+
+*Copyright © 2026 IMA LLC. All rights reserved.*

@@ -14,8 +14,22 @@ paths:
   `docs/<Doc>.md` (end user; ships in the zip; linked from the Preferences
   palette via `DOCS_BASE_URL`) and `docs/arch/<Doc>.md` (developer; stripped
   from the zip). Add a row in `docs/arch/index.md` and in the README command
-  table. Known gaps: `docs/arch/Animation Named View.md` and
-  `docs/arch/Set Up Shared Add-ins Folder.md` do not exist yet.
+  table. `tests/test_command_contract.py` asserts all four for every
+  registered command; its `KNOWN_ARCH_GAPS` / `KNOWN_ARCH_INDEX_GAPS`
+  allowlists are empty and must stay empty.
+- **Developer and architecture docs describe the as-is state, not the
+  journey.** No "was moved", "previously", "no longer", "now", commit hashes
+  or dates in a design section. A mistake and what it taught goes either into
+  `docs/dev/lessons.md` (with its commit hash -- that file is the ledger) or
+  into a clearly headed `## Learnings` section at the end of the per-command
+  note. Per-command notes follow one template (see `docs/arch/index.md`):
+  header table, Purpose, How it is wired, Data and state, design sections, a
+  diagram only where it shows more than the prose, Tests (what is and is not
+  covered), optional Learnings. Shared helpers are linked to
+  `docs/arch/architecture.md#shared-modules`, not re-explained.
+- **Mermaid on GitHub:** `flowchart` and `sequenceDiagram` only; quote every
+  label containing punctuation; real handler and function names in the real
+  order; no C4 or `%%{init}` blocks.
 - **`README.pdf` is regenerated in the same commit as any `README.md`
   change** (48722db). Use skill `build-readme-pdf`; never `--skip-audit` to
   get green. Each build stamps `readme-sha256:<hash>` into the PDF Subject;
@@ -27,8 +41,9 @@ paths:
   `table-widths.lua` pools their widths.
 - Developer recipes live in `docs/dev/` (`index.md`, `debugging.md`,
   `release.md`, `lessons.md`, `codebase-map.md`, the two API recipes). When a
-  fix teaches a Fusion rule, add it to `docs/dev/lessons.md` and, if it fits,
-  to `docs/arch/architecture.md` (f18b911 did both).
+  fix teaches a Fusion rule, add it to `docs/dev/lessons.md` and, if it
+  changes how commands are written, to the matching pattern section of
+  `docs/arch/architecture.md` (as a rule, not as a story).
 - Copyright footer on docs: `*Copyright © 2026 IMA LLC. All rights reserved.*`
   Python files carry the Industrial Machine Arts header; the three
   Autodesk-sample-derived ptutil modules keep Autodesk's notice (9b416cb).

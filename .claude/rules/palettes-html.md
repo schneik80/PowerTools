@@ -53,8 +53,9 @@ paths:
   newly docked-left palette lands on the outer edge, left of the browser.
   Never `snapTo()` a docked native palette -- it undocks it into a floating
   group (`5c28d4d`, lessons "HTML palettes").
-- **`assemblypalette._diag` only reaches the Text Commands window.** Nothing it
-  writes reaches `cache/powertools-debug.log`, so a crash takes the reasoning
-  with it. Use `ptutil.log` for anything that must outlive the session.
+- **Every diagnostic goes through `ptutil.log`**, which is the only writer of
+  `cache/powertools-debug.log`. A local helper is fine only as a prefixing
+  wrapper around it (`assemblypalette._diag` is one); a helper that prints or
+  calls `app.log` directly leaves nothing for a post-crash investigation.
 - Command descriptions and doc text come from `docs/`, not invented; ASCII
   only (aa6802e).

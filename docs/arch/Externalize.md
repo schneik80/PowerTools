@@ -1,176 +1,244 @@
 # Externalize — Architecture
+
 [← Externalize guide](../Externalize.md)
 
-## Architecture
+| | |
+|---|---|
+| **Command ID** | `PTAT_externalize` |
+| **Registry** | group `assembly` (`Assembly`); enabled by default |
+| **UI location** | Power Tools panel (`config.my_panel_id`, Design workspace, Tools tab) via [`_ui_bootstrap.get_power_tools_panel`](architecture.md#_ui_bootstrap); not promoted. Two-tab command dialog (Main, Logging); the run itself reports through the status-bar `ui.progressBar` |
+| **Files** | `commands/externalize/entry.py`; `resources/` PNG set |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`](architecture.md#general_utils); [`ptutil.capture_selections`, `picked_one`](architecture.md#selection_utils); [`ptutil.wait_for_upload`](architecture.md#upload_utils); [`default_log_directory`, `open_live_log_viewer`](architecture.md#log_utils) |
+| **Tests** | `tests/test_externalize_upload.py` |
 
-The actual save/replace work runs **outside** `command_execute`, in a Fusion `CustomEvent` handler that the command fires before returning. This is required because `Component.saveCopyAs`'s upload pipeline does not advance while `command_execute` holds the main thread (Autodesk forum [11164467](https://forums.autodesk.com/t5/fusion-api-and-scripts-forum/datafilefuture-uploadstate-is-not-updating-when-commandinputs/td-p/11164467)). In a custom-event handler, the same call completes in a few seconds.
+## Purpose
 
-### System context
+Turns local (in-document) first-level components of the active assembly into
+external cloud documents: each component is uploaded with `saveCopyAs`, its
+occurrences are deleted and re-inserted by reference at their original
+transforms, and the parent is saved once at the end. The shaping constraint is
+that `Component.saveCopyAs`'s upload pipeline does not advance while
+`command_execute` holds the main thread, so all of the work runs in a custom
+event handler fired from `command_execute`, after the dialog has closed.
 
-```mermaid
-C4Context
-  title Externalize – System Context
+## How it is wired
 
-  Person(user, "Design Engineer", "Autodesk Fusion user converting inline components to cloud documents")
-  System(addin, "PowerTools Assembly", "Autodesk Fusion add-in")
-  System_Ext(fusion, "Autodesk Fusion", "Host application and Python API (adsk.core / adsk.fusion)")
-  System_Ext(hub, "Autodesk Hub", "Cloud folder storing the active document and newly created external components")
-  System_Ext(log, "Temp Log File", "Per-run progress log read by the resume logic on next launch and tailed by Console.app / PowerShell as a live viewer")
+- `start()`: `addButtonDefinition(CMD_ID, …)`, `commandCreated -> command_created`,
+  control added to the Power Tools panel; the custom event `PTAT_externalize_runner`
+  is unregistered-then-registered and `_RunnerHandler` attached (kept in
+  `_event_handler` for the life of the add-in). `stop()`: removes the control
+  and definition, unregisters the event.
+- `command_created`: `cmd.isExecutedWhenPreEmpted = False`; computes the resume
+  plan from `_snapshot_local_component_names()` (names of first-level
+  occurrences whose `component.parentDesign` is the active design) and
+  `_analyze_resume_state(_default_log_path(), app.version, names)`; builds the
+  dialog; registers `inputChanged -> command_input_changed`,
+  `execute -> command_execute`, `destroy -> command_destroy`.
+  - **Main**: `occurrence_sel` (`SelectionCommandInput`, filter `Occurrences`,
+    limits 1..1); `externalize_all`; `replace_all_instances` (on by default);
+    `save_location` dropdown with `Same as Document` (selected) and
+    `Create Sub-folder`; read-only `resume_status` text box.
+  - **Logging**: `enable_log` (on), read-only `log_path` prefilled with
+    `_default_log_path()`, `browse_log` momentary button, `open_log_view` (on).
+- `command_input_changed`: first captures the pick with
+  `ptutil.capture_selections(inputs, _picks, "occurrence_sel")` on every change
+  (this command defers its work past the dialog, so the selection cannot be
+  read later). `externalize_all` on hides and disables the selector (limits
+  0..1) and forces `replace_all_instances` on and disabled; off restores both.
+  `enable_log` toggles the three logging inputs; `browse_log` resets itself
+  and opens a save dialog (`*.log` first) into `log_path`.
+- `command_execute`: refuses when `_pending_run` is set (a run is in
+  progress); needs a `Design` and a saved document (`activeDocument.dataFile`);
+  resolves the target folder — `Create Sub-folder` →
+  `_get_or_create_subfolder(parentFolder, dataFile.name)`, otherwise an existing
+  sub-folder of that name if present (`_find_existing_subfolder`) else the
+  document's own folder; `_build_pending_list`; re-runs
+  `_analyze_resume_state` against the chosen log path and computes the skip
+  set (empty, and log mode `w`, when the previous run completed); writes the
+  header with `_write_log_header`; creates `_LogWriter`; opens the live viewer;
+  stores everything in `_pending_run`; `app.fireCustomEvent(EVENT_ID)` — the
+  return value is logged, not acted on — and returns so the dialog closes.
+- `_RunnerHandler.notify` (main thread, next turn): takes and clears
+  `_pending_run`, shows `ui.progressBar`, runs `_run_loop` then `_finalize`,
+  reports a crash in the log and a `messageBox`, hides the bar.
+- `command_destroy`: clears `local_handlers`, `resume_plan`, `_picks`.
 
-  Rel(user, addin, "Runs Externalize command")
-  Rel(addin, fusion, "Reads inline occurrences; fires customEvent; handler calls saveCopyAs / deleteMe / addByInsert / AutoSaveFilesCommand / Document.save")
-  Rel(addin, log, "Writes checkpoints; reads on next launch to detect resumable state")
-  Rel(fusion, hub, "Uploads each component as a new document; commits parent assembly once at run end")
-```
+### The pending list
 
-### Component view
+`_build_pending_list(design, externalize_all, replace_all_instances)` returns
+entries `{"component", "comp_name", "instances": [(occ, occ.transform2), …]}`
+grouped by component name, in first-encounter order (`_group_local_occurrences`):
 
-```mermaid
-C4Component
-  title Externalize – Component View
+- `externalize_all` → every local first-level component, all occurrences.
+- Otherwise the pick from `ptutil.picked_one(_picks, "occurrence_sel")`
+  (an `Occurrence`, or an entity's `assemblyContext`); a component whose
+  `parentDesign` is not the active design is already external (message, empty
+  list); `replace_all_instances` → every first-level occurrence of that
+  component, else just the picked one.
 
-  Person(user, "Design Engineer")
-  Component(cmd_def, "command_execute", "Setup", "Reads inputs; builds pending list; computes resume; opens log; stores state in _pending_run; fires customEvent; returns immediately")
-  Component(handler, "_RunnerHandler", "CustomEventHandler", "Runs the per-iteration loop OUTSIDE command_execute. saveCopyAs upload pipeline advances normally here.")
-  Component(sel_input, "SelectionCommandInput", "Fusion UI", "Occurrence selector (disabled when Externalize All is checked)")
-  Component(ext_all, "BoolValueCommandInput", "Fusion UI", "Externalize All checkbox")
-  Component(save_loc, "DropDownCommandInput", "Fusion UI", "Save Location: Same as Document or Create Sub-folder")
-  Component(log_inputs, "Logging tab", "Fusion UI", "Log Progress, log path, Open live log viewer")
-  Component(resume_status, "TextBoxCommandInput", "Fusion UI", "Run status — driven by _analyze_resume_state on the temp log")
-  Component(save_to_cloud, "_save_to_cloud", "Helper", "saveCopyAs + tight adsk.doEvents() poll on uploadState until UploadFinished, bounded by UPLOAD_TIMEOUT_SECONDS")
-  Component(snapshot, "_snapshot_folder_files", "Helper", "Best-effort {name: DataFile} map of the target folder via asArray(), indexed walk as fallback")
-  Component(temp_save, "_temp_save", "Helper", "Triggers AutoSaveFilesCommand text command — local recovery checkpoint, no new cloud version")
-  Component(save_parent, "_save_parent_doc", "Helper", "Document.save once at end of run via futil.wait_for_upload — single new parent cloud version")
-  Component(log_writer, "_LogWriter", "Helper", "Appends key events to the per-run log file")
-  Component(resume, "_analyze_resume_state", "Helper", "Parses prior log for REPLACE_COMPLETE checkpoints; computes resume skip set")
-  System_Ext(hub, "Autodesk Hub", "Receives uploaded components and one new parent version")
+### The run loop
 
-  Rel(user, cmd_def, "Clicks Externalize; chooses options; clicks OK")
-  Rel(cmd_def, sel_input, "Reads target occurrence")
-  Rel(cmd_def, ext_all, "Reads Externalize All flag")
-  Rel(cmd_def, save_loc, "Reads chosen save location")
-  Rel(cmd_def, log_inputs, "Reads logging options")
-  Rel(cmd_def, resume_status, "Displays resume status")
-  Rel(cmd_def, resume, "Computes skip set on launch and on execute")
-  Rel(cmd_def, log_writer, "Writes header / status lines")
-  Rel(cmd_def, handler, "fireCustomEvent('PTAT_externalize_runner') with state in _pending_run")
-  Rel(handler, save_to_cloud, "Per component (if no existing cloud file): upload and get DataFile")
-  Rel(handler, temp_save, "Per component (after replace): local recovery checkpoint")
-  Rel(handler, save_parent, "Once at end: commit single new parent cloud version")
-  Rel(handler, log_writer, "Writes step lines and CHECKPOINT markers")
-  Rel(save_to_cloud, hub, "saveCopyAs → DataFileFuture → DataFile")
-  Rel(save_parent, hub, "Document.save → new parent version")
-```
+`_run_loop` snapshots the target folder once with `_snapshot_folder_files`
+(`{name: DataFile}`), then per entry: reuse the existing `DataFile` of that
+name, or `_save_to_cloud(component, name, folder)`; on `None` count a
+consecutive failure and skip (no checkpoint, so the next run retries it), and
+abort the loop at `MAX_CONSECUTIVE_UPLOAD_FAILURES = 2`; otherwise record the
+upload in the map, then for every instance `occ.deleteMe()` and
+`root.occurrences.addByInsert(df, transform, True)`; `_temp_save` (Fusion's
+`AutoSaveFilesCommand`, a local recovery checkpoint that creates no cloud
+version); write `CHECKPOINT|REPLACE_COMPLETE|component=<name>|index=<n>`.
+Per-entry exceptions are logged and the loop continues.
 
-### Per-run sequence
+`_finalize`: when anything was replaced, `_save_parent_doc` — one
+`Document.save("Externalize: N components replaced")` awaited with
+`ptutil.wait_for_upload` — then the footer line (`Externalize completed
+successfully` only when `replaced == total`; that string is the marker the
+resume check looks for) and a summary `messageBox`.
+
+This sequence shows one run from OK to the summary.
 
 ```mermaid
 sequenceDiagram
-  autonumber
-  participant U as User
-  participant Cmd as command_execute
-  participant H as _RunnerHandler
-  participant Save as _save_to_cloud
-  participant API as Fusion API
-  participant Hub as Autodesk Hub
-
-  U->>Cmd: OK
-  Cmd->>Cmd: read inputs, build pending list, write log header
-  Cmd->>API: app.fireCustomEvent('PTAT_externalize_runner')
-  Cmd-->>U: dialog closes
-  Note over Cmd,H: command_execute returns; handler runs in customEvent context
-
-  H->>API: design.activeProduct, root.occurrences
-  loop for each component in pending list
-    H->>API: _find_existing_cloud_file(folder, name)
-    alt file already exists
-      API-->>H: DataFile (reused)
-    else upload needed
-      H->>Save: saveCopyAs(component, folder, name)
-      Save->>API: component.saveCopyAs(...)
-      API-->>Save: DataFileFuture (uploadState=Processing)
-      loop tight adsk.doEvents() spin
-        Save->>API: future.uploadState
-      end
-      Save-->>H: DataFile
+    participant U as User
+    participant C as command_execute
+    participant H as _RunnerHandler.notify
+    participant S as _save_to_cloud
+    participant F as Fusion API
+    U->>C: OK
+    C->>C: _build_pending_list, _analyze_resume_state, _write_log_header
+    C->>F: app.fireCustomEvent("PTAT_externalize_runner")
+    C-->>U: dialog closes
+    F->>H: notify (next main-loop turn)
+    H->>H: _snapshot_folder_files(target_folder)
+    loop each pending component
+        alt name already in folder
+            H->>H: reuse DataFile
+        else upload
+            H->>S: saveCopyAs(name, folder, "", "")
+            loop adsk.doEvents() until uploadState leaves UploadProcessing (300 s cap)
+                S->>F: future.uploadState
+            end
+            S-->>H: DataFile or None (2 consecutive None -> abort run)
+        end
+        loop each instance
+            H->>F: occ.deleteMe() then addByInsert(df, transform, True)
+        end
+        H->>F: AutoSaveFilesCommand.execute()
+        H->>H: CHECKPOINT|REPLACE_COMPLETE|component=...
     end
-    H->>API: occurrence.deleteMe()
-    H->>API: addByInsert(DataFile, transform, isReferenced=True)
-    H->>API: AutoSaveFilesCommand.execute() (local recovery save)
-    H->>H: log CHECKPOINT|REPLACE_COMPLETE|...
-  end
-  H->>API: parent_doc.save('Externalize: N components replaced')
-  API->>Hub: upload new parent version
-  H-->>U: summary message box
+    H->>F: _save_parent_doc: Document.save + ptutil.wait_for_upload
+    H-->>U: summary messageBox
 ```
 
-### Why customEvent
+## Data and state
 
-A direct `saveCopyAs` from inside `command_execute` returns a `DataFileFuture` whose `uploadState` never transitions away from `Processing` — Fusion's upload pipeline does not advance while a command with CommandInputs holds the main thread. Cancelling the command makes the queued uploads land on the server, which is the smoking-gun observation behind the architecture. Moving the loop into a `CustomEvent` handler — fired from `command_execute`, executed *after* the dialog closes — gets us into a context where the same call completes in a few seconds. This was validated with an isolation spike before the refactor.
+- Module state: `_pending_run` (set by `command_execute`, cleared by the
+  handler; doubles as the busy flag), `_event_handler`, `resume_plan`, `_picks`
+  (selection capture store), `local_handlers`.
+- Custom event: `PTAT_externalize_runner`.
+- Run log: `_default_log_path()` =
+  `ptutil.default_log_directory()/<document>_externalize.log` (OS temp directory
+  on macOS and Windows, `~/Documents` elsewhere), or the browsed path. Header:
+  `Fusion client version:`, active document, target folder, options,
+  `Pending order:` with `[done]` markers, then `Externalize log:`.
+- Constants: `UPLOAD_TIMEOUT_SECONDS = 300.0` (equal to
+  `ptutil.upload_utils.DEFAULT_UPLOAD_TIMEOUT_SECONDS`),
+  `MAX_CONSECUTIVE_UPLOAD_FAILURES = 2`.
+- No settings keys.
 
-`AutoSaveFilesCommand` between iterations creates a local recovery save (no new cloud version) so a crash mid-run doesn't lose the in-progress replacements. The single `Document.save` at the end commits exactly one new parent assembly version, regardless of how many components were externalized.
+## Why the work runs in a custom event
 
-### Why the upload spin is bounded
+A `saveCopyAs` issued inside `command_execute` returns a `DataFileFuture` whose
+`uploadState` stays `UploadProcessing` for as long as the command holds the main
+thread (Autodesk forum thread 11164467); the queued uploads land only when the
+command ends. A `CustomEvent` handler fired from `command_execute` runs on the
+main thread after the dialog has closed, and there the same call completes in
+seconds. See [Deferring work to a later main-loop turn](architecture.md#deferring-work-to-a-later-main-loop-turn).
+`AutoSaveFilesCommand` between iterations keeps the replacements crash-safe
+without a cloud version each; the single `Document.save` at the end commits one
+new parent version regardless of how many components were externalized.
 
-`_save_to_cloud` is a fork of `ptutil.upload_utils._wait_via_upload_state`, not a
-caller of it. The shared helper calls `pump_events_for()` between polls, and that
-sleep is exactly what keeps this pipeline from draining — hence the tight
-`adsk.doEvents()` spin here.
+## Why the upload spin is tight and bounded
 
-The fork originally dropped the helper's `DEFAULT_UPLOAD_TIMEOUT_SECONDS`, which
-made the spin unbounded. Fusion can leave a `DataFileFuture` in
-`UploadProcessing` indefinitely, and there is no escape from that state:
-
-- `DataFileFuture` exposes only `dataFile` and `uploadState` — no abort.
-- The run uses the status-bar `ui.progressBar`, which (unlike `ProgressDialog`)
-  has no cancel affordance at all, so there was no way for the user to stop it.
-- The loop runs inside a `CustomEvent` handler, so there is no command to
-  terminate either.
-
-A 75-component run wedged on component 34 and was still spinning after 430s with
-the only exit being a force-quit. Two bounds now apply:
+`_save_to_cloud` is a fork of `ptutil.upload_utils._wait_via_upload_state`, not
+a caller of it: the shared helper sleeps through `pump_events_for()` between
+polls, and that pause is what stops this pipeline from draining, so the fork
+calls `adsk.doEvents()` back to back (heartbeat every 5 s). Fusion can leave a
+future in `UploadProcessing` indefinitely and nothing can abort it —
+`DataFileFuture` exposes only `dataFile` and `uploadState`, the status-bar
+progress bar has no cancel affordance, and inside a custom event there is no
+command to terminate — so two bounds apply:
 
 | Bound | Constant | Behaviour |
 |---|---|---|
-| Per upload | `UPLOAD_TIMEOUT_SECONDS` (300s) | Abandon that component, return `None` |
-| Per run | `MAX_CONSECUTIVE_UPLOAD_FAILURES` (2) | Abort the whole run |
+| Per upload | `UPLOAD_TIMEOUT_SECONDS` (300 s) | return `None`; the component is skipped without a checkpoint and retried next run |
+| Per run | `MAX_CONSECUTIVE_UPLOAD_FAILURES` (2) | break out of the loop; `_finalize` still commits what succeeded and resume stays available |
 
-The per-upload timeout feeds the pre-existing skip path, so nothing else had to
-change: no CHECKPOINT is written for a skipped component, so the next run retries
-it. The run-level breaker matters because a wedged pipeline tends to stay wedged
-— without it, the remaining 41 components would each burn the full 300s, turning
-one hang into a ~3.5 hour one. Aborting still runs `_finalize`, so the parent is
-committed with everything that did succeed and resume stays available.
+## Why the folder snapshot is best-effort
 
-### Why the folder snapshot is best-effort
-
-`_run_loop` builds a `{name: DataFile}` map of the target folder once, so the
-per-component "does this already exist in the cloud?" check is an O(1) lookup
-rather than a fresh linear scan of a folder that grows on every iteration.
-
-That map is an optimisation and a duplicate guard — never a correctness
-requirement. It originally walked `DataFiles.item(i)` over `range(count)`
-unguarded, which made a transient data-layer hiccup fatal: `count` is a
-server-side number and `item(i)` raises
+The `{name: DataFile}` map makes the per-component "already in the cloud?"
+check O(1) instead of a linear scan of a folder that grows every iteration, and
+it doubles as a duplicate guard. It is never a correctness requirement, so
+`_snapshot_folder_files` degrades to a smaller map rather than raising:
+`DataFiles.asArray()` is tried first (one native call, no index arithmetic);
+if it raises, an indexed walk guards each `item(i)` on its own — `count` is a
+server-side number and `item(i)` can raise
 `RuntimeError: 2 : InternalValidationError : item` for an index Fusion has not
-materialised. The walk runs *before* the per-component `try/except`, so the
-exception reached `notify()` and discarded a queued 42-component run before a
-single component was processed. It was seen moments after 33 files landed in
-that folder; a retry 43s later succeeded, so the condition is transient.
-
-`_snapshot_folder_files` now prefers `DataFiles.asArray()`, which fetches the
-whole list in one native call and does no index arithmetic, and falls back to an
-indexed walk that guards each index on its own. Every failure mode degrades to a
-smaller map instead of an exception:
+materialised.
 
 | Failure | Result |
 |---|---|
-| `folder.dataFiles` raises | empty map, warn |
+| `folder.dataFiles` raises | empty map, warning |
 | `asArray()` raises | indexed walk |
-| `item(i)` raises, or an entry's `name` is unreadable | skip that entry, warn |
-| every index raises | empty map, warn |
+| `item(i)` raises, or an entry's `name` is unreadable | skip that entry, warning |
+| every index raises | empty map, warning |
 
-The trade-off is explicit: a name missing from the map means that component is
-uploaded again instead of reused, creating a duplicate cloud file. That is worth
-it against losing the whole run, but it is why every degraded path logs a
-warning that names the consequence.
+A missed name means that component is uploaded again, creating a duplicate
+cloud file; every degraded path logs a warning that names that consequence.
+
+## Why instances are grouped per component
+
+The component name is the cloud-file identity everywhere in this command
+(snapshot lookup, resume checkpoints). Grouping every occurrence of a component
+into one entry makes the checkpoint atomic: `REPLACE_COMPLETE` is written only
+after all instances are replaced, so a resumed run never skips a half-replaced
+component.
+
+## Tests
+
+- `tests/test_externalize_upload.py` — `_save_to_cloud`: a wedged upload gives
+  up at the deadline, the timeout is honoured exactly, a healthy upload returns
+  its `DataFile`, a non-positive timeout disables the bound, the constant
+  matches the shared helper's default, and the breaker threshold is small;
+  `_snapshot_folder_files`: `asArray()` preferred, bad index skipped, indexed
+  fallback, all-failing walk and unreadable folder yield an empty map, an
+  unreadable name is skipped, first match per name wins.
+- The dialog, `_RunnerHandler`, `_build_pending_list` and `_save_parent_doc`
+  are Fusion-bound and not exercised by the suite; nothing here is verified in
+  Fusion on this branch except by the AST guards in
+  `tests/test_command_contract.py` (which also allows the custom-event id) and
+  `tests/test_command_abort.py`, which import it under the `adsk` stub. The icon
+  set is not pinned in `tests/test_command_icons.py`.
+
+## Learnings
+
+- **`saveCopyAs` uploads do not advance while `command_execute` holds the main
+  thread.** The smoking gun was that cancelling the command made the queued
+  uploads land; an isolation spike (`command_test_customevent_save`) took a
+  component stuck indefinitely to 5.9 s inside a custom event, and the loop was
+  moved there (forum 11164467).
+- **A forked wait loop must keep the original's timeout.** The fork of
+  `_wait_via_upload_state` dropped `DEFAULT_UPLOAD_TIMEOUT_SECONDS`; a
+  75-component run wedged on component 34 and was still spinning after 430 s
+  with force-quit as the only exit. Without the run-level breaker the remaining
+  41 components would each have burned the full 300 s.
+- **`DataFiles.count` and `item(i)` can disagree.** An unguarded indexed walk,
+  run before the per-component `try`, raised
+  `InternalValidationError : item` moments after 33 files landed in the folder
+  and discarded a queued 42-component run before any work; a retry 43 s later
+  succeeded, so the condition is transient. Prefer `asArray()` and guard every
+  index.
+
+---
+
+*Copyright © 2026 IMA LLC. All rights reserved.*

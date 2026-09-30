@@ -21,7 +21,8 @@ settings key.**
 
 ## Adding a command -- checklist (all in one change)
 
-1. `commands/<module>/__init__.py` + `entry.py` with `start()`/`stop()`,
+1. `commands/<module>/__init__.py` (copyright header only; the runner
+   imports `entry` directly) + `entry.py` with `start()`/`stop()`,
    `CMD_ID` (`PT*_<module>`, underscores only), `CMD_NAME`, and
    **`CMD_Description`** -- exact casing; an all-caps `CMD_DESCRIPTION` is
    silently ignored by the palette and the button (aa6802e). Keep the text
@@ -34,8 +35,12 @@ settings key.**
    `remove_from_inspect_panels()`. Do not re-copy the tab walk; `measurepath`
    and `matchunits` share it for exactly that reason.
 4. Docs pair: `docs/<Doc Name>.md` (user guide) and `docs/arch/<Doc Name>.md`
-   (architecture note), a row in `docs/arch/index.md`, and a row in the README
-   command table (then rebuild `README.pdf` -- skill `build-readme-pdf`).
+   (architecture note to the template in `docs/arch/index.md`: Purpose, How it
+   is wired, Data and state, Tests, optional Learnings; link shared helpers to
+   `docs/arch/architecture.md#shared-modules` instead of re-explaining them),
+   a row in `docs/arch/index.md`, and a row in the README command table (then
+   rebuild `README.pdf` -- skill `build-readme-pdf`). `tests/test_command_contract.py`
+   fails until all four exist.
 5. Icons: `resources/16x16.png`, `32x32.png`, `64x64.png` (+ `-dark`,
    `-disabled`) drawn with skill `generate-icons`; pin in
    `tests/test_command_icons.py`. Never copy another command's PNGs.
@@ -75,9 +80,13 @@ settings key.**
   infrastructure and always starts first (not in the registry).
 - `openrecent` probes several candidate IDs for the native Open control; the
   DEBUG log dumps the File dropdown's actual control IDs.
-- Only two access points are shared and bootstrapped once
-  (`_ui_bootstrap`): the Power Tools panel and the QAT File flyout lookup.
-  Everything else is owned, created, and torn down by its command.
+- Exactly one access point is shared and bootstrapped once
+  (`_ui_bootstrap.create_shared_access_points`): the Power Tools panel,
+  looked up with `get_power_tools_panel()`. Everything else -- QAT File
+  entries, the Share flyout, the Drawing/Manage/Animation panels, Inspect
+  placement, palettes -- is owned, created, and torn down by its command.
+  (`_ui_bootstrap.get_pt_settings_flyout` and `config.get_or_create_pt_settings_dropdown`
+  are dead: no PTSettings flyout is created.)
 
 ## Settings store discipline
 

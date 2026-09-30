@@ -1,59 +1,41 @@
 # Reference Manager — Architecture
+
 [← Reference Manager guide](../Reference%20Manager.md)
 
-## Architecture
+| | |
+|---|---|
+| **Command ID** | `PTAT_refmanager` |
+| **Registry** | group `assembly` (`Assembly`); **ships disabled** — listed in `settings_store.DEFAULT_DISABLED_COMMANDS`, so it starts only after the user enables it in Preferences ([settings_store](architecture.md#settings_store)) |
+| **UI location** | Quick Access Toolbar (`ui.toolbars.itemById("QAT")`), `qat.controls.addCommand(cmd_def, "PTAT_getandupdate", True)` — before the Get and Update button (`isBefore = True`) |
+| **Files** | `commands/refmanager/entry.py`; `resources/` (button icons) |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`](architecture.md#general_utils) |
+| **Tests** | `tests/test_command_contract.py` |
 
-The following diagram shows how the Reference Manager command interacts with Autodesk Fusion.
+## Purpose
 
-```mermaid
-C4Context
-  title Reference Manager – System Context
+Puts Fusion's own Reference Manager one click away on the QAT. The command has no logic of its own: it executes the built-in `ReferenceManagerCmd` command definition, and Fusion's dialog does the reviewing, updating and version selection. It is a thin launcher, and it ships disabled.
 
-  Person(user, "Design Engineer", "Autodesk Fusion user managing document references")
-  System(addin, "PowerTools Assembly", "Autodesk Fusion add-in")
-  System_Ext(fusion, "Autodesk Fusion", "Host application — provides ReferenceManagerCmd and manages reference versioning")
-  System_Ext(hub, "Autodesk Hub", "Cloud document storage and version history")
+## How it is wired
 
-  Rel(user, addin, "Clicks Reference Manager on QAT")
-  Rel(addin, fusion, "Executes built-in ReferenceManagerCmd")
-  Rel(fusion, hub, "Reads and writes reference version data")
-```
+- `start()`: `addButtonDefinition` with the `resources/` icon folder, attaches `command_created`, adds the control to the QAT anchored on `PTAT_getandupdate`. Get and Update also ships disabled, so the anchor is frequently absent; what Fusion does with a missing `positionID` is not verified on this branch. `stop()` deletes the QAT control and the definition.
+- `command_created(args)`: attaches `command_execute` and `command_destroy` to the new command and returns. It builds no inputs, so Fusion auto-executes the command.
+- `command_execute(args)`: `ui.commandDefinitions.itemById("ReferenceManagerCmd").execute()`; any exception goes to [`ptutil.handle_error`](architecture.md#general_utils) with a message box. Because the work is in `execute` rather than `commandCreated`, it depends on Fusion firing `execute` for an input-less command — which it does not do with no document open ([rule 1](../dev/lessons.md)); in that state the built-in command is never invoked and nothing is reported.
+- `command_destroy(args)`: clears `local_handlers`. It fires when this launcher command ends, independently of Fusion's Reference Manager dialog, which lives on as a separate command.
 
-```mermaid
-C4Component
-  title Reference Manager – Component View
+## Data and state
 
-  Person(user, "Design Engineer")
-  Component(cmd, "refmanager/entry.py", "PowerTools Command", "Registers QAT button and delegates to the built-in Fusion Reference Manager command")
-  Component(ref_mgr_cmd, "ReferenceManagerCmd", "Built-in Fusion Command", "Native Autodesk Fusion reference management dialog with version selection and update capabilities")
-  System_Ext(hub, "Autodesk Hub", "Provides reference version history and document metadata")
+None beyond `local_handlers`. No files, settings keys, custom events or temp files.
 
-  Rel(user, cmd, "Clicks Reference Manager on QAT")
-  Rel(cmd, ref_mgr_cmd, "Executes via ui.commandDefinitions")
-  Rel(ref_mgr_cmd, hub, "Retrieves and updates reference version data")
-  Rel(ref_mgr_cmd, user, "Displays Reference Manager dialog")
-```
+## Diagram
 
-### User flow
+None — a single call, described above.
 
-```mermaid
-sequenceDiagram
-  autonumber
-  actor User
-  participant QAT as Quick Access Toolbar
-  participant Cmd as Reference Manager
-  participant RefMgr as ReferenceManagerCmd
-  participant Hub as Autodesk Hub
+## Tests
 
-  User->>QAT: Click Reference Manager
-  QAT->>Cmd: command_created fires
-  Cmd->>RefMgr: ui.commandDefinitions.itemById('ReferenceManagerCmd').execute()
-  RefMgr->>Hub: Read reference list and version history
-  Hub-->>RefMgr: Reference metadata
-  RefMgr-->>User: Display Reference Manager dialog
-  User->>RefMgr: Update all / update one / pick version / open
-  RefMgr->>Hub: Apply selected reference updates
-  Hub-->>RefMgr: New references resolved
-  User->>RefMgr: Close dialog
-  RefMgr-->>Cmd: Dialog dismissed
-```
+- `tests/test_command_contract.py` — registry/description/ID contract; `commands/refmanager/entry.py` is the pinned example of a cross-module anchor literal (`PTAT_getandupdate`) in `test_the_literal_walk_can_see_cross_module_anchors`.
+
+`entry.py` is Fusion-bound and is not exercised by the suite; nothing here is verified in Fusion on this branch except by the AST guards in `tests/test_command_contract.py` and `tests/test_command_abort.py`, which import it under the `adsk` stub. The icon set (which includes a non-standard `32x32-normal.png`) is not pinned in `tests/test_command_icons.py`.
+
+---
+
+*Copyright © 2026 IMA LLC. All rights reserved.*

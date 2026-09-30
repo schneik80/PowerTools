@@ -1,61 +1,65 @@
 # Insert STEP File — Architecture
+
 [← Insert STEP File guide](../Insert%20Step.md)
 
-## Architecture
+| | |
+|---|---|
+| **Command ID** | `PTAT_insertSTEP` |
+| **Registry** | group `assembly` (`Assembly`); enabled by default. Registered before `assemblypalette`, whose launch button anchors on this control id |
+| **UI location** | Design workspace (`FusionSolidEnvironment`), two panels from `TABS`: ASSEMBLY tab › INSERT panel (`InsertAssemblePanel`) and SOLID tab › Insert panel (`InsertPanel`). Tab and panel are created when absent; the control is appended with no `positionID`; not promoted |
+| **Files** | `commands/insertSTEP/entry.py`; `resources/16x16.png`, `32x32.png`, `64x64.png` (no dark or disabled variants) |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`](architecture.md#general_utils) |
+| **Tests** | none module-specific |
 
-The following diagram shows how the Insert STEP File command interacts with Autodesk Fusion.
+## Purpose
 
-```mermaid
-C4Context
-  title Insert STEP File – System Context
+Puts a STEP import one click away in the assembly workflow: the user picks a
+`.stp` / `.step` file in an OS file dialog and Fusion imports it into the active
+design through its own `Fusion.ImportComponent` text command. The command has no
+dialog of its own, so all of its work happens in `commandCreated`.
 
-  Person(user, "Design Engineer", "Autodesk Fusion user inserting a local STEP model")
-  System(addin, "PowerTools Assembly", "Autodesk Fusion add-in")
-  System_Ext(fusion, "Autodesk Fusion", "Host application and Python API (adsk.core / adsk.fusion)")
-  System_Ext(fs, "Local File System", "Source of STEP or F3D files")
+## How it is wired
 
-  Rel(user, addin, "Runs Insert STEP File")
-  Rel(addin, fusion, "Opens file dialog; executes Fusion.ImportComponent text command")
-  Rel(addin, fs, "Reads STEP or F3D file path via OS file dialog")
-  Rel(fusion, fs, "Reads and imports file content as inline component")
-```
+- `start()`: `addButtonDefinition(CMD_ID, …)`, `commandCreated -> command_created`,
+  then for each `TABS` entry: look up the tab (`toolbarTabs.itemById`, else
+  `add`), the panel (`toolbarPanels.itemById`, else `add`), and
+  `panel.controls.addCommand(cmd_def)`.
+- `stop()`: for each `TABS` entry, removes this control from the panel
+  (looked up through `workspace.toolbarPanels.itemById`); deletes the panel
+  when it has no controls left and the tab when it has no panels left; then
+  deletes the definition. In practice only the add-in-created ASSEMBLY tab
+  panel can become empty; Fusion's own panels keep their native controls.
+- `command_created` — the whole command, following
+  [Acting from commandCreated when there are no inputs](architecture.md#acting-from-commandcreated-when-there-are-no-inputs):
+  casts `app.activeProduct` to `Design` (else `messageBox("No active Fusion
+  design")` and return); `ui.createFileDialog()` with title `Fusion Insert
+  STEP`, single select, filter `STEP Files(*.stp;*.STP;*.step;*.STEP);;All files
+  (*.*)`; on `DialogOK` wraps the path in double quotes and runs
+  `app.executeTextCommand(f"Fusion.ImportComponent {filename}")`. Exceptions go
+  to `ptutil.handle_error(CMD_NAME, show_message_box=True)`.
 
-```mermaid
-C4Component
-  title Insert STEP File – Component View
+## Data and state
 
-  Person(user, "Design Engineer")
-  Component(cmd, "insertSTEP/entry.py", "PowerTools Command", "Registers button in Assembly and Solid tabs; handles command lifecycle")
-  Component(file_dlg, "adsk.core.FileDialog", "Fusion API", "Presents OS file browser filtered to STEP and F3D extensions")
-  Component(text_cmd, "Fusion.ImportComponent", "Fusion Text Command", "Imports the selected file as an inline component in the active design")
-  System_Ext(fs, "Local File System", "STEP / F3D file source")
+None. No module state beyond `local_handlers` (unused), no cache, no settings
+keys, no custom events.
 
-  Rel(user, cmd, "Clicks Insert STEP file…")
-  Rel(cmd, file_dlg, "Displays file open dialog with STEP/F3D filter")
-  Rel(file_dlg, fs, "User selects a file")
-  Rel(cmd, text_cmd, "Executes with quoted file path")
-```
+## Diagram
 
-### User flow
+None — the flow is `command_created` → file dialog → one text command, and the
+prose above covers it.
 
-```mermaid
-sequenceDiagram
-  autonumber
-  actor User
-  participant Panel as Assembly / Solid panel
-  participant Cmd as Insert STEP File
-  participant Dlg as adsk.core.FileDialog
-  participant FS as Local File System
-  participant Text as Fusion.ImportComponent
+## Tests
 
-  User->>Panel: Click Insert STEP file…
-  Panel->>Cmd: command_created fires
-  Cmd->>Dlg: createFileDialog with STEP filter
-  Dlg-->>User: Display OS file browser
-  User->>Dlg: Choose .stp / .step / .f3d file
-  Dlg-->>Cmd: filename
-  Cmd->>Text: executeTextCommand("Fusion.ImportComponent <filename>")
-  Text->>FS: Read file content
-  FS-->>Text: Geometry data
-  Text-->>User: Inserted as inline component at origin
-```
+- No module-specific test. `tests/test_command_contract.py` checks the
+  registry entry, `CMD_ID` literal and description casing; `tests/test_command_abort.py`
+  includes `command_created` in its AST guard.
+- `entry.py` is Fusion-bound and is not exercised by the suite; nothing here is
+  verified in Fusion on this branch except by the AST guards in
+  `tests/test_command_contract.py` and `tests/test_command_abort.py`, which
+  import it under the `adsk` stub. How `Fusion.ImportComponent` places the
+  imported geometry is Fusion's behaviour and is not asserted anywhere. The icon
+  set is not pinned in `tests/test_command_icons.py`.
+
+---
+
+*Copyright © 2026 IMA LLC. All rights reserved.*
