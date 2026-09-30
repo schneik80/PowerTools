@@ -70,7 +70,7 @@ def start():
         dropDown = qat.controls.itemById("shareDropMenu")
 
     # Add a button to toggle the visibility to the end of the panel.
-    dropDown.controls.addCommand(cmd_def, "PTSHD_sharesettings", True)
+    dropDown.controls.addCommand(cmd_def, "", False)
     # control.isPromoted = True
 
 
@@ -92,24 +92,14 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     # General logging for debug.
     ptutil.log(f"{CMD_NAME} Command Created Event")
 
-    # https://help.autodesk.com/view/fusion360/ENU/?contextId=CommandInputs
-
-    # Connect to the events that are needed by this command.
-    ptutil.add_handler(
-        args.command.execute, command_execute, local_handlers=local_handlers
-    )
+    # The whole command runs here and no execute handler is registered. The
+    # Share Menu is live with no document open, and Fusion never raises
+    # execute for an input-less command in that state (rule 1, issue #16).
     ptutil.add_handler(
         args.command.destroy,
         command_destroy,
         local_handlers=local_handlers,  # Connect the destroy event
     )
-
-
-# This event handler is called when the user clicks the OK button in the command dialog or
-# is immediately called after the created event not command inputs were created for the dialog.
-def command_execute(args: adsk.core.CommandEventArgs):
-    # General logging for debug.
-    ptutil.log(f"{CMD_NAME} Command Execute Event")
 
     if not ptutil.isSaved():
         return

@@ -147,11 +147,49 @@ KNOWN_CLOSE_IN_EXECUTE_SITES = {
     "commands/linkGlobalParameters/entry.py": 1,
 }
 
-# Every registered dialog command registers ``.execute``; the 17 input-less,
-# palette and event-only entry files do not (rule 1). 38 files register one as
-# of 2026-09-30; a walk that sees fewer than this has broken, not found a
+# Every registered dialog command registers ``.execute``; the input-less,
+# palette and event-only entry files do not (rule 1). 30 files register one as
+# of 2026-09-30 (38 before issue #16 moved eight QAT launchers into
+# commandCreated); a walk that sees fewer than this has broken, not found a
 # clean tree.
-MIN_EXECUTE_HANDLER_FILES = 35
+MIN_EXECUTE_HANDLER_FILES = 25
+
+# Rule 1 (f18b911, 11cfc51, 8a676af): ``execute`` never fires with no document
+# open, and nothing raises. A commandCreated handler that registers
+# ``.execute`` but builds no CommandInput therefore does nothing in exactly the
+# no-document case. Issue #16 moved the ones reachable from the QAT / QATRight
+# (favorites' navigate and Add items, the six share-flyout commands,
+# refmanager, getandupdate) into commandCreated. The handlers below still do
+# it. Eight sit on Design-workspace toolbar panels, which Fusion only shows
+# with a document open, so the case cannot arise there. Three sit in the QAT
+# File dropdown, live on the start screen, and have the same bug as issue #16:
+# recorded here, not fixed here. {module: (handler, ...)}. Shrinks as sites
+# move; never grows for a new QAT / QATRight item.
+KNOWN_EXECUTE_ONLY_INPUTLESS = {
+    # Design workspace > Tools tab > Power Tools panel (config.my_panel_id).
+    "assemblybuilder": ("command_created",),
+    # Same panel; aborts before the dialog on no design / unsaved document.
+    "assemblystats": ("command_created",),
+    # Same panel.
+    "docinfo": ("command_created",),
+    # Design workspace > Manage tab > Power Tools panel (config.manage_panel_id).
+    "syncitempartnumber": ("command_created",),
+    # Design workspace > Sketch tab > Modify panel (SketchModifyPanel).
+    "sketchfix": ("command_created",),
+    "sketchunderconstrained": ("command_created",),
+    # Design workspace > Solid tab > Inspect panel (InspectPanel).
+    "timelinecompute": ("command_created",),
+    # Design workspace > Solid tab > Create panel (SolidCreatePanel).
+    "mirrorderive": ("command_created",),
+    # QAT File dropdown, after PLM360SaveAsLatestOnQATCommand: reachable with
+    # no document open; the activeProduct guard is in execute and never runs
+    # there. Found in the issue #16 sweep, not fixed.
+    "autosave": ("command_created",),
+    # QAT File dropdown, before ExportCommand: same shape, same gap.
+    "exportbomcsv": ("command_created",),
+    # QAT File dropdown, before ExportCommand: same shape, same gap.
+    "exportmermaid": ("command_created",),
+}
 
 # Prefixes in use: PT_, PTAT_, PTND_, PTE_, PTPM_, PTAN_, PTSHD_. The rule
 # that matters is no ``-`` and no whitespace; the shape pins what exists.
@@ -612,3 +650,157 @@ def test_the_execute_walk_can_actually_see_handlers():
     }
     assert not direct, "assigndrawingnumber's close moved into command_execute"
     assert _close_in_execute_sites(adn), "the one-level helper hop is broken"
+
+
+# --- Rule 1: execute-only handlers that build no input ----------------------
+
+
+def _same_module_closure(tree: ast.Module, fn: ast.AST):
+    """*fn* plus every same-module function it calls, transitively, so a
+    handler that builds its dialog in ``_build_inputs(inputs)`` or registers
+    its events in a helper is judged on the whole of what it runs."""
+    by_name = {fu.name: fu for fu in _function_defs(tree)}
+    seen, todo = [], [fn]
+    while todo:
+        scope = todo.pop()
+        if any(scope is s for s in seen):
+            continue
+        seen.append(scope)
+        for node in ast.walk(scope):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id in by_name
+            ):
+                todo.append(by_name[node.func.id])
+    return seen
+
+
+def _registers_execute(scopes) -> bool:
+    return any(
+        isinstance(call, ast.Call)
+        and _is_add_handler(call)
+        and call.args
+        and isinstance(call.args[0], ast.Attribute)
+        and call.args[0].attr == "execute"
+        for scope in scopes
+        for call in ast.walk(scope)
+    )
+
+
+_ADD_INPUT = re.compile(r"^add\w*Input$")
+
+
+def _builds_input(scopes) -> bool:
+    """Any ``add*Input`` / ``addCommandInput`` call: the dialog exists, so
+    Fusion waits for OK instead of auto-executing, and a document is implied."""
+    return any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and _ADD_INPUT.match(node.func.attr)
+        for scope in scopes
+        for node in ast.walk(scope)
+    )
+
+
+def _execute_only_inputless_handlers():
+    """{module: (handler name, ...)} for every commandCreated handler that
+    registers ``.execute`` and builds no input. Judged per handler, not per
+    module: favorites builds a dialog for Edit Favorites while its navigate
+    and Add handlers built none, and a module-level check would have hidden
+    them (issue #16)."""
+    found: dict[str, tuple[str, ...]] = {}
+    for path in _entry_paths():
+        tree = _parse(path)
+        names = []
+        for handler in _event_handlers(tree, "commandCreated"):
+            scopes = _same_module_closure(tree, handler)
+            if _registers_execute(scopes) and not _builds_input(scopes):
+                names.append(handler.name)
+        if names:
+            found[path.parent.name] = tuple(sorted(set(names)))
+    return found
+
+
+def test_execute_only_inputless_handlers_are_exactly_the_known_ones():
+    """A commandCreated handler that registers ``.execute`` and builds no
+    input does nothing when no document is open (rule 1). The known ones are
+    behind design-panel buttons that need a document to be clicked; anything
+    on the QAT belongs in commandCreated (issue #16)."""
+    assert _execute_only_inputless_handlers() == KNOWN_EXECUTE_ONLY_INPUTLESS
+
+
+def test_the_inputless_walk_can_actually_see_handlers():
+    """Self-check: the walk must see the handler that registers execute, the
+    one that builds inputs (so a dialog command is *not* flagged) and the
+    favorites handlers it must judge separately."""
+    fav = _parse(_entry_path("favorites"))
+    handlers = {h.name: h for h in _event_handlers(fav, "commandCreated")}
+    assert {"_created", "_add_favorite_created", "_edit_favorites_created"} <= set(
+        handlers
+    )
+    edit = _same_module_closure(fav, handlers["_edit_favorites_created"])
+    assert _registers_execute(edit) and _builds_input(edit)
+    add = _same_module_closure(fav, handlers["_add_favorite_created"])
+    assert not _registers_execute(add)
+
+
+# --- positionID anchors name a command that has already started -------------
+
+
+def _pt_anchor_sites():
+    """(module, anchor literal, line) for every ``addCommand(<def>, "PT...",
+    ...)``; Fusion's own control ids (``"save"``, ``"ExportCommand"``) are not
+    PT literals and are skipped."""
+    for path in _entry_paths():
+        for node in ast.walk(_parse(path)):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "addCommand"
+                and len(node.args) >= 2
+            ):
+                continue
+            anchor = node.args[1]
+            if (
+                isinstance(anchor, ast.Constant)
+                and isinstance(anchor.value, str)
+                and PT_LITERAL_SHAPE.match(anchor.value)
+            ):
+                yield path.parent.name, anchor.value, node.lineno
+
+
+def test_pt_anchors_name_a_command_that_started_earlier():
+    """``addCommand(cmd_def, positionID, ...)`` places the control relative to
+    an existing control. A PT anchor whose command starts *later* in
+    ``command_registry.iter_commands()`` order does not exist yet when this
+    ``start()`` runs, so the placement is whatever Fusion does with an
+    unresolved positionID (issue #21: shareSettings anchored on projectInvite,
+    four modules later). ``preferences`` starts before the registry."""
+    start_order = [*UNREGISTERED_ENTRY_MODULES, *MODULES]
+    owner = {
+        node.value: module
+        for module, node in _cmd_id_nodes().items()
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+    offenders = []
+    for module, anchor, line in _pt_anchor_sites():
+        anchor_module = owner.get(anchor)
+        if anchor_module is None:
+            offenders.append(f"{module}:{line} anchors on {anchor!r}: not a CMD_ID")
+        elif start_order.index(anchor_module) >= start_order.index(module):
+            offenders.append(
+                f"{module}:{line} anchors on {anchor!r} ({anchor_module}), "
+                "which starts later"
+            )
+    assert not offenders, offenders
+
+
+def test_the_anchor_walk_can_actually_see_anchors():
+    """Self-check: refmanager anchors on getandupdate and linkGlobalParameters
+    on globalParameters; an empty walk would pass the test above vacuously.
+    (scriptsmanager anchors on preferences through a Name, ``PREFERENCES_CMD_ID``,
+    which the literal walk deliberately does not see.)"""
+    sites = {(module, anchor) for module, anchor, _ in _pt_anchor_sites()}
+    assert ("refmanager", "PTAT_getandupdate") in sites
+    assert ("linkGlobalParameters", "PTAT_globalParameters") in sites

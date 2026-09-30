@@ -355,26 +355,29 @@ def _rebuild_menu() -> None:
 
 
 def _make_navigate_handler(urn: str, display: str):
-    """Return a commandCreated handler that navigates to *urn* when executed."""
+    """Return a commandCreated handler that navigates to *urn* when clicked.
+
+    The navigation runs directly in commandCreated, not from an execute
+    handler. Fusion's command pipeline is document-scoped: on the start screen,
+    where this QAT dropdown is live, commandCreated fires but the command ends
+    without ever raising execute, so an execute-based navigation silently did
+    nothing (issue #16). The item has no CommandInputs, so there is nothing for
+    execute to commit; same shape as the openrecent flyout items (8a676af).
+    """
 
     def _created(args: adsk.core.CommandCreatedEventArgs):
-        def _execute(exec_args: adsk.core.CommandEventArgs):
-            try:
-                app.executeTextCommand(f"Dashboard.ShowInLocation {urn}")
-                ptutil.log(f"Favorites: navigated to '{display}' ({urn})")
-            except Exception:
-                ptutil.log(
-                    f"Favorites: navigation failed\n{traceback.format_exc()}",
-                    adsk.core.LogLevels.ErrorLogLevel,
-                )
-                ui.messageBox(
-                    f"Unable to navigate to '{display}'.\n\nThe location may no longer exist.",
-                    "Favorites",
-                )
-
-        ptutil.add_handler(
-            args.command.execute, _execute, local_handlers=local_handlers
-        )
+        try:
+            app.executeTextCommand(f"Dashboard.ShowInLocation {urn}")
+            ptutil.log(f"Favorites: navigated to '{display}' ({urn})")
+        except Exception:
+            ptutil.log(
+                f"Favorites: navigation failed\n{traceback.format_exc()}",
+                adsk.core.LogLevels.ErrorLogLevel,
+            )
+            ui.messageBox(
+                f"Unable to navigate to '{display}'.\n\nThe location may no longer exist.",
+                "Favorites",
+            )
 
     return _created
 
@@ -385,14 +388,14 @@ def _make_navigate_handler(urn: str, display: str):
 
 
 def _add_favorite_created(args: adsk.core.CommandCreatedEventArgs):
+    # The whole command runs here; no execute handler is registered. With no
+    # document open Fusion never raises execute (issue #16), which is exactly
+    # when the "No active document found" message below has to be shown.
     ptutil.log(f"{CMD_NAME}: Add Favorite command created")
-    ptutil.add_handler(
-        args.command.execute, _add_favorite_execute, local_handlers=local_handlers
-    )
+    _add_favorite()
 
 
-def _add_favorite_execute(args: adsk.core.CommandEventArgs):
-    ptutil.log(f"{CMD_NAME}: Add Favorite execute")
+def _add_favorite():
     try:
         doc = app.activeDocument
         if not doc:

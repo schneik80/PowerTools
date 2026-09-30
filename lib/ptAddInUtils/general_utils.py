@@ -182,8 +182,11 @@ def isSaved() -> bool:
     Returns:
     bool -- True if the active document has been saved, False otherwise.
     """
-    # Check that the active document has been saved.
-    if not app.activeDocument.isSaved:
+    # Check that the active document has been saved. With no document open at
+    # all (the callers run from commandCreated on the start screen, issue #16)
+    # ``activeDocument`` is None, which counts as "not saved".
+    doc = app.activeDocument
+    if doc is None or not doc.isSaved:
         ui.messageBox(
             "The active document must be saved before you can continue.",
             "Please Save",

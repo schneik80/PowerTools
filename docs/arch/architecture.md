@@ -207,14 +207,25 @@ module-level list that `PowerTools.stop()` releases with `clear_handlers()`.
 Fusion runs a command through a document-scoped pipeline: with no document
 open the control is live and `commandCreated` fires, but the command ends
 without ever raising `execute`. Nothing raises, so nothing is logged. A
-command reachable from the QAT File dropdown on the start screen therefore
+command reachable from the QAT or QATRight on the start screen therefore
 does its work in `commandCreated` and registers no `execute` handler:
 `closealldocuments`, `datatoggle`, `scriptsmanager`, `preferences`,
-`exportsysml`, `refresh`, and the items of the `openrecent` flyout.
+`exportsysml`, `refresh`, the items of the `openrecent` flyout, the Favorites
+navigate and Add items, the six Share Menu commands (`shareDocument`,
+`shareSettings`, `OpenDesktop`, `OpenInTeam`, `projectInvite`,
+`projectMembers`), `refmanager` and `getandupdate` (issue #16). Their document
+guards now run with no document open, so `ptutil.isSaved()` treats a `None`
+`activeDocument` as unsaved. `refmanager`, `getandupdate` and `shareSettings`
+launch a native Fusion command (`CommandDefinition.execute()`) from
+`commandCreated`; that is not `doExecute` (rule 20) but has not yet been
+exercised in Fusion on either channel.
 `tests/test_exportsysml_entry.py::test_no_execute_handler_is_registered` pins
-the shape for one of them. The `execute`-handler commands that remain
-(`autosave`, `exportbomcsv`, `exportmermaid`, `favorites`) all operate on the
-active document, so the no-document case cannot arise for them.
+the shape for one of them. `KNOWN_EXECUTE_ONLY_INPUTLESS` in
+`tests/test_command_contract.py` is the exact list of `commandCreated`
+handlers that still register `execute` without building an input: eight sit
+on Design-workspace toolbar panels, which Fusion only shows with a document
+open, and three (`autosave`, `exportbomcsv`, `exportmermaid`) are in the QAT
+File dropdown and still have the bug -- recorded there, not yet fixed.
 
 `commandCreated` is also where a document may be closed: the API does not
 support closing a document inside a command-related event, so Close All
@@ -617,7 +628,7 @@ and `ui` the rest of the package uses.
 | `debug_log_path()` | Path of the debug log, `""` with no cache path. No caller outside the package |
 | `pump_events_for(seconds, tick_seconds=0.03)` | The sanctioned wait: `adsk.doEvents()` every tick until the deadline; `seconds <= 0` pumps once |
 | `clipText(text)` | Clipboard via `clip.exe` / `pbcopy` argument lists (no shell) |
-| `isSaved() -> bool` | If the active document is unsaved, shows "Please Save" and returns False |
+| `isSaved() -> bool` | If there is no active document or it is unsaved, shows "Please Save" and returns False |
 | `is_user_document(doc) -> bool` | First line of every `documentOpened` / `documentActivated` / `documentCreated` handler: True only if `doc` is non-null, `isValid`, `isVisible` and `isActive`; a missing or raising property counts as False. Filters out the invisible sibling that `app.documents.open(dataFile, False)` announces through the same events (issue #11) |
 | `handle_error(name, show_message_box=False)` | Logs the traceback through `log()` (so it is DEBUG-gated too); optional message box |
 | `perf_timer(label, context="")` | Context manager; emits a `[PERF]` line only when `config.PERF_TRACE` |

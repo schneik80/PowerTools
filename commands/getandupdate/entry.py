@@ -70,31 +70,25 @@ def stop():
 def command_created(args: adsk.core.CommandCreatedEventArgs):
     ptutil.log(f"{CMD_NAME} Command Created Event")
 
-    # Connect to the events that are needed by this command.
-    ptutil.add_handler(
-        args.command.execute, command_execute, local_handlers=local_handlers
-    )
+    # The whole command runs here and no execute handler is registered: the
+    # QAT button is live with no document open, and Fusion never raises
+    # execute for an input-less command in that state (rule 1, issue #16).
     ptutil.add_handler(
         args.command.destroy, command_destroy, local_handlers=local_handlers
     )
 
-
-def command_execute(args: adsk.core.CommandCreatedEventArgs):
-    ptutil.log(f"{CMD_NAME} Command Execute Event")
     # this handles the update and get latest
-    ui = None
     try:
-        app = adsk.core.Application.get()
-        ui = app.userInterface
         cmdDefs = ui.commandDefinitions
+        # Native commands launched from commandCreated (not doExecute, rule 20):
+        # need a Fusion check on both channels before they are trusted (issue #16).
         cmdGet = cmdDefs.itemById("GetAllLatestCmd")
         cmdGet.execute()
         cmdUpdate = cmdDefs.itemById("ContextUpdateAllFromParentCmd")
         cmdUpdate.execute()
 
     except Exception:
-        if ui:
-            ptutil.handle_error(CMD_NAME, show_message_box=True)
+        ptutil.handle_error(CMD_NAME, show_message_box=True)
 
 
 # This function will be called when the user completes the command.

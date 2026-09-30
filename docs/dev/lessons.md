@@ -41,10 +41,11 @@ document-scoped pipeline; `commandCreated` fires, the command terminates before
 `execute`. Fix: act from `commandCreated` like `closealldocuments`,
 `datatoggle`, `scriptsmanager` already did; documented under *Command execution
 model* in `architecture.md`. Open Recent's flyout items had the same bug and
-were moved to `commandCreated` in `8a676af`. Still on `execute` and reachable
-from the QAT with no document open: Favorites' navigate items and its Add
-button (`commands/favorites/entry.py`), found in the 2026-09-30 documentation
-review and not yet fixed. -- `f18b911`, `11cfc51`, `8a676af`
+were moved to `commandCreated` in `8a676af`. Favorites' navigate items and its
+Add button (`commands/favorites/entry.py`), found in the 2026-09-30
+documentation review, were fixed the same way together with the eight
+input-less QAT/QATRight launchers under issue #16. -- `f18b911`, `11cfc51`,
+`8a676af`
 
 **Never call `args.command.doExecute()` from `commandCreated`.** It runs inside
 `CommandDefinition::createCommand`, so `doExecute(True)` *or* `doExecute(False)`
