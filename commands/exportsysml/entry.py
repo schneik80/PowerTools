@@ -68,16 +68,34 @@ PROGRESS_THRESHOLD = 25
 ADD_SUFFIX = "-ADD.md"
 SYSML_SUFFIX = "-physical.sysml"
 
-_JOINT_TYPE_NAMES = {
-    adsk.fusion.JointTypes.RigidJointType: "Rigid",
-    adsk.fusion.JointTypes.RevoluteJointType: "Revolute",
-    adsk.fusion.JointTypes.SliderJointType: "Slider",
-    adsk.fusion.JointTypes.CylindricalJointType: "Cylindrical",
-    adsk.fusion.JointTypes.PinSlotJointType: "PinSlot",
-    adsk.fusion.JointTypes.PlanarJointType: "Planar",
-    adsk.fusion.JointTypes.BallJointType: "Ball",
-    adsk.fusion.JointTypes.InferredJointType: "Inferred",
-}
+# Enum members are build-dependent: the Windows pre-production bindings of
+# 2706.0.97 had no ``JointTypes.InferredJointType`` although the reference lists
+# it, and reading it at import time stopped the whole command from loading
+# (#15). Look each member up by name and skip the ones this build lacks; a
+# joint of a missing type falls through to the caller's default label.
+_JOINT_TYPE_LABELS = (
+    ("RigidJointType", "Rigid"),
+    ("RevoluteJointType", "Revolute"),
+    ("SliderJointType", "Slider"),
+    ("CylindricalJointType", "Cylindrical"),
+    ("PinSlotJointType", "PinSlot"),
+    ("PlanarJointType", "Planar"),
+    ("BallJointType", "Ball"),
+    ("InferredJointType", "Inferred"),
+)
+
+
+def _joint_type_names(enum=None):
+    enum = adsk.fusion.JointTypes if enum is None else enum
+    names = {}
+    for member, label in _JOINT_TYPE_LABELS:
+        value = getattr(enum, member, None)
+        if value is not None:
+            names[value] = label
+    return names
+
+
+_JOINT_TYPE_NAMES = _joint_type_names()
 
 _DESIGN_TYPE_NAMES = {
     adsk.fusion.DesignTypes.DirectDesignType: "Direct",

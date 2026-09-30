@@ -132,9 +132,9 @@ KNOWN_CLOSE_IN_EXECUTE_SITES = {
     # Probed. Invisible open, close in ``finally`` of a helper called from
     # command_execute. Ships enabled.
     "commands/assigndrawingnumber/entry.py": 1,
-    # NOT probed: the open passes ``True`` (visible) and there is no pump
-    # before the close -- the 11cfc51 shape. Ships disabled (lessons.md);
-    # probe modes E/F exist to settle it.
+    # Probed (modes E and F, 2026-09-30): the open passes ``True`` (visible)
+    # with no pump before the close; no fault on either platform or channel.
+    # Ships disabled for unrelated reasons (lessons.md).
     "commands/versiondiff/entry.py": 2,
     # Not probed. Closures defined and called inside command_execute close the
     # processed document and sweep strays, pumping 0.25 s after each close.

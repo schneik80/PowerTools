@@ -489,3 +489,52 @@ def test_an_unhealthy_joint_is_not_treated_as_suppressed(state):
     joint = _HealthJoint(getattr(adsk.fusion.FeatureHealthStates, state))
 
     assert scan._is_suppressed(joint, "Rigid 9", "Owner") is False
+
+
+class _JointTypesWithoutInferred:
+    """A JointTypes enum as the Windows pre-production build of 2706.0.97
+    exposed it: every documented member except InferredJointType."""
+
+    RigidJointType = 0
+    RevoluteJointType = 1
+    SliderJointType = 2
+    CylindricalJointType = 3
+    PinSlotJointType = 4
+    PlanarJointType = 5
+    BallJointType = 6
+
+
+def test_joint_type_table_tolerates_a_build_without_inferred_joints():
+    """Reading enum members at import time must not take the command down
+    on a build that lacks one (#15)."""
+    names = entry._joint_type_names(_JointTypesWithoutInferred)
+    assert names == {
+        0: "Rigid",
+        1: "Revolute",
+        2: "Slider",
+        3: "Cylindrical",
+        4: "PinSlot",
+        5: "Planar",
+        6: "Ball",
+    }
+    assert "Inferred" not in names.values()
+
+
+def test_joint_type_table_includes_inferred_when_the_build_has_it():
+    class _Full(_JointTypesWithoutInferred):
+        InferredJointType = 7
+
+    assert entry._joint_type_names(_Full)[7] == "Inferred"
+
+
+def test_module_imports_when_joint_types_lacks_a_member(monkeypatch):
+    """The import-time table is built through the same lookup, so a reload
+    under the reduced enum must succeed rather than raise AttributeError."""
+    monkeypatch.setattr(adsk.fusion, "JointTypes", _JointTypesWithoutInferred)
+    try:
+        reloaded = importlib.reload(entry)
+        assert "Inferred" not in reloaded._JOINT_TYPE_NAMES.values()
+        assert reloaded._JOINT_TYPE_NAMES[0] == "Rigid"
+    finally:
+        monkeypatch.undo()
+        importlib.reload(entry)

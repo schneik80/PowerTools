@@ -81,16 +81,20 @@ still `isValid`. Assign Drawing Number (`_sync_drawing_number_to_source_design`)
 Global Parameters and Link Global Parameters therefore keep their invisible
 open + close as a dated, explicit exemption pinned by
 `tests/test_command_contract.py::KNOWN_CLOSE_IN_EXECUTE_SITES`; the guard
-shrinks if they are ever restructured. Two sites in that list are *not*
-covered by the probe: Version Diff opens its comparison document **visibly**
-(`open(df, True)`) and closes it inside `execute` with no pump -- the 11cfc51
-shape, which is why it ships disabled -- and Bottom-Up Update opens visibly
-and closes inside its pumped `execute` loop, which has run in production for
-years and is the strongest evidence that the pumped, re-acquired form is
-safe. Probe modes E (visible, no pump) and F (visible, re-activate parent,
-pump) exist to settle Version Diff the same way. What the probe *did* show is
-that the invisible open fires `documentOpened` into every other command --
-see "Document events fire for documents that are not the user's" below. -- #10
+shrinks if they are ever restructured. Version Diff opens its comparison
+document **visibly** (`open(df, True)`) and closes it inside `execute` with no
+pump, so it was probed separately: mode E (visible, no pump) and mode F
+(visible, re-activate parent, pump 250 ms, close) both passed on the same
+build, both platforms, both channels. Bottom-Up Update opens visibly and
+closes inside its pumped `execute` loop and has done so in production for
+years. So on 2706.0.97 neither the visible nor the invisible open + close
+inside `execute` reproduces 11cfc51; that crash stays on the record as the
+reason Close All Documents runs from `commandCreated`, and the guard keeps
+every site listed so a regression on a future build has a short suspect list.
+Version Diff's disabled default is a product decision, no longer a safety one.
+What the probe *did* show is that the open fires `documentOpened` into every
+other command -- see "Document events fire for documents that are not the
+user's" below. -- #10
 
 **A control placed in `start()` may silently not exist; retry from
 `documentActivated`.** Symptom: Preferences unreachable for a whole session when
@@ -697,6 +701,19 @@ non-top-level documents. -- `1feb976`, `79ca8e3`
 the add-in has no runtime dependencies and the dev tools shell out (`git`,
 `pandoc`, `xelatex`) rather than import. Icons are rendered with
 `zlib`/`struct`. -- `e263d4e`, `a99202d`
+
+**API enum members are build-dependent; never read one at import time
+without a guard.** `adsk.fusion.JointTypes.InferredJointType` is in the
+reference (value 7, "introduced July 2015") and present on macOS, yet the
+Windows pre-production bindings of 2706.0.97 raised `AttributeError` on it,
+and because Export SysML built its joint-type table at module level the whole
+command failed to load on that channel while every other command started. The
+line had been there since `3c89be7c`; the channel exposed it, not an edit.
+Look enum members up by name (`getattr(enum, "Member", None)`) and skip the
+ones the running build lacks, so the command loads everywhere and degrades to
+a default label instead of not existing. Test the table against a stub enum
+missing a member. Same family as rule 11: probe candidates, do not assume the
+reference and the binding agree. -- #15
 
 ---
 

@@ -508,12 +508,14 @@ def command_execute(args: adsk.core.CommandEventArgs):
         # command_execute was probed on 2706.0.97, macOS ADSKMVG91G2F5W and
         # Windows g16win.local, production and pre-production, 2026-09-30:
         # no fault in any placement (tools/fusion_probes/
-        # close_in_execute_probe.py). NOTE: this call passes ``True`` -- a
-        # *visible* open -- which the probe did not cover; the command ships
-        # disabled and must not be enabled as-is (docs/dev/lessons.md).
-        # Pinned in tests/test_command_contract.py KNOWN_CLOSE_IN_EXECUTE_SITES
-        # (2 sites). See issue #10; the open also fires documentOpened into
-        # every other command (issue #11).
+        # close_in_execute_probe.py). This call passes ``True`` -- a *visible*
+        # open -- so it was probed separately: mode E (visible open + close
+        # inside execute, no pump) and mode F (re-activate parent, pump, close)
+        # both passed on the same build, both platforms, both channels. The
+        # command ships disabled for other reasons (docs/dev/lessons.md), not
+        # because of this. Pinned in tests/test_command_contract.py
+        # KNOWN_CLOSE_IN_EXECUTE_SITES (2 sites). See issue #10; the open also
+        # fires documentOpened into every other command (issue #11).
         ptutil.log(f"Opening comparison version V{compare_data_file.versionNumber}...")
         compare_doc = app.documents.open(compare_data_file, True)
 
