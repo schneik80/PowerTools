@@ -68,12 +68,9 @@ INTENT_ICONS_CSS_PATH = os.path.join(_HTML_DIR, "intent-icons.css")
 
 # The recents cache and the per-document thumbnail store are shared with the
 # Open Recent command; recents_utils owns their format, paths, and helpers so
-# the two commands can never drift. These aliases retain the local names used
+# the two commands can never drift. This alias retains the local name used
 # below while the data layer lives in one place.
-_RECENT_CACHE_PATH = recents.RECENT_CACHE_PATH
 _THUMB_DIR = recents.THUMB_DIR
-_THUMB_SIZE = recents.THUMB_SIZE
-_RECENT_LIMIT = recents.RECENT_LIMIT
 
 # Commands we hand off to from the palette.
 _ASSEMBLY_BUILDER_CMD_ID = "PTAT_AssemblyBuilder"
@@ -197,19 +194,9 @@ local_handlers = []
 
 
 def _diag(msg: str) -> None:
-    """Diagnostic log for the document-trigger logic, gated by config.DEBUG so
-    release builds stay quiet. When DEBUG is on it writes to the Fusion Text
-    Commands window with a clear prefix so it's easy to grep."""
-    if not config.DEBUG:
-        return
-    try:
-        app.log(
-            f"[Assembly Palette] {msg}",
-            adsk.core.LogLevels.InfoLogLevel,
-            adsk.core.LogTypes.ConsoleLogType,
-        )
-    except Exception:
-        pass
+    """Diagnostic log for the document-trigger logic, prefixed so it is easy
+    to grep. ptutil.log already gates on the DEBUG marker."""
+    ptutil.log(f"[Assembly Palette] {msg}")
 
 
 # Data-file ids inserted from the palette during this palette-open session.
@@ -1067,14 +1054,6 @@ def _find_data_file_by_id(df_id: str):
     return None
 
 
-def _read_recent_cache() -> list[dict]:
-    return recents.read_recent_cache()
-
-
-def _write_recent_cache(entries: list[dict]) -> None:
-    recents.write_recent_cache(entries)
-
-
 def _touch_recent(df_id: str, name: str, intent_name: str) -> None:
     """Append (or move to end) a recent entry — delegated to the shared store.
 
@@ -1302,11 +1281,6 @@ def _action_launch_fasteners(palette) -> str:
     cmd_def.execute()
     ptutil.log(f"{CMD_NAME}: handed off to {_FASTENERS_CMD_ID}.")
     return ""
-
-
-# Target-folder + project-label resolution now live in ptAddInUtils
-# (cache.resolve_target_folder / cache.target_project_label) so the Assembly
-# Builder shares the exact same InternalValidationError-safe logic.
 
 
 def _action_create_component(data: dict) -> str:

@@ -39,7 +39,6 @@ import os
 import adsk.core
 import adsk.fusion
 
-from ... import config
 from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
 
@@ -54,14 +53,6 @@ CMD_Description = (
     "position-preserving constraints to the pairs you select."
 )
 IS_PROMOTED = False
-
-# Global UI placement, pulled from config.py (Design > Utilities > Power Tools).
-WORKSPACE_ID = config.design_workspace
-TAB_ID = config.tools_tab_id
-TAB_NAME = config.my_tab_name
-PANEL_ID = config.my_panel_id
-PANEL_NAME = config.my_panel_name
-PANEL_AFTER = config.my_panel_after
 
 ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "")
 JOINTS_ICON_DIR = os.path.join(
@@ -108,7 +99,7 @@ AUTO_CHECK_CONF = 0.6
 # enough assembly can still take a while. The face count - known cheaply right
 # after the linear collect pass and before the pairwise work - is our early
 # estimate of how long it will take.
-#   * At/above FACE_WARN_COUNT we log that it may be slow.
+#   * Above FACE_WARN_COUNT we log that it may be slow.
 #   * At/above FACE_CONFIRM_COUNT the wait can be many seconds, so we ask the
 #     user before starting - the one cheap moment we know they may be waiting.
 FACE_WARN_COUNT = 4000
@@ -1148,10 +1139,10 @@ def _apply_candidate(root: adsk.fusion.Component, cand: dict):
         rel.isFlipped = ...
         constraints.add(cin)
 
-    The offset sign and isFlipped that keep the parts from jumping are NOT
-    reliably derivable from face-normal orientation, so we try the small set of
-    variants, measure how far the affected occurrences move, and keep the one
-    that preserves position (or moves least). For coincident faces this reaches
+    The isFlipped value that keeps the parts from jumping is NOT reliably
+    derivable from face-normal orientation, so we try both, measure how far the
+    affected occurrences move, and keep the one that preserves position (or
+    moves least). For coincident faces this reaches
     zero movement; a single cylinder mate cannot encode the free rotation, so
     concentric keeps the least-moving variant and reports the residual.
 
@@ -1172,28 +1163,24 @@ def _apply_candidate(root: adsk.fusion.Component, cand: dict):
     is_mate = cand.get("is_mate", True)
     occs = _moving_occurrences(fa, fb)
 
-    base_offset = cand.get("offset_cm", 0.0) or 0.0
     if cand["type"] == "Coincident":
-        offsets = [base_offset]
+        off = cand.get("offset_cm", 0.0) or 0.0
     else:
-        offsets = [0.0]
+        off = 0.0
 
-    best = None  # (move, offset, flip)
-    for off in offsets:
-        for flip in (False, True):
-            saved = [(o, o.transform2.copy()) for o in occs]
-            con = _create_constraint(constraints, fa, fb, is_mate, off, flip)
-            move = _max_move_cm(saved)
-            if best is None or move < best[0]:
-                best = (move, off, flip)
-            con.deleteMe()
-            _restore(saved)
-            if move <= POS_TOL_CM:
-                break
-        if best and best[0] <= POS_TOL_CM:
+    best = None  # (move, flip)
+    for flip in (False, True):
+        saved = [(o, o.transform2.copy()) for o in occs]
+        con = _create_constraint(constraints, fa, fb, is_mate, off, flip)
+        move = _max_move_cm(saved)
+        if best is None or move < best[0]:
+            best = (move, flip)
+        con.deleteMe()
+        _restore(saved)
+        if move <= POS_TOL_CM:
             break
 
-    move, off, flip = best
+    move, flip = best
     saved = [(o, o.transform2.copy()) for o in occs]
     con = _create_constraint(constraints, fa, fb, is_mate, off, flip)
     cand["applied_move_cm"] = _max_move_cm(saved)

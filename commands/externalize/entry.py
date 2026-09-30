@@ -16,7 +16,6 @@ from datetime import datetime
 import adsk.core
 import adsk.fusion
 
-from ... import config
 from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
 
@@ -50,15 +49,6 @@ UPLOAD_TIMEOUT_SECONDS = 300.0
 # wedged rather than one component being unlucky. Abort the run instead of
 # burning UPLOAD_TIMEOUT_SECONDS on every component that is left.
 MAX_CONSECUTIVE_UPLOAD_FAILURES = 2
-
-# Global variables by referencing values from /config.py
-WORKSPACE_ID = config.design_workspace
-TAB_ID = config.tools_tab_id
-TAB_NAME = config.my_tab_name
-
-PANEL_ID = config.my_panel_id
-PANEL_NAME = config.my_panel_name
-PANEL_AFTER = config.my_panel_after
 
 # Resource location for command icons
 ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "")
@@ -631,7 +621,7 @@ class _RunnerHandler(adsk.core.CustomEventHandler):
         # for the whole run, no matter how many components were replaced.
         if replaced > 0:
             try:
-                _save_parent_doc(parent_doc, replaced, log_writer, lambda: False)
+                _save_parent_doc(parent_doc, replaced, log_writer)
             except Exception:
                 log_writer(f"Parent save raised:\n{traceback.format_exc()}")
 
@@ -883,7 +873,7 @@ def _save_to_cloud(
     return df
 
 
-def _save_parent_doc(parent_doc, replaced_count, log_fn, cancel_check):
+def _save_parent_doc(parent_doc, replaced_count, log_fn):
     """Commit the parent design once after the run.
 
     Returns True on success, False on failure.
@@ -909,11 +899,10 @@ def _save_parent_doc(parent_doc, replaced_count, log_fn, cancel_check):
         "parent assembly",
         document=parent_doc,
         pre_save_version=pre_version,
+        log_fn=log_fn,
     )
     if not ok:
         log_fn(f"Parent save failed: {msg}")
-        return False
-    if cancel_check and cancel_check():
         return False
     log_fn(msg)
     return True

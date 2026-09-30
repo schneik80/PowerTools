@@ -137,7 +137,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
     # Check a Design document is active.
     if not design:
-        ui.messageBox("A Fusion 3D Design must be active", "title")
+        ui.messageBox("A Fusion 3D Design must be active", title)
         return
 
     # Check if there are any references to update
@@ -474,22 +474,6 @@ def _collect_stray_documents(documents, initial_ids, is_top_fn):
             continue
         strays.append(doc)
     return strays
-
-
-def is_external_component(comp: adsk.fusion.Component):
-    """
-    Check if the component is external by checking its occurrences
-    comp: A fusion component object.
-    """
-    app = adsk.core.Application.get()
-    product = app.activeProduct
-    design = adsk.fusion.Design.cast(product)
-    if not design:
-        return False
-
-    root = design.rootComponent
-    occs = root.occurrencesByComponent(comp)
-    return any(occ.isReferencedComponent for occ in occs)
 
 
 def hide_origins_in_document(document):
@@ -961,8 +945,18 @@ def _restore_autosave(log_fn=None):
         )
 
 
+def _reset_run_state(log_fn=None):
+    """Restore autosave and clear the module-level run state (idempotent)."""
+    global product, design, title, resume_plan
+    _restore_autosave(log_fn)
+    saved.clear()  # Clear the set of processed document IDs
+    resume_plan = {}
+    product = None
+    design = None
+    title = None
+
+
 def command_execute(args: adsk.core.CommandEventArgs):
-    # ...existing code...
     global product, design, title, saved, resume_plan
     from datetime import datetime
 
@@ -983,6 +977,11 @@ def command_execute(args: adsk.core.CommandEventArgs):
                     fh.write(entry + "\n")
             except Exception as log_e:
                 ptutil.log(f"Failed to write log entry: {log_e}")
+
+    def emit(entry):
+        """Write *entry* to both the DEBUG log and the run log file."""
+        ptutil.log(entry)
+        write_log_entry(entry)
 
     try:
         design = app.activeProduct
@@ -1150,20 +1149,12 @@ def command_execute(args: adsk.core.CommandEventArgs):
                     pause_time = 0.5
             except (ValueError, TypeError):
                 pause_time = 0.5
-                ptutil.log(
-                    f"Invalid upload check interval '{pause_time_str}', using default 0.5 seconds"
-                )
-                write_log_entry(
+                emit(
                     f"Invalid upload check interval '{pause_time_str}', using default 0.5 seconds"
                 )
         else:
             pause_time = 0.5
-            ptutil.log(
-                "Upload check interval input not found, using default 0.5 seconds"
-            )
-            write_log_entry(
-                "Upload check interval input not found, using default 0.5 seconds"
-            )
+            emit("Upload check interval input not found, using default 0.5 seconds")
 
         # Build the document dependency graph and determine processing order.
         # Nodes are keyed by dataFile.id, so multi-component documents collapse to
@@ -1195,15 +1186,12 @@ def command_execute(args: adsk.core.CommandEventArgs):
             else 0
         )
 
-        ptutil.log(f"Bottom-up order (doc_id, name): {bottom_up_records}")
-        write_log_entry(f"Bottom-up order (doc_id, name): {bottom_up_records}")
-        ptutil.log(resume_info.get("status_message", "A full run will start."))
-        write_log_entry(resume_info.get("status_message", "A full run will start."))
+        emit(f"Bottom-up order (doc_id, name): {bottom_up_records}")
+        emit(resume_info.get("status_message", "A full run will start."))
         if docCount == 0:
             ui.messageBox("No referenced documents found to update.")
             return
-        ptutil.log(f"----- Starting saving {docCount} documents -----")
-        write_log_entry(f"----- Starting saving {docCount} documents -----")
+        emit(f"----- Starting saving {docCount} documents -----")
 
         # Set up logging if enabled
         if create_log:
@@ -1260,8 +1248,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
             if open_log_view and file_path:
                 _, open_msg = ptutil.open_live_log_viewer(file_path)
-                ptutil.log(open_msg)
-                write_log_entry(open_msg)
+                emit(open_msg)
 
         # Initialize progress bar for document processing
         progress_bar = ui.createProgressDialog()
@@ -1358,8 +1345,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
             # Skip standard components if option is enabled
             if skip_standard and parent_project == "Standard Components":
                 log_entry = f"Skipping standard component: {component_name}"
-                ptutil.log(log_entry)
-                write_log_entry(log_entry)
+                emit(log_entry)
                 processed_count += 1
                 progress_bar.progressValue = processed_count
                 progress_bar.message = f"Skipping standard component: {component_name} ({processed_count} of {docCount})"
@@ -1374,8 +1360,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
             if skip_saved and target_doc_version == appVersionBuild:
                 log_entry = f"Skipping already saved component: {component_name}"
-                ptutil.log(log_entry)
-                write_log_entry(log_entry)
+                emit(log_entry)
                 processed_count += 1
                 progress_bar.progressValue = processed_count
                 progress_bar.message = f"Skipping already saved: {component_name} ({processed_count} of {docCount})"
@@ -1403,8 +1388,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
                     error_msg = (
                         f"Could not find document for component: {component_name}"
                     )
-                    ptutil.log(error_msg)
-                    write_log_entry(error_msg)
+                    emit(error_msg)
                     progress_bar.message = f"Failed to find document: {component_name} ({processed_count} of {docCount})"
                     continue
 
@@ -1414,8 +1398,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 config_label = _configuration_label(document)
                 if config_label and skip_configs:
                     log_entry = f"Skipping {config_label}: {component_name}"
-                    ptutil.log(log_entry)
-                    write_log_entry(log_entry)
+                    emit(log_entry)
                     progress_bar.message = f"Skipping {config_label}: {component_name} ({processed_count} of {docCount})"
                     continue
                 if config_label:
@@ -1428,26 +1411,22 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
                 app.documents.open(document, True)
                 # Log the document open event
-                ptutil.log(f"Opened component: {component_name}")
-                write_log_entry(f"Opened component: {component_name}")
+                emit(f"Opened component: {component_name}")
             except Exception as open_error:
                 error_msg = (
                     f"Failed to open document for {component_name}: {str(open_error)}"
                 )
-                ptutil.log(error_msg)
-                write_log_entry(error_msg)
+                emit(error_msg)
                 progress_bar.message = f"Failed to open document: {component_name} ({processed_count} of {docCount})"
                 continue  # Skip this component and move to the next one
             # Update all references in the newly opened document
             opened_doc = app.activeDocument
             try:
                 opened_doc.updateAllReferences()
-                ptutil.log(f"Updated references for component: {component_name}")
-                write_log_entry(f"Updated references for component: {component_name}")
+                emit(f"Updated references for component: {component_name}")
             except RuntimeError as ref_error:
                 error_msg = f"Failed to update references for {component_name}: {str(ref_error)}"
-                ptutil.log(error_msg)
-                write_log_entry(error_msg)
+                emit(error_msg)
                 # Continue processing despite reference update failure
 
             # Ensure we're in the correct workspace for operations
@@ -1459,10 +1438,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
             # Enable the timeline on direct-modeling documents if option is enabled
             if enable_timeline:
                 timeline_log = enable_timeline_in_document(opened_doc)
-                ptutil.log(f"   Enable timeline for {component_name}: {timeline_log}")
-                write_log_entry(
-                    f"   Enable timeline for {component_name}: {timeline_log}"
-                )
+                emit(f"   Enable timeline for {component_name}: {timeline_log}")
                 # The design type switch rebuilds the document's feature data, so
                 # drop the pre-switch handle rather than reuse it below.
                 des = adsk.fusion.Design.cast(app.activeProduct)
@@ -1470,50 +1446,32 @@ def command_execute(args: adsk.core.CommandEventArgs):
             # Hide origins if option is enabled
             if hide_origins:
                 hide_log = hide_origins_in_document(opened_doc)
-                ptutil.log(f"   Hide origins for {component_name}: {hide_log}")
-                write_log_entry(f"   Hide origins for {component_name}: {hide_log}")
+                emit(f"   Hide origins for {component_name}: {hide_log}")
 
             # Hide joints if option is enabled
             if hide_joints:
                 hide_joint_log = hide_joints_in_document(opened_doc)
-                ptutil.log(f"   Hide joints for {component_name}: {hide_joint_log}")
-                write_log_entry(
-                    f"   Hide joints for {component_name}: {hide_joint_log}"
-                )
+                emit(f"   Hide joints for {component_name}: {hide_joint_log}")
 
             # Hide joint origins if option is enabled
             if hide_joint_origins:
                 hide_joint_log = hide_joint_origins_in_document(opened_doc)
-                ptutil.log(
-                    f"   Hide joint origins for {component_name}: {hide_joint_log}"
-                )
-                write_log_entry(
-                    f"   Hide joint origins for {component_name}: {hide_joint_log}"
-                )
+                emit(f"   Hide joint origins for {component_name}: {hide_joint_log}")
 
             # Hide sketches if option is enabled
             if hide_sketches:
                 hide_sketch_log = hide_sketches_in_document(opened_doc)
-                ptutil.log(f"   Hide sketches for {component_name}: {hide_sketch_log}")
-                write_log_entry(
-                    f"   Hide sketches for {component_name}: {hide_sketch_log}"
-                )
+                emit(f"   Hide sketches for {component_name}: {hide_sketch_log}")
 
             # Hide canvases if option is enabled
             if hide_canvases:
                 hide_canvas_log = hide_canvases_in_document(opened_doc)
-                ptutil.log(f"   Hide canvases for {component_name}: {hide_canvas_log}")
-                write_log_entry(
-                    f"   Hide canvases for {component_name}: {hide_canvas_log}"
-                )
+                emit(f"   Hide canvases for {component_name}: {hide_canvas_log}")
 
             # Hide user coordinate systems if option is enabled
             if hide_ucs:
                 hide_ucs_log = hide_user_coordinate_systems_in_document(opened_doc)
-                ptutil.log(
-                    f"   Hide user coordinate systems for {component_name}: {hide_ucs_log}"
-                )
-                write_log_entry(
+                emit(
                     f"   Hide user coordinate systems for {component_name}: {hide_ucs_log}"
                 )
 
@@ -1529,12 +1487,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
                     # No children = part
                     intent_type = adsk.fusion.DesignIntentTypes.PartDesignIntentType
                     intent_label = "part"
-                    ptutil.log(
-                        f"   Applying part intent to {component_name} (no children)"
-                    )
-                    write_log_entry(
-                        f"   Applying part intent to {component_name} (no children)"
-                    )
+                    emit(f"   Applying part intent to {component_name} (no children)")
                 else:
                     child_count = des.rootComponent.occurrences.count
                     sketch_count = des.rootComponent.sketches.count
@@ -1546,10 +1499,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
                             adsk.fusion.DesignIntentTypes.HybridDesignIntentType
                         )
                         intent_label = "hybrid assembly"
-                        ptutil.log(
-                            f"   Applying hybrid assembly intent to {component_name} ({child_count} children, {sketch_count} sketches, {body_count} bodies)"
-                        )
-                        write_log_entry(
+                        emit(
                             f"   Applying hybrid assembly intent to {component_name} ({child_count} children, {sketch_count} sketches, {body_count} bodies)"
                         )
                     else:
@@ -1558,42 +1508,31 @@ def command_execute(args: adsk.core.CommandEventArgs):
                             adsk.fusion.DesignIntentTypes.AssemblyDesignIntentType
                         )
                         intent_label = "assembly"
-                        ptutil.log(
-                            f"   Applying assembly intent to {component_name} ({child_count} children, no sketches/bodies)"
-                        )
-                        write_log_entry(
+                        emit(
                             f"   Applying assembly intent to {component_name} ({child_count} children, no sketches/bodies)"
                         )
 
                 try:
                     des.designIntent = intent_type
-                    ptutil.log(
-                        f"   {intent_label.capitalize()} intent applied to {component_name}"
-                    )
-                    write_log_entry(
+                    emit(
                         f"   {intent_label.capitalize()} intent applied to {component_name}"
                     )
                 except Exception as intent_error:
-                    ptutil.log(
-                        f"   Failed to apply {intent_label} intent to {component_name}: {intent_error}"
-                    )
-                    write_log_entry(
+                    emit(
                         f"   Failed to apply {intent_label} intent to {component_name}: {intent_error}"
                     )
 
             # Update out-of-date assembly contexts if option is enabled
             if update_contexts:
                 contexts_log = update_contexts_in_document(component_name)
-                ptutil.log(contexts_log)
-                write_log_entry(contexts_log)
+                emit(contexts_log)
                 # The helper pumps events, so the pre-update handle is stale;
                 # drop it rather than reuse it for the rebuild below.
                 des = adsk.fusion.Design.cast(app.activeProduct)
 
             # Rebuild the component if rebuild option is enabled
             if rebuild_all and des:
-                ptutil.log(f"   Rebuilding component: {component_name}")
-                write_log_entry(f"   Rebuilding component: {component_name}")
+                emit(f"   Rebuilding component: {component_name}")
                 while not des.computeAll():  # Force compute until complete
                     # Keep the UI responsive while the compute settles.
                     ptutil.pump_events_for(0.1)
@@ -1644,8 +1583,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 pre_save_version=pre_save_version,
                 log_fn=write_log_entry,
             )
-            ptutil.log(f"   {save_msg}")
-            write_log_entry(f"   {save_msg}")
+            emit(f"   {save_msg}")
             if not save_ok:
                 close_processed_document(docid, component_name)
                 continue
@@ -1653,8 +1591,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
             # Already saved; close via a fresh handle to avoid another save cycle.
             close_processed_document(docid, component_name)
             log_entry = f"   {component_name} saved - [{timestamp}]"
-            ptutil.log(log_entry)
-            write_log_entry(log_entry)
+            emit(log_entry)
             saved_doc_count += 1  # Increment counter for completed saves
 
             checkpoint_entry = (
@@ -1662,39 +1599,33 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 f"component={component_name}|saved_index={saved_doc_count}|"
                 f"total={docCount}|timestamp={timestamp}"
             )
-            ptutil.log(checkpoint_entry)
-            write_log_entry(checkpoint_entry)
+            emit(checkpoint_entry)
 
             # Add progress separator
             progress_msg = (
                 f"----- Completed {saved_doc_count} of {docCount} components -----"
             )
-            ptutil.log(progress_msg)
-            write_log_entry(progress_msg)
+            emit(progress_msg)
 
             des = None  # Clear design reference
 
-        ptutil.log("----- Components saved -----")
-        write_log_entry("----- Components saved -----")
+        emit("----- Components saved -----")
 
         # Update progress bar for final steps
         progress_bar.message = "Getting latest versions of all components..."
 
         # Execute Fusion commands to get latest versions and update references
-        ptutil.log("Executing GetAllLatestCmd...")
-        write_log_entry("Executing GetAllLatestCmd...")
+        emit("Executing GetAllLatestCmd...")
         cmdDefs = ui.commandDefinitions
         cmdGet = cmdDefs.itemById("GetAllLatestCmd")  # Get all latest command
         get_all_ok, get_all_msg = execute_command_with_timeout(
             cmdGet, "GetAllLatestCmd", poll_interval_seconds=0.1, timeout_seconds=120
         )
-        ptutil.log(get_all_msg)
-        write_log_entry(get_all_msg)
+        emit(get_all_msg)
         if not get_all_ok:
             raise RuntimeError(get_all_msg)
 
-        ptutil.log("Executing ContextUpdateAllFromParentCmd...")
-        write_log_entry("Executing ContextUpdateAllFromParentCmd...")
+        emit("Executing ContextUpdateAllFromParentCmd...")
         progress_bar.message = "Updating all references from parent..."
         cmdUpdate = cmdDefs.itemById(
             "ContextUpdateAllFromParentCmd"
@@ -1705,23 +1636,20 @@ def command_execute(args: adsk.core.CommandEventArgs):
             poll_interval_seconds=0.1,
             timeout_seconds=120,
         )
-        ptutil.log(update_msg)
-        write_log_entry(update_msg)
+        emit(update_msg)
         if not update_ok:
             raise RuntimeError(update_msg)
 
         # Save the active document after updating references
         progress_bar.message = "Saving main assembly document..."
-        ptutil.log("Saving active document after updating references...")
-        write_log_entry("Saving active document after updating references...")
+        emit("Saving active document after updating references...")
         main_doc = app.activeDocument
 
         # The root assembly is saved here rather than in the loop, so it gets
         # the same context update the loop documents got.
         if update_contexts:
             main_contexts_log = update_contexts_in_document("main assembly")
-            ptutil.log(main_contexts_log)
-            write_log_entry(main_contexts_log)
+            emit(main_contexts_log)
             # The helper pumps events; re-acquire before the save below.
             main_doc = app.activeDocument
 
@@ -1729,10 +1657,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
         # timeline too when the option is on.
         if enable_timeline:
             main_timeline_log = enable_timeline_in_document(main_doc)
-            ptutil.log(f"   Enable timeline for main assembly: {main_timeline_log}")
-            write_log_entry(
-                f"   Enable timeline for main assembly: {main_timeline_log}"
-            )
+            emit(f"   Enable timeline for main assembly: {main_timeline_log}")
 
         main_pre_save_version = None
         try:
@@ -1752,8 +1677,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
             pre_save_version=main_pre_save_version,
             log_fn=write_log_entry,
         )
-        ptutil.log(final_save_msg)
-        write_log_entry(final_save_msg)
+        emit(final_save_msg)
         if not final_save_ok:
             raise RuntimeError(final_save_msg)
 
@@ -1762,8 +1686,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
             "CHECKPOINT|SAVE_UPLOAD_COMPLETE|component=main assembly|"
             f"saved_index={saved_doc_count}|total={docCount}|timestamp={final_timestamp}"
         )
-        ptutil.log(final_checkpoint_entry)
-        write_log_entry(final_checkpoint_entry)
+        emit(final_checkpoint_entry)
 
         # The final Get All Latest / Update All From Parent on the root can
         # also open configuration documents implicitly; sweep them so the run
@@ -1787,25 +1710,14 @@ def command_execute(args: adsk.core.CommandEventArgs):
         write_log_entry(f"Total command run time: {total_elapsed:.2f} seconds")
 
         if create_log and file_path:
-            try:
-                ptutil.log(f"Log written to: {file_path}")
-                completion_msg += f"\nLog written to: {file_path}"
-            except Exception as log_e:
-                ptutil.log(f"Failed to write log: {log_e}")
-                completion_msg += f"\nFailed to write log to: {file_path}\n{log_e}"
+            ptutil.log(f"Log written to: {file_path}")
+            completion_msg += f"\nLog written to: {file_path}"
 
         # Clear global variables for next run
-        _restore_autosave(write_log_entry)
-        saved.clear()  # Clear the set of processed document IDs
-        resume_plan = {}
-        product = None
-        design = None
-        title = None
-        ptutil.log("Cleared global variables for next execution")
-        write_log_entry("Cleared global variables for next execution")
+        _reset_run_state(write_log_entry)
+        emit("Cleared global variables for next execution")
 
-        ptutil.log("Bottom-up Update completed successfully")
-        write_log_entry("Bottom-up Update completed successfully")
+        emit("Bottom-up Update completed successfully")
         ui.messageBox(completion_msg)  # Show completion message to user
     except Exception:
         # Hide progress bar if it exists
@@ -1816,28 +1728,17 @@ def command_execute(args: adsk.core.CommandEventArgs):
             pass  # Ignore any errors hiding the progress bar
 
         # Clear global variables even on failure to ensure clean state for next run
-        _restore_autosave(write_log_entry)
-        saved.clear()
-        resume_plan = {}
-        product = None
-        design = None
-        title = None
-        ptutil.log("Cleared global variables after error")
-        write_log_entry("Cleared global variables after error")
+        _reset_run_state(write_log_entry)
+        emit("Cleared global variables after error")
         if ui:
             ui.messageBox(f"Failed:\n{traceback.format_exc()}")
 
 
 # This function will be called when the user completes the command.
 def command_destroy(args: adsk.core.CommandEventArgs):
-    global local_handlers, saved, product, design, title, resume_plan
+    global local_handlers
     local_handlers = []
-    _restore_autosave()  # Belt and braces: idempotent, no-op if already restored
-    saved.clear()  # Clear the set of processed document IDs
-    resume_plan = {}
-    product = None
-    design = None
-    title = None
+    _reset_run_state()  # Belt and braces: idempotent, no-op if already restored
     ptutil.log(f"{CMD_NAME} Command Destroy Event - cleared global variables")
 
 

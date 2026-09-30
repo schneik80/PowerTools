@@ -28,14 +28,6 @@ CMD_NAME = "Global Parameters"
 CMD_Description = "Create and Manage global parameters for the active Fusion Project"
 IS_PROMOTED = False
 
-# ── UI placement ──────────────────────────────────────────────────────────────
-WORKSPACE_ID = config.design_workspace
-TAB_ID = config.tools_tab_id
-TAB_NAME = config.my_tab_name
-PANEL_ID = config.my_panel_id
-PANEL_NAME = config.my_panel_name
-PANEL_AFTER = config.my_panel_after
-
 # ── Paths ──────────────────────────────────────────────────────────────────────
 ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "")
 
@@ -212,40 +204,6 @@ def stop():
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _write_document_cache(doc: adsk.core.Document):
-    """Write the active document's URN/id to the add-in cache folder.
-
-    Returns (doc_id, project_name).
-    Raises RuntimeError when the document has not yet been saved to a project.
-    """
-    data_file = doc.dataFile
-    if data_file is None:
-        raise RuntimeError(
-            "This document has not been saved to a Fusion project.\n"
-            "Please save it first, then try again."
-        )
-
-    doc_id = data_file.id
-    project_name = data_file.parentFolder.parentProject.name
-
-    os.makedirs(cache.CACHE_FOLDER, exist_ok=True)
-
-    # Build a filesystem-safe filename from the document ID
-    safe_id = re.sub(r"[^\w\-]", "_", doc_id)
-    cache_path = os.path.join(cache.CACHE_FOLDER, f"{safe_id}.json")
-
-    cache_data = {
-        "documentId": doc_id,
-        "documentName": doc.name,
-        "projectName": project_name,
-    }
-    with open(cache_path, "w", encoding="utf-8") as fh:
-        json.dump(cache_data, fh, indent=2)
-
-    ptutil.log(f"{CMD_NAME}: cache written → {cache_path}")
-    return doc_id, project_name
-
-
 def _pending_cache_path(doc: adsk.core.Document) -> str | None:
     """Return the filesystem path for the pending-cache JSON for *doc*, or None
     if the document has not been saved to a project."""
@@ -313,6 +271,12 @@ def _add_data_row(
 ) -> None:
     """Append one blank editable parameter row to the table."""
     _add_data_row_with_values(inputs, table, "", "0.0", "mm", "", True)
+
+
+def _clear_data_rows(table: adsk.core.TableCommandInput) -> None:
+    """Delete every row below the frozen header row."""
+    while table.rowCount > HEADER_ROW + 1:
+        table.deleteRow(table.rowCount - 1)
 
 
 def _collect_rows(table: adsk.core.TableCommandInput) -> list[dict]:
@@ -399,8 +363,7 @@ def _load_parameters_from_doc(
     table: adsk.core.TableCommandInput,
 ) -> None:
     """Open an existing parameters document and load its user parameters into the table."""
-    while table.rowCount > HEADER_ROW + 1:
-        table.deleteRow(table.rowCount - 1)
+    _clear_data_rows(table)
 
     original_doc = app.activeDocument
     with ptutil.perf_timer("documents.open", "GP._load_params_from_doc"):
@@ -430,6 +393,24 @@ def _load_parameters_from_doc(
         with ptutil.perf_timer("documents.close", "GP._load_params_from_doc"):
             params_doc.close(False)
         cache.safe_activate(original_doc, CMD_NAME)
+
+
+def _upsert_user_param(user_params, p: dict) -> None:
+    """Update the user parameter named ``p["name"]`` in place (preserving its
+    identity so downstream references stay linked), or add it when absent."""
+    raw_comment = p["comment"].strip()
+    comment = f"{_PARAM_TAG} {raw_comment}".strip()
+    expression = f"{p['value']} {p['unit']}"
+
+    existing = user_params.itemByName(p["name"])
+    if existing is not None:
+        existing.expression = expression
+        existing.comment = comment
+        existing.isFavorite = True
+    else:
+        value_input = adsk.core.ValueInput.createByString(expression)
+        new_param = user_params.add(p["name"], value_input, p["unit"], comment)
+        new_param.isFavorite = True
 
 
 def _update_parameters_document(
@@ -483,21 +464,7 @@ def _update_parameters_document(
             f"reconcile userParameters loop (n={n_new})", "GP._update_params_doc"
         ):
             for p in parameters:
-                raw_comment = p["comment"].strip()
-                comment = f"{_PARAM_TAG} {raw_comment}".strip()
-                expression = f"{p['value']} {p['unit']}"
-
-                existing = user_params.itemByName(p["name"])
-                if existing is not None:
-                    existing.expression = expression
-                    existing.comment = comment
-                    existing.isFavorite = True
-                else:
-                    value_input = adsk.core.ValueInput.createByString(expression)
-                    new_param = user_params.add(
-                        p["name"], value_input, p["unit"], comment
-                    )
-                    new_param.isFavorite = True
+                _upsert_user_param(user_params, p)
 
         with ptutil.perf_timer("document.save", "GP._update_params_doc"):
             params_doc.save("Global Parameters — PowerTools")
@@ -613,19 +580,7 @@ def _write_params_to_active(
         f"write userParameters loop (n={n})", "GP._write_params_to_active"
     ):
         for p in parameters:
-            raw_comment = p["comment"].strip()
-            comment = f"{_PARAM_TAG} {raw_comment}".strip()
-            value_input = adsk.core.ValueInput.createByString(
-                f"{p['value']} {p['unit']}"
-            )
-            existing = user_params.itemByName(p["name"])
-            if existing:
-                existing.expression = f"{p['value']} {p['unit']}"
-                existing.comment = comment
-                existing.isFavorite = True
-            else:
-                new_param = user_params.add(p["name"], value_input, p["unit"], comment)
-                new_param.isFavorite = True
+            _upsert_user_param(user_params, p)
 
     ptutil.log(
         f"{CMD_NAME}: {len(parameters)} parameter(s) written directly into active document."
@@ -820,8 +775,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                 param_set_name_input.value = pending.get("param_set_name", "")
                 param_set_name_input.isReadOnly = cached_mode != CREATE_NEW_LABEL
             # Replace the default blank row with the cached rows
-            while table.rowCount > HEADER_ROW + 1:
-                table.deleteRow(table.rowCount - 1)
+            _clear_data_rows(table)
             for row_data in pending.get("parameters", []):
                 _add_data_row_with_values(
                     inputs,
@@ -832,7 +786,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                     row_data.get("comment", ""),
                     row_data.get("enabled", True),
                 )
-            if table.rowCount <= HEADER_ROW:
+            if table.rowCount <= HEADER_ROW + 1:
                 _add_data_row(inputs, table)
             _table_dirty = True
         _clear_pending_cache(doc)
@@ -894,8 +848,7 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
         )
 
         # Clear all data rows before switching mode
-        while table.rowCount > HEADER_ROW + 1:
-            table.deleteRow(table.rowCount - 1)
+        _clear_data_rows(table)
 
         if new_selection == CREATE_NEW_LABEL:
             if param_set_name_input:
@@ -935,7 +888,7 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
         for r in reversed(rows_to_delete):
             table.deleteRow(r)
         # If no data rows remain, add a blank one
-        if table.rowCount <= HEADER_ROW:
+        if table.rowCount <= HEADER_ROW + 1:
             _add_data_row(inputs, table)
         # Update delete button enabled state
         del_btn = adsk.core.BoolValueCommandInput.cast(inputs.itemById(DEL_BTN_ID))

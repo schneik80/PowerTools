@@ -12,7 +12,6 @@ import os
 import adsk.core
 import adsk.fusion
 
-from ... import config
 from ...lib import ptAddInUtils as ptutil
 from ...lib.ptAddInUtils import cache_utils as cache
 from .. import _ui_bootstrap
@@ -27,14 +26,6 @@ CMD_Description = (
     "Derive global parameters from a parameter set into the active document"
 )
 IS_PROMOTED = False
-
-# ── UI placement ──────────────────────────────────────────────────────────────
-WORKSPACE_ID = config.design_workspace
-TAB_ID = config.tools_tab_id
-TAB_NAME = config.my_tab_name
-PANEL_ID = config.my_panel_id
-PANEL_NAME = config.my_panel_name
-PANEL_AFTER = config.my_panel_after
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "")
@@ -58,47 +49,6 @@ _row_counter = 0  # monotonically-increasing row ID to avoid input-ID conflicts
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _resolve_data_file_from_cache_id(project, doc_id: str):
-    """Best-effort direct DataFile lookup by id. Returns DataFile or None."""
-    if not doc_id:
-        return None
-
-    try:
-        project_data = getattr(project, "data", None)
-        find_file_by_id = getattr(project_data, "findFileById", None)
-        if callable(find_file_by_id):
-            data_file = find_file_by_id(doc_id)
-            if data_file:
-                return data_file
-    except Exception:
-        pass
-
-    try:
-        app_data = getattr(app, "data", None)
-        find_file_by_id = getattr(app_data, "findFileById", None)
-        if callable(find_file_by_id):
-            data_file = find_file_by_id(doc_id)
-            if data_file:
-                return data_file
-    except Exception:
-        pass
-
-    return None
-
-
-def _ensure_param_doc_map_loaded(project) -> None:
-    """Load Hub-backed DataFile map on demand if not already available."""
-    global _param_doc_map, _param_doc_entries
-    if _param_doc_map:
-        return
-    with ptutil.perf_timer("list_param_docs (lazy Hub scan)", "LGP.docs_resolve"):
-        _param_doc_map = cache.list_param_docs(project, CMD_NAME)
-    _param_doc_entries = [
-        {"name": name, "id": getattr(data_file, "id", "")}
-        for name, data_file in _param_doc_map.items()
-    ]
-
-
 def _refresh_param_doc_map(project) -> None:
     """Force-refresh the full parameter-doc map from Hub and rewrite docs cache."""
     global _param_doc_map, _param_doc_entries
@@ -110,16 +60,9 @@ def _refresh_param_doc_map(project) -> None:
     ]
 
 
-def _cached_doc_id_for_name(doc_name: str) -> str:
-    """Return cached document id for *doc_name*, or empty string if unknown."""
-    for entry in _param_doc_entries:
-        if entry.get("name") == doc_name:
-            return entry.get("id", "")
-    return ""
-
-
 def _resolve_selected_data_file(project, doc_name: str):
-    """Resolve selected DataFile by name with cache-id fast path and Hub fallback."""
+    """Resolve selected DataFile by name from the in-memory map, with a forced
+    Hub refresh as the fallback."""
     if not doc_name:
         return None
 
@@ -127,17 +70,8 @@ def _resolve_selected_data_file(project, doc_name: str):
     if data_file is not None:
         return data_file
 
-    doc_id = _cached_doc_id_for_name(doc_name)
-    if doc_id:
-        with ptutil.perf_timer("resolve_selected_doc (cache id)", "LGP.docs_resolve"):
-            data_file = _resolve_data_file_from_cache_id(project, doc_id)
-        if data_file is not None:
-            _param_doc_map[doc_name] = data_file
-            return data_file
-
-    # At this point the in-memory map may be partially populated (for example,
-    # only the initially-previewed set). Force a full refresh so dropdown
-    # changes can resolve any other cached names.
+    # The dropdown mirrors the map, so this should not happen; force a full
+    # refresh rather than fail silently.
     _refresh_param_doc_map(project)
     return _param_doc_map.get(doc_name)
 
@@ -450,17 +384,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     _add_header_row(inputs, table)
 
     # Pre-load preview for the initially-selected document
-    first_name = _param_doc_entries[0]["name"]
-    first_data_file = _param_doc_map.get(first_name)
-    if first_data_file is None:
-        with ptutil.perf_timer("resolve_initial_doc (cache id)", "LGP.command_created"):
-            first_data_file = _resolve_data_file_from_cache_id(
-                project,
-                _param_doc_entries[0].get("id", ""),
-            )
-        if first_data_file is not None:
-            _param_doc_map[first_name] = first_data_file
-
+    first_data_file = _param_doc_map.get(_param_doc_entries[0]["name"])
     if first_data_file is not None:
         with ptutil.perf_timer("initial load_preview", "LGP.command_created"):
             _load_preview(first_data_file, inputs, table)
