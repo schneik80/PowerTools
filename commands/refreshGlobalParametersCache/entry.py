@@ -22,9 +22,7 @@ ui = app.userInterface
 # Command identity
 CMD_ID = "PTAT_refreshGlobalParametersCache"
 CMD_NAME = "Refresh Global Parameters Cache"
-CMD_Description = (
-    "Scan the active project for global parameter sets and update the cache."
-)
+CMD_Description = "Rescan the active project's _Global Parameters folder and rewrite the local cache that Global Parameters and Link Global Parameters use to find it."
 
 # UI placement (reuse config from other commands)
 WORKSPACE_ID = config.design_workspace

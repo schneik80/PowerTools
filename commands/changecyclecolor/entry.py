@@ -61,10 +61,7 @@ ui = app.userInterface
 
 CMD_NAME = "Change Cycle Color"
 CMD_ID = "PTAT_changecyclecolor"
-CMD_Description = (
-    "Set the per-component color (used by Fusion's Color Cycling Toggle) "
-    "for every selected component."
-)
+CMD_Description = "Set the per-component color that Fusion's Component Color Cycling uses, for every selected component."
 
 # When the command is invoked from the linear marking menu, this is the
 # anchor we position our menu entry after.

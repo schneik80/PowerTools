@@ -22,7 +22,7 @@ ui = app.userInterface
 # Specify the command identity information.
 CMD_ID = "PTSHD_shareopeninteam"
 CMD_NAME = "Get Open in Team Link"
-CMD_Description = "Get a link on the clipboard for the active document that can be shared with your team to open the document for review in Fusion Team web client."
+CMD_Description = "Copy a link to the clipboard that opens the active document in the Fusion Team web client."
 
 # Specify that the command will be promoted to the panel.
 IS_PROMOTED = False

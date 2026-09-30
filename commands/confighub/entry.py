@@ -21,14 +21,7 @@ ui = app.userInterface
 # Command identity information.
 CMD_ID = f"{config.COMPANY_NAME}_{config.ADDIN_NAME}_configHub"
 CMD_NAME = "Select Related Data Folder"
-CMD_Description = (
-    "Select the cloud folder where your start parts and templates must be located. "
-    "The Create Related Data command copies templates from this folder to create a "
-    "related document that lets multiple people work on different downstream domains "
-    "from a shared source part.\n"
-    "This folder must be configured once for each Team Hub.\n"
-    "The Create Related Data command is in the Design workspace -> Create panel."
-)
+CMD_Description = "Record the cloud folder where your related-data templates are kept, so Create Related Data knows where to copy them from."
 
 # Resource location for command icons, here we assume a sub folder in this directory named "resources".
 ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "")

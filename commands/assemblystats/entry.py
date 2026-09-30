@@ -22,7 +22,7 @@ ui = app.userInterface
 
 CMD_NAME = "Assembly Statistics"
 CMD_ID = "PTAT_assemblystats"
-CMD_Description = "Assembly statistics on component counts, assembly levels and Joints"
+CMD_Description = "Report component counts, nesting depth and joint counts for the active design in one dialog."
 IS_PROMOTED = False
 
 # Global variables by referencing values from /config.py

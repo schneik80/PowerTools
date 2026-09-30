@@ -22,9 +22,7 @@ ui = app.userInterface
 # ── Command identity ──────────────────────────────────────────────────────────
 CMD_ID = "PTAT_linkGlobalParameters"
 CMD_NAME = "Link Global Parameters"
-CMD_Description = (
-    "Derive global parameters from a parameter set into the active document"
-)
+CMD_Description = "Derive a shared parameter set from the project's _Global Parameters folder into the active design."
 IS_PROMOTED = False
 
 # ── Paths ─────────────────────────────────────────────────────────────────────

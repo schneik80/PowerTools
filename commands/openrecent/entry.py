@@ -30,10 +30,7 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Open Recent"
-CMD_Description = (
-    "Open a recently used document from the PowerTools recents list, straight "
-    "from the File menu."
-)
+CMD_Description = "Add a flyout to the File menu that lists your recently used documents, with location and thumbnail on hover, and opens one on click."
 
 # The flyout control (a DropDownControl nested in the File dropdown) and the
 # per-item command definitions it holds.

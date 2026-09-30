@@ -21,13 +21,7 @@ ui = app.userInterface
 
 CMD_NAME = "Create Mirrored Design"
 CMD_ID = "PTPM_createmirrordesign"
-CMD_Description = (
-    "Derive every solid body of the active design into a new document saved "
-    "alongside it as <name>-mirror, then apply a uniform scale of -1 to "
-    "produce a mirrored copy without touching the source. The derive stays "
-    "associative, so the mirror follows later changes. The source design must "
-    "already be saved to Fusion."
-)
+CMD_Description = "Derive every body of the active design into a new document saved alongside it as <name>-mirror, then apply a uniform scale of -1 to produce a mirrored copy without touching the source."
 IS_PROMOTED = False
 
 WORKSPACE_ID = config.design_workspace

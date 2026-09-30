@@ -47,11 +47,7 @@ ui = app.userInterface
 
 CMD_NAME = "Infer Constraints"
 CMD_ID = "PTAT_inferConstraints"
-CMD_Description = (
-    "Infer assembly constraints for an already-positioned assembly: detect "
-    "concentric cylindrical faces and coincident planar faces, then apply "
-    "position-preserving constraints to the pairs you select."
-)
+CMD_Description = "Propose assembly constraints for an assembly whose components are already in position, from concentric cylindrical faces and flush planar faces, and apply the ones you select while keeping the components where they are."
 IS_PROMOTED = False
 
 ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "")

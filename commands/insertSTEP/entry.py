@@ -19,7 +19,9 @@ ui = app.userInterface
 
 CMD_NAME = "Insert STEP File"
 CMD_ID = "PTAT_insertSTEP"
-CMD_Description = "Insert a STEP file into the active Design Document"
+CMD_Description = (
+    "Insert a STEP file from your computer as a component of the active design."
+)
 IS_PROMOTED = False
 
 # Place insert STEP in the Assembly, Insert tab of the Fusion UI.

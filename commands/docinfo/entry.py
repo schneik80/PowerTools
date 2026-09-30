@@ -21,9 +21,7 @@ ui = app.userInterface
 
 CMD_NAME = "Document Information"
 CMD_ID = "PTND_docinfo"
-CMD_Description = (
-    "Document data management Id`s for document in Autodesk`s Fusion Industry Cloud"
-)
+CMD_Description = "Show the hub, project, folder and version identifiers of the active document, and warn when saving it would migrate it to the running Fusion build."
 IS_PROMOTED = True
 
 # Global variables by referencing values from /config.py

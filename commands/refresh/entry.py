@@ -18,9 +18,7 @@ ui = app.userInterface
 
 CMD_NAME = "Refresh Active Document"
 CMD_ID = "PTAT_refresh"
-CMD_Description = (
-    "Check Team Hub for a newer version of the active document and load it"
-)
+CMD_Description = "Check the hub for a newer version of the active document and, when there is one, close and reopen the document to load it."
 
 # Local list of event handlers used to maintain a reference so
 # they are not released and garbage collected.

@@ -33,9 +33,7 @@ ui = app.userInterface
 
 CMD_NAME = "Version Diff"
 CMD_ID = "PTND_versiondiff"
-CMD_Description = (
-    "Compare timeline differences between two versions of the active document"
-)
+CMD_Description = "Compare the timeline of the active design against another saved version of the same document and open an HTML report of every feature added, deleted, changed or unchanged."
 IS_PROMOTED = True
 
 # Global variables by referencing values from /config.py

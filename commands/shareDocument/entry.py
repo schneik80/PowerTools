@@ -21,7 +21,7 @@ ui = app.userInterface
 # Specify the command identity information.
 CMD_ID = "PTSHD_sharedocument"
 CMD_NAME = "Get a Share Link"
-CMD_Description = "Share active Document and copy the link to the clipboard."
+CMD_Description = "Turn on public sharing for the active document and copy the share link to the clipboard."
 
 # Specify that the command will be promoted to the panel.
 IS_PROMOTED = False

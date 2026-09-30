@@ -25,7 +25,7 @@ ui = app.userInterface
 # ── Command identity ──────────────────────────────────────────────────────────
 CMD_ID = "PTAT_globalParameters"
 CMD_NAME = "Global Parameters"
-CMD_Description = "Create and Manage global parameters for the active Fusion Project"
+CMD_Description = "Create and manage shared parameter sets for the active project, stored as documents in the project's _Global Parameters folder."
 IS_PROMOTED = False
 
 # ── Paths ──────────────────────────────────────────────────────────────────────

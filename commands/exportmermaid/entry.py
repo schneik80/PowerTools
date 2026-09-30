@@ -23,7 +23,7 @@ ui = app.userInterface
 
 CMD_ID = "PTE_exportmermaid"
 CMD_NAME = "Export Mermaid Diagram..."
-CMD_Description = "Export Active Document as Mermaid mmd diagram"
+CMD_Description = "Write the component hierarchy of the active assembly as a Mermaid flowchart file and open it in the Mermaid Live viewer."
 IS_PROMOTED = False
 
 # Local list of event handlers used to maintain a reference so

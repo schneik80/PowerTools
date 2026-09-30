@@ -165,7 +165,7 @@ ui = app.userInterface
 
 CMD_NAME = "Timeline Compute Report"
 CMD_ID = "PTPM_timelinecompute"
-CMD_Description = "Display a timeline compute report. Also exports a CSF as source data. Features are sorted by compute time."
+CMD_Description = "Open an HTML report of the compute time of every feature in the active design's timeline, and save the source data as a CSV file."
 IS_PROMOTED = False
 
 # Global variables by referencing values from /config.py

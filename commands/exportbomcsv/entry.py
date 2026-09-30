@@ -24,7 +24,9 @@ docname = ""  # a default name
 
 CMD_NAME = "Export BOM as CSV"
 CMD_ID = "PTE_exportbom"
-CMD_Description = "Export active assembly structure and quantities as a CSV file"
+CMD_Description = (
+    "Write the flat bill of materials of the active assembly to a CSV file."
+)
 IS_PROMOTED = False
 
 # Local list of event handlers used to maintain a reference so

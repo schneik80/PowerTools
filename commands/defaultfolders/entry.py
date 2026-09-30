@@ -18,7 +18,7 @@ ui = app.userInterface
 
 CMD_NAME = "PowerTools Add Project Folders"
 CMD_ID = "PT_defaultfolders"
-CMD_Description = "Create default project folders if they do not exist"
+CMD_Description = "Create a standard set of folders in the root of the active project, skipping any that already exist."
 
 # Input IDs used in the command dialog
 INPUT_FOLDER_SET = "folderSet"

@@ -32,9 +32,7 @@ my_DocsDictSorted = {}
 # command identity information.
 CMD_ID = f"{config.COMPANY_NAME}_{config.ADDIN_NAME}_cmdDialog"
 CMD_NAME = "Create Related Data"
-CMD_Description = (
-    "Create a new related document of the active document using a template"
-)
+CMD_Description = "Create a new document from a template kept in your hub and insert the active document into it as an external reference."
 
 # Specify that the command will be promoted to the panel.
 IS_PROMOTED = True
