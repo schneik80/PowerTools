@@ -21,6 +21,7 @@ import adsk.fusion
 from ... import config
 from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
+from .._command_abort import abort_before_dialog, clear_abort, consume_abort
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -113,17 +114,22 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         doc = app.activeDocument
         design = app.activeProduct
 
+        # No inputs exist yet on these paths, so Fusion auto-executes; flag
+        # the bail-out so command_execute stays a no-op (rule 20, 14871d7).
         if app.isOffLine:
+            abort_before_dialog(CMD_ID, CMD_NAME, "offline")
             ui.messageBox(
                 "You are currently offline. Please connect to the internet and try again."
             )
             return
 
         if not design:
+            abort_before_dialog(CMD_ID, CMD_NAME, "no active design")
             ui.messageBox("No active Fusion design")
             return
 
         if not ptutil.isSaved():
+            abort_before_dialog(CMD_ID, CMD_NAME, "document is not saved")
             return
 
         parentDataFiles = doc.designDataFile.parentReferences
@@ -554,6 +560,8 @@ def on_input_changed(args: adsk.core.InputChangedEventArgs):
 
 # Called when the user clicks OK / Close — no action needed for a read-only dialog.
 def command_execute(args: adsk.core.CommandEventArgs):
+    if consume_abort(CMD_ID, CMD_NAME):
+        return
     ptutil.log(f"{CMD_NAME} Command Execute Event")
 
 
@@ -570,4 +578,5 @@ def command_destroy(args: adsk.core.CommandEventArgs):
         except Exception:
             pass
     _thumb_paths.clear()
+    clear_abort(CMD_ID)
     ptutil.log(f"{CMD_NAME} Command Destroy Event")

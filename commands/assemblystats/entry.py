@@ -16,6 +16,11 @@ import adsk.fusion
 from ... import config
 from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
+from .._command_abort import (
+    abort_before_dialog,
+    clear_abort,
+    consume_abort,
+)
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -87,17 +92,26 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     design = adsk.fusion.Design.cast(product)
     title = CMD_NAME
 
-    # Check a Design document is active.
+    # Check a Design document is active. No inputs are built on either bail-out
+    # below, so Fusion auto-executes; flag it so command_execute skips its work
+    # instead of running against a design that is None.
     if not design:
-        ui.messageBox("A Fusion 3D Design must be active", "title")
+        ui.messageBox("A Fusion 3D Design must be active", CMD_NAME)
+        abort_before_dialog(CMD_ID, CMD_NAME, "no active design")
         return
 
     # Check that the active document has been saved.
     if not ptutil.isSaved():
+        abort_before_dialog(CMD_ID, CMD_NAME, "document is not saved")
         return
 
 
 def command_execute(args: adsk.core.CommandCreatedEventArgs):
+    # command_created bailed out before building a dialog, so Fusion is
+    # auto-executing a command with no inputs; `design` is None here.
+    if consume_abort(CMD_ID, CMD_NAME):
+        return
+
     ui = None
 
     ptutil.log(f"{CMD_NAME} Command Execute Event")
@@ -215,5 +229,8 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
 # This function will be called when the user completes the command.
 def command_destroy(args: adsk.core.CommandEventArgs):
     global local_handlers
+    # Bound the abort flag to this invocation: consume_abort only clears it
+    # if command_execute ran, and destroy always runs.
+    clear_abort(CMD_ID)
     local_handlers = []
     ptutil.log(f"{CMD_NAME} Command Destroy Event")

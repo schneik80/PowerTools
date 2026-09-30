@@ -279,6 +279,258 @@ def test_the_guard_can_actually_see_command_created_handlers() -> None:
     assert ("commands/favorites/entry.py", "_edit_favorites_created") in named
 
 
+# ── early returns after an execute registration ─────────────────────────────
+#
+# The second half of the crash fix. A commandCreated handler that registers
+# ``execute`` and then bails out (``if not design: messageBox(); return``)
+# before building any input has told Fusion nothing: ``Command.isAutoExecute``
+# fires ``command_execute`` anyway, against the failed precondition -- an
+# AttributeError traceback box in Assembly Statistics, a second "No active
+# design" box and then a traceback in Bottom-Up Update. Every such return must
+# be preceded by ``abort_before_dialog`` so ``consume_abort`` can skip execute.
+#
+# "Early" is approximated statically: a ``return`` that follows the first
+# ``add_handler(<x>.execute, ...)`` and precedes the first call that builds or
+# reads a command input (``add*Input``, ``addCommandInput``,
+# ``commandInputs.itemById``). A return *before* the execute registration is
+# fine (relateddata registers its handlers after its inputs), and so is a
+# return after the dialog exists.
+
+
+def _own_children(node: ast.AST):
+    """Direct children of *node*, not descending into nested function bodies."""
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            continue
+        yield child
+
+
+def _own_nodes(fu: ast.AST):
+    """Every node in *fu*'s body, excluding nested functions and lambdas."""
+    stack = list(fu.body)
+    while stack:
+        node = stack.pop()
+        yield node
+        stack.extend(_own_children(node))
+
+
+def _registers_execute_at(fu: ast.AST):
+    """Line of the first ``add_handler(<x>.execute, ...)`` in *fu*, or None."""
+    lines = [
+        node.lineno
+        for node in _own_nodes(fu)
+        if isinstance(node, ast.Call)
+        and _is_add_handler(node)
+        and node.args
+        and isinstance(node.args[0], ast.Attribute)
+        and node.args[0].attr == "execute"
+    ]
+    return min(lines) if lines else None
+
+
+def _is_input_builder(call: ast.Call) -> bool:
+    """``inputs.add*Input(...)``, ``addCommandInput`` or ``commandInputs.itemById``."""
+    func = call.func
+    if not isinstance(func, ast.Attribute):
+        return False
+    if func.attr.endswith("Input") or func.attr == "addCommandInput":
+        return True
+    if func.attr == "itemById":
+        recv = func.value
+        if isinstance(recv, ast.Attribute):
+            return recv.attr == "commandInputs"
+        return isinstance(recv, ast.Name) and "input" in recv.id.casefold()
+    return False
+
+
+def _first_input_build_line(fu: ast.AST) -> float:
+    lines = [
+        node.lineno
+        for node in _own_nodes(fu)
+        if isinstance(node, ast.Call) and _is_input_builder(node)
+    ]
+    return min(lines) if lines else float("inf")
+
+
+def _is_abort_call(node: ast.AST) -> bool:
+    """``abort_before_dialog(...)`` or a module-local wrapper such as
+    changecyclecolor's ``_abort_before_dialog``."""
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id.endswith("abort_before_dialog")
+    return isinstance(func, ast.Attribute) and func.attr.endswith("abort_before_dialog")
+
+
+_COMPOUND_BLOCKS = ("body", "orelse", "finalbody")
+
+
+def _child_blocks(stmt: ast.stmt):
+    """The statement lists nested directly inside a compound statement."""
+    for field in _COMPOUND_BLOCKS:
+        block = getattr(stmt, field, None)
+        if isinstance(block, list) and block and isinstance(block[0], ast.stmt):
+            yield block
+    for group in ("handlers", "cases"):
+        for item in getattr(stmt, group, ()) or ():
+            body = getattr(item, "body", None)
+            if isinstance(body, list):
+                yield body
+
+
+def _unguarded_early_returns(fu: ast.AST) -> list[int]:
+    """Lines of ``return`` statements in *fu* that follow its execute
+    registration, precede its first input build, and are not preceded by an
+    ``abort_before_dialog`` call in their own or an enclosing block.
+
+    Only a *simple* statement counts as the guard: an abort inside a sibling
+    ``if`` body has not necessarily run by the time this return does.
+    """
+    exec_line = _registers_execute_at(fu)
+    if exec_line is None:
+        return []
+    first_input = _first_input_build_line(fu)
+    offenders: list[int] = []
+
+    def visit(block, guarded: bool) -> None:
+        for stmt in block:
+            if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            blocks = list(_child_blocks(stmt))
+            if blocks:
+                for inner in blocks:
+                    visit(inner, guarded)
+                continue
+            if isinstance(stmt, ast.Return):
+                if exec_line < stmt.lineno < first_input and not guarded:
+                    offenders.append(stmt.lineno)
+            elif any(_is_abort_call(n) for n in ast.walk(stmt)):
+                guarded = True
+
+    visit(fu.body, False)
+    return offenders
+
+
+# (relative path, handler name) pairs the tree is allowed to leave unguarded.
+# Asserted *equal*, so fixing one means removing it here and a new gap fails
+# loudly. Assembly Statistics, Bottom-Up Update and Document References were
+# all fixed by the change that added this test (#14), so the set is empty and
+# must stay that way.
+KNOWN_UNGUARDED_EARLY_RETURNS: set[tuple[str, str]] = set()
+
+
+def test_early_returns_after_execute_registration_abort_first() -> None:
+    """Every commandCreated handler that registers ``execute`` and then returns
+    before building an input must call ``abort_before_dialog`` first, or
+    ``command_execute`` runs against the failed precondition."""
+    found: dict[tuple[str, str], list[int]] = {}
+    for path in _command_sources():
+        rel = str(path.relative_to(REPO_ROOT))
+        for fu in _command_created_handlers(path):
+            lines = _unguarded_early_returns(fu)
+            if lines:
+                found.setdefault((rel, fu.name), []).extend(lines)
+    assert set(found) == KNOWN_UNGUARDED_EARLY_RETURNS, (
+        "return after add_handler(execute) with no abort_before_dialog: "
+        + ", ".join(
+            f"{p}:{n}:{sorted(set(ls))}" for (p, n), ls in sorted(found.items())
+        )
+    )
+
+
+_EARLY_RETURN_FIXTURE = """
+def unguarded(args):
+    ptutil.add_handler(args.command.execute, command_execute)
+    if not design:
+        ui.messageBox("no design", CMD_NAME)
+        return
+    args.command.commandInputs.addBoolValueInput("x", "X", True)
+
+def guarded(args):
+    ptutil.add_handler(args.command.execute, command_execute)
+    if not design:
+        abort_before_dialog(CMD_ID, CMD_NAME, "no design")
+        return
+    if not saved:
+        _abort_before_dialog("unsaved")
+        return
+    args.command.commandInputs.addBoolValueInput("x", "X", True)
+
+def sibling_abort_does_not_count(args):
+    ptutil.add_handler(args.command.execute, command_execute)
+    if not design:
+        abort_before_dialog(CMD_ID, CMD_NAME, "no design")
+        return
+    if not saved:
+        return
+    inputs.addStringValueInput("s", "S", "")
+
+def enclosing_abort_guards(args):
+    ptutil.add_handler(args.command.execute, command_execute)
+    abort_before_dialog(CMD_ID, CMD_NAME, "always")
+    if not design:
+        return
+
+def returns_before_registration(args):
+    if not design:
+        return
+    inputs = args.command.commandInputs
+    inputs.addStringValueInput("s", "S", "")
+    ptutil.add_handler(args.command.execute, command_execute)
+
+def returns_after_inputs(args):
+    ptutil.add_handler(args.command.execute, command_execute)
+    inputs = args.command.commandInputs
+    inputs.addStringValueInput("s", "S", "")
+    if not saved:
+        return
+
+def no_execute_handler(args):
+    if not design:
+        return
+"""
+
+
+def test_the_early_return_guard_can_tell_the_cases_apart() -> None:
+    """Self-check for the walk above, on a fixture rather than the tree, so a
+    broken analysis cannot pass by finding nothing."""
+    tree = ast.parse(_EARLY_RETURN_FIXTURE)
+    by_name = {fu.name: fu for fu in tree.body if isinstance(fu, ast.FunctionDef)}
+    assert _unguarded_early_returns(by_name["unguarded"]) == [6]
+    assert _unguarded_early_returns(by_name["guarded"]) == []
+    assert _unguarded_early_returns(by_name["sibling_abort_does_not_count"]) == [25]
+    assert _unguarded_early_returns(by_name["enclosing_abort_guards"]) == []
+    assert _unguarded_early_returns(by_name["returns_before_registration"]) == []
+    assert _unguarded_early_returns(by_name["returns_after_inputs"]) == []
+    assert _unguarded_early_returns(by_name["no_execute_handler"]) == []
+
+
+def test_the_early_return_guard_sees_the_tree() -> None:
+    """The analysis must find real execute registrations and real input
+    builds in the tree, or the guard above is passing on nothing."""
+    with_execute = 0
+    with_inputs = 0
+    for path in _command_sources():
+        for fu in _command_created_handlers(path):
+            if _registers_execute_at(fu) is not None:
+                with_execute += 1
+            if _first_input_build_line(fu) != float("inf"):
+                with_inputs += 1
+    # 40 and 17 at time of writing; most input-less commands never build one.
+    assert with_execute >= 30, with_execute
+    assert with_inputs >= 15, with_inputs
+    # relateddata registers execute only after its inputs: the walk must place
+    # the registration after the first input build, so its precondition
+    # returns are never in the "early" window.
+    (fu,) = [
+        fu
+        for fu in _command_created_handlers(REPO_ROOT / "commands/relateddata/entry.py")
+        if fu.name == "command_created"
+    ]
+    assert _registers_execute_at(fu) > _first_input_build_line(fu)
+
+
 if __name__ == "__main__":
     for _name in sorted(n for n in dir() if n.startswith("test_")):
         globals()[_name]()

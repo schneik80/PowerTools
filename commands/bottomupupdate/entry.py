@@ -18,6 +18,11 @@ import adsk.fusion
 from ... import config
 from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
+from .._command_abort import (
+    abort_before_dialog,
+    clear_abort,
+    consume_abort,
+)
 from .document_dag import document_bottom_up_order, resolve_document
 
 app = adsk.core.Application.get()
@@ -135,18 +140,24 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     # Title for dialogs and messages
     title = CMD_NAME
 
-    # Check a Design document is active.
+    # Check a Design document is active. No inputs are built on any of the
+    # three bail-outs below, so Fusion auto-executes; flag it so
+    # command_execute skips its work instead of reading inputs that do not
+    # exist.
     if not design:
         ui.messageBox("A Fusion 3D Design must be active", title)
+        abort_before_dialog(CMD_ID, CMD_NAME, "no active design")
         return
 
     # Check if there are any references to update
     if app.activeDocument.documentReferences.count == 0:
         ui.messageBox("No document references found", title)
+        abort_before_dialog(CMD_ID, CMD_NAME, "no document references")
         return
 
     # Check that the active document has been saved.
     if not ptutil.isSaved():
+        abort_before_dialog(CMD_ID, CMD_NAME, "document is not saved")
         return
 
     resume_plan = {
@@ -957,6 +968,12 @@ def _reset_run_state(log_fn=None):
 
 
 def command_execute(args: adsk.core.CommandEventArgs):
+    # command_created bailed out before building a dialog, so Fusion is
+    # auto-executing a command with no inputs; the itemById reads below
+    # would return None and fault.
+    if consume_abort(CMD_ID, CMD_NAME):
+        return
+
     global product, design, title, saved, resume_plan
     from datetime import datetime
 
@@ -1737,6 +1754,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
 # This function will be called when the user completes the command.
 def command_destroy(args: adsk.core.CommandEventArgs):
     global local_handlers
+    # Bound the abort flag to this invocation: consume_abort only clears it
+    # if command_execute ran, and destroy always runs.
+    clear_abort(CMD_ID)
     local_handlers = []
     _reset_run_state()  # Belt and braces: idempotent, no-op if already restored
     ptutil.log(f"{CMD_NAME} Command Destroy Event - cleared global variables")
