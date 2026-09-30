@@ -243,11 +243,7 @@ def _load_baseline_counters() -> None:
 
 
 def _intent_label(intent_value: int) -> str:
-    return {
-        schemes.INTENT_PART: "Part Intent",
-        schemes.INTENT_ASSEMBLY: "Assembly Palette",
-        schemes.INTENT_HYBRID: "Hybrid Intent",
-    }.get(intent_value, "Unknown Intent")
+    return schemes.INTENT_LABELS.get(intent_value, "Unknown Intent")
 
 
 # ---------------------------------------------------------------------------

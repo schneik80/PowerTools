@@ -213,8 +213,17 @@ def start() -> None:
         if panel is None:
             panel = toolbar_tab.toolbarPanels.add(PANEL_ID, PANEL_NAME, "", False)
 
-        # Create the command control
-        control = panel.controls.addCommand(cmd_def, "", True)
+        # Create the command control, anchored after the native Interference
+        # control. A dead position ID fails silently (6789216), so fall back
+        # to appending when it is not on this panel. Needs a Fusion check that
+        # InterferenceCheckCommand is the live control id on the current build.
+        position_id = CMD_AFTER
+        if panel.controls.itemById(CMD_AFTER) is None:
+            ptutil.log(
+                f"{CMD_NAME}: {CMD_AFTER} not found in {PANEL_ID}; appending instead"
+            )
+            position_id = ""
+        control = panel.controls.addCommand(cmd_def, position_id, False)
         control.isPromoted = IS_PROMOTED
 
         ptutil.log(f"{CMD_NAME} command started successfully")
@@ -413,16 +422,6 @@ def _calculate_total_compute_time(csv_filepath: str) -> float:
     return total_sum
 
 
-def _get_html_css() -> str:
-    """
-    Get the CSS styles for the HTML report.
-
-    Returns:
-        CSS styles as string
-    """
-    return HTML_CSS_TEMPLATE
-
-
 def _get_html_header(document_name: str, total_time: float) -> str:
     """
     Generate the HTML header section.
@@ -432,14 +431,14 @@ def _get_html_header(document_name: str, total_time: float) -> str:
         total_time: Total compute time in seconds
 
     Returns:
-        HTML header as string
+        HTML header as string, with the report CSS inside ``<head>``
     """
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>{document_name} Timeline Compute Report</title>
-</head>
+{HTML_CSS_TEMPLATE}</head>
 <body>
     <div class="report-header">
         <h1>{_escape_html(document_name)} &mdash; Timeline Compute Report</h1>
@@ -616,7 +615,6 @@ def _generate_html_report(
 
     try:
         with open(html_filepath, "w", encoding="utf-8") as f:
-            f.write(_get_html_css())
             f.write(_get_html_header(document_name, total_time))
             f.write(_get_table_header())
             f.write(_generate_table_content(csv_filepath, total_time))

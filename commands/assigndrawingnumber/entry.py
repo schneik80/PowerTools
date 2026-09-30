@@ -81,9 +81,8 @@ DRAWING_NUMBER_PROPERTY_NAME = "Drawing Number"
 
 # URL of the setup guide for the 'Drawing Number' custom property. Shown
 # as a clickable link in the error dialog when the property is missing
-# from the user's hub. Replace with the real documentation URL when it is
-# published.
-DRAWING_NUMBER_SETUP_URL = "https://example.com/drawing-number-setup"
+# from the user's hub. Points at the published user doc for this command.
+DRAWING_NUMBER_SETUP_URL = "https://github.com/schneik80/PowerTools/blob/main/docs/Assign%20Drawing%20Number.md"
 
 local_handlers: list = []
 

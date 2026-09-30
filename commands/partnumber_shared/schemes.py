@@ -48,6 +48,14 @@ INTENT_PART = 0
 INTENT_ASSEMBLY = 1
 INTENT_HYBRID = 2
 
+# User-facing names for the intents, as shown in the Assign Part Numbers
+# dialog. These describe the design intent, not any PowerTools command.
+INTENT_LABELS: Dict[int, str] = {
+    INTENT_PART: "Part Intent",
+    INTENT_ASSEMBLY: "Assembly Intent",
+    INTENT_HYBRID: "Hybrid Intent",
+}
+
 _INTENT_TO_PREFIXES: Dict[int, List[str]] = {
     INTENT_PART: ["PRT", "COT", "TOL"],
     INTENT_ASSEMBLY: ["ASY", "WLD", "TOL"],

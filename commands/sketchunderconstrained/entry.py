@@ -118,7 +118,7 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
 
         # Check a Design document is active.
         if not design:
-            ui.messageBox("No active Fusion design", CMD_ID)
+            ui.messageBox("No active Fusion design", CMD_NAME)
             return
 
         if design.activeEditObject and isinstance(
@@ -127,10 +127,10 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
             under = app.executeTextCommand("Sketch.ShowUnderconstrained")
             ptutil.log(f"{CMD_NAME} {under}.")
 
-            ui.messageBox(under, CMD_ID, 0, 2)
+            ui.messageBox(under, CMD_NAME, 0, 2)
 
         else:
-            ui.messageBox("No sketch is currently active.", CMD_ID)
+            ui.messageBox("No sketch is currently active.", CMD_NAME)
 
     except Exception:
         if ui:
