@@ -15,6 +15,9 @@
     var CMD_SECTIONS = {
         componentwarn: {
             label: "Component Warning",
+            // Nested under the command's own row, like docopen and matchunits:
+            // a separate section made the command appear twice (#28).
+            inline: true,
             render: function (cs) {
                 return [
                     labelCheck(
@@ -27,6 +30,9 @@
         },
         changecyclecolor: {
             label: "Change Cycle Color",
+            // Nested under the command's own row, like docopen and matchunits:
+            // a separate section made the command appear twice (#28).
+            inline: true,
             render: function (cs) {
                 return [
                     labelCheck(
