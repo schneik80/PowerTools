@@ -43,7 +43,7 @@ from .._command_abort import (
     clear_abort,
     consume_abort,
 )
-from ..partnumber_shared import hub_fs, mfgdm_props, pn_cache, schemes
+from ..partnumber_shared import doc_identity, hub_fs, mfgdm_props, pn_cache, schemes
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -280,6 +280,15 @@ def command_execute(args: adsk.core.CommandEventArgs):
         if existing:
             ptutil.log(f"{CMD_NAME} execute: overwriting existing number {existing!r}")
 
+        # Identity of the drawing BEFORE the pumped wait. commit_assignments
+        # pumps events for up to 15 s per attempt plus backoff; the document
+        # can be switched, closed or reloaded underneath us in that time, and
+        # the ``doc`` handle itself can be invalidated by background
+        # data-model work (rule 3; a1d22e1, 11cfc51). dataFile.id for a saved
+        # document (isSaved is a precondition here), the name as a fallback.
+        before = doc_identity.identity_of(doc)
+        doc = None  # not used again until re-acquired below
+
         progress = ui.progressBar
         progress.showBusy(f"{CMD_NAME} — updating hub Pn-Cache...")
         adsk.doEvents()
@@ -295,6 +304,14 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
         n = result.snapshot_before.last_used(DRAWING_PREFIX) + 1
         number_str = schemes.format_number(DRAWING_PREFIX, n)
+
+        # Re-acquire the drawing via a fresh activeDocument handle, exactly
+        # as Bottom-Up Update does after its save wait: check isValid, then
+        # prove it is the same document before touching it. The counter bump
+        # is already durable in pn-cache.json at this point, so a mismatch
+        # raises DocumentChanged (caught below) with the DWG number named as
+        # consumed; nothing on any document has been written yet.
+        doc = _reacquire_drawing(before, number_str, result.new_version_number)
 
         # Stamp the drawing document. Document save is left to the user so
         # the dialog can close promptly on Assign.
@@ -330,6 +347,10 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 (deferred_error + "<br/><br/>") if deferred_error else ""
             ) + sync_deferred_html
 
+    except doc_identity.DocumentChanged as exc:
+        # Already logged with both identities by _reacquire_drawing; the
+        # message names the consumed DWG number.
+        deferred_error = str(exc)
     except pn_cache.PnCacheError as exc:
         deferred_error = f"Pn-Cache error:\n\n{exc}"
         ptutil.log(f"{CMD_NAME} execute: PnCacheError: {exc}")
@@ -345,6 +366,51 @@ def command_execute(args: adsk.core.CommandEventArgs):
         _pending_error_message = deferred_error
 
     ptutil.log(f"{CMD_NAME} execute: return (dialog will close)")
+
+
+def _reacquire_drawing(
+    before: doc_identity.DocIdentity, number_str: str, cache_version: int
+) -> adsk.drawing.DrawingDocument:
+    """Fresh ``activeDocument`` handle after the pumped Pn-Cache wait.
+
+    Raises :class:`doc_identity.DocumentChanged` -- with the user text that
+    names *number_str* as consumed -- when there is no document, the handle
+    is not ``isValid``, it is not a drawing, or it is not the document whose
+    identity was captured before the wait. The caller stamps nothing in that
+    case; pn-cache.json already carries the counter bump (*cache_version*).
+    """
+
+    def changed(reason: str, after: doc_identity.DocIdentity):
+        ptutil.log(
+            f"{CMD_NAME} execute: document changed during the Pn-Cache upload "
+            f"({reason}; before={doc_identity.describe(before)}, "
+            f"after={doc_identity.describe(after)}); {number_str} reserved in "
+            f"cache v{cache_version} but not stamped."
+        )
+        return doc_identity.DocumentChanged(
+            doc_identity.abort_message(number_str, cache_version)
+        )
+
+    try:
+        doc = app.activeDocument
+    except Exception as exc:
+        raise changed(
+            f"activeDocument raised: {exc}", doc_identity.DocIdentity()
+        ) from exc
+    if doc is None:
+        raise changed("no active document", doc_identity.DocIdentity())
+    try:
+        valid = bool(doc.isValid)
+    except Exception:
+        valid = False
+    if not valid:
+        raise changed("handle is not valid", doc_identity.DocIdentity())
+    after = doc_identity.identity_of(doc)
+    if not isinstance(doc, adsk.drawing.DrawingDocument):
+        raise changed("active document is no longer a drawing", after)
+    if not doc_identity.same_document(before, after):
+        raise changed("different document is active", after)
+    return doc
 
 
 # ---------------------------------------------------------------------------

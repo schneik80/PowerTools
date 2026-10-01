@@ -34,7 +34,7 @@ from .._command_abort import (
     clear_abort,
     consume_abort,
 )
-from ..partnumber_shared import hub_fs, pn_cache, schemes
+from ..partnumber_shared import doc_identity, hub_fs, pn_cache, schemes
 from ..partnumber_shared import intent as intent_mod
 
 app = adsk.core.Application.get()
@@ -540,6 +540,18 @@ def command_execute(args: adsk.core.CommandEventArgs):
         for _, prefix in to_assign:
             increments[prefix] = increments.get(prefix, 0) + 1
 
+        # Identity captured BEFORE the pumped wait. commit_assignments pumps
+        # events for up to 15 s per attempt plus backoff; the document can be
+        # switched, closed or reloaded underneath us in that time, and the
+        # Component handles in ``_targets`` (captured in commandCreated) can
+        # be invalidated by background data-model work (rule 3; a1d22e1,
+        # 11cfc51). The document is keyed by dataFile.id (isSaved is a
+        # precondition here); each component by its entityToken -- the key
+        # intent.iter_targets already dedupes on -- for Design.findEntityByToken
+        # afterwards. The root component is re-read from the Design directly.
+        before = doc_identity.identity_of(app.activeDocument)
+        pre_tokens: List[str] = [_component_token(t.component) for t, _ in to_assign]
+
         # Commit to pn-cache.json with optimistic retry.
         updated_by = _current_user_id()
         progress = ui.progressBar
@@ -565,6 +577,36 @@ def command_execute(args: adsk.core.CommandEventArgs):
             number_str = schemes.format_number(prefix, n)
             assignments.append((target, prefix, number_str))
 
+        # Re-acquire the document and design via fresh handles, exactly as
+        # Bottom-Up Update does after its save wait: isValid first, then prove
+        # it is the same document before touching it. The counter bump is
+        # already durable in pn-cache.json, so a mismatch raises
+        # DocumentChanged (caught below) naming every reserved number as
+        # consumed; nothing has been stamped yet. Pre-wait handles are not
+        # dereferenced again except as the isValid-guarded fallback for a
+        # component whose token could not be read.
+        reserved = ", ".join(n for _t, _p, n in assignments)
+        design = _reacquire_design(before, reserved, result.new_version_number)
+
+        resolved: List[tuple] = []  # (Target, prefix, number_str, Component)
+        unresolved: List[str] = []
+        for (target, prefix, number_str), token in zip(
+            assignments, pre_tokens, strict=True
+        ):
+            component = _resolve_component(design, target, token)
+            if component is None:
+                unresolved.append(
+                    f"{target.label}: component no longer resolves after the "
+                    f"Pn-Cache upload ({number_str} reserved but not stamped)"
+                )
+                continue
+            resolved.append((target, prefix, number_str, component))
+        if unresolved:
+            ptutil.log(
+                f"{CMD_NAME} execute: {len(unresolved)} of {len(assignments)} "
+                f"target(s) skipped after re-acquire: {unresolved}"
+            )
+
         # Stamp components. Document save is intentionally left to the user:
         # Fusion's save step can be slow, and the dialog should close
         # immediately on Assign.
@@ -575,13 +617,13 @@ def command_execute(args: adsk.core.CommandEventArgs):
         # the last save). We defend against that by reading the value back
         # after every set; a mismatch is treated as a stamp failure even
         # though no exception was raised.
-        stamp_errors: List[str] = []
-        for target, _prefix, number_str in assignments:
+        stamp_errors: List[str] = list(unresolved)
+        for target, _prefix, number_str, component in resolved:
             try:
-                target.component.partNumber = number_str
+                component.partNumber = number_str
                 actual = ""
                 try:
-                    actual = target.component.partNumber or ""
+                    actual = component.partNumber or ""
                 except Exception:
                     actual = ""
                 if actual != number_str:
@@ -607,6 +649,10 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 f"(cache v{result.new_version_number}, retries={result.retries_used})"
             )
 
+    except doc_identity.DocumentChanged as exc:
+        # Already logged with both identities by _reacquire_design; the
+        # message names every reserved number as consumed.
+        deferred_error = str(exc)
     except pn_cache.PnCacheError as exc:
         deferred_error = f"Pn-Cache error:\n\n{exc}"
         ptutil.log(f"{CMD_NAME} execute: PnCacheError: {exc}")
@@ -625,6 +671,94 @@ def command_execute(args: adsk.core.CommandEventArgs):
         _pending_error_message = deferred_error
 
     ptutil.log(f"{CMD_NAME} execute: return (dialog will close)")
+
+
+def _component_token(component: adsk.fusion.Component) -> str:
+    """``entityToken`` of *component*, or "" when the read fails."""
+    try:
+        return component.entityToken or ""
+    except Exception:
+        return ""
+
+
+def _reacquire_design(
+    before: doc_identity.DocIdentity, reserved: str, cache_version: int
+) -> adsk.fusion.Design:
+    """Fresh ``Design`` from a fresh ``activeDocument`` after the pumped wait.
+
+    Raises :class:`doc_identity.DocumentChanged` -- with the user text that
+    names *reserved* as consumed -- when there is no document, the handle is
+    not ``isValid``, it is not the document whose identity was captured
+    before the wait, or it carries no Design product. The caller stamps
+    nothing in that case; pn-cache.json already carries the counter bump
+    (*cache_version*).
+    """
+
+    def changed(reason: str, after: doc_identity.DocIdentity):
+        ptutil.log(
+            f"{CMD_NAME} execute: document changed during the Pn-Cache upload "
+            f"({reason}; before={doc_identity.describe(before)}, "
+            f"after={doc_identity.describe(after)}); {reserved} reserved in "
+            f"cache v{cache_version} but not stamped."
+        )
+        return doc_identity.DocumentChanged(
+            doc_identity.abort_message(reserved, cache_version)
+        )
+
+    try:
+        doc = app.activeDocument
+    except Exception as exc:
+        raise changed(
+            f"activeDocument raised: {exc}", doc_identity.DocIdentity()
+        ) from exc
+    if doc is None:
+        raise changed("no active document", doc_identity.DocIdentity())
+    try:
+        valid = bool(doc.isValid)
+    except Exception:
+        valid = False
+    if not valid:
+        raise changed("handle is not valid", doc_identity.DocIdentity())
+    after = doc_identity.identity_of(doc)
+    if not doc_identity.same_document(before, after):
+        raise changed("different document is active", after)
+    design = adsk.fusion.Design.cast(
+        doc.products.itemByProductType("DesignProductType")
+    )
+    if design is None:
+        raise changed("active document has no Design product", after)
+    return design
+
+
+def _resolve_component(
+    design: adsk.fusion.Design, target: intent_mod.Target, token: str
+) -> Optional[adsk.fusion.Component]:
+    """Re-resolve *target*'s component on the freshly acquired *design*.
+
+    Root -> ``design.rootComponent``. Others -> ``Design.findEntityByToken``
+    on the entityToken captured before the wait (first entity that casts to
+    a Component). With no token the pre-wait handle is the only lead, and is
+    used only if it still reports ``isValid``. Returns None -- the caller
+    skips and reports the target -- when nothing resolves or the result is
+    not valid.
+    """
+    try:
+        if target.is_root:
+            component = design.rootComponent
+        elif token:
+            component = None
+            for entity in design.findEntityByToken(token) or []:
+                component = adsk.fusion.Component.cast(entity)
+                if component is not None:
+                    break
+        else:
+            component = target.component
+        if component is None or not component.isValid:
+            return None
+        return component
+    except Exception as exc:
+        ptutil.log(f"{CMD_NAME} execute: could not re-resolve {target.label}: {exc}")
+        return None
 
 
 def _collect_choices(inputs: adsk.core.CommandInputs) -> List[tuple]:
