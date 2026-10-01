@@ -87,7 +87,7 @@ KNOWN_NON_COMMAND_PT_LITERALS = {
     "PT_openrecent_dropdown": "openrecent DROPDOWN_ID (File-menu flyout)",
     "PT_openrecent_item_": "openrecent ITEM_ID_PREFIX (one button per recent)",
     "PT_openrecent_empty": "openrecent EMPTY_ITEM_ID (placeholder item)",
-    "PTAT_fav_": "favorites per-entry button id prefix (f-string PTAT_fav_{i})",
+    "PTAT_fav_": "favorites ITEM_ID_PREFIX (one positional button per favorite)",
     # Command input ids inside a dialog.
     "PTAN_autoName": "animationnamedview AUTO_NAME_INPUT_ID",
     "PTAN_name": "animationnamedview NAME_INPUT_ID",

@@ -31,7 +31,7 @@ suite stubs `adsk` and proves pure logic only (see
   - [Custom graphics](#custom-graphics)
 - [Shared modules](#shared-modules)
   - [Root modules](#root-modules): [`command_registry`](#command_registry), [`settings_store`](#settings_store), [`config`](#config)
-  - [Command infrastructure](#command-infrastructure): [`commands/__init__`](#commands__init__), [`_ui_bootstrap`](#_ui_bootstrap), [`_command_abort`](#_command_abort), [`_inspect_panels`](#_inspect_panels), [`partnumber_shared`](#partnumber_shared)
+  - [Command infrastructure](#command-infrastructure): [`commands/__init__`](#commands__init__), [`_ui_bootstrap`](#_ui_bootstrap), [`_command_abort`](#_command_abort), [`_menu_plan`](#_menu_plan), [`_inspect_panels`](#_inspect_panels), [`partnumber_shared`](#partnumber_shared)
   - [`lib/ptAddInUtils` (`ptutil`)](#libptaddinutils-ptutil): [`general_utils`](#general_utils), [`event_utils`](#event_utils), [`selection_utils`](#selection_utils), [`json_utils`](#json_utils), [`ui_utils`](#ui_utils), [`cache_utils`](#cache_utils), [`upload_utils`](#upload_utils), [`recents_utils`](#recents_utils), [`fusion_recents`](#fusion_recents), [`intent_icons`](#intent_icons), [`log_utils`](#log_utils), [`attributes_utils`](#attributes_utils), [`date_utils`](#date_utils)
 - [UI access points](#ui-access-points)
 - [State on disk](#state-on-disk)
@@ -69,6 +69,7 @@ PowerTools/
 │   ├── __init__.py             # start()/stop(): bootstrap, preferences, then gated registry loop
 │   ├── _ui_bootstrap.py        # creates/removes the shared Power Tools panel
 │   ├── _command_abort.py       # bail out of commandCreated without doExecute
+│   ├── _menu_plan.py           # positional keep/remove rule for the dynamic flyouts (adsk-free)
 │   ├── _inspect_panels.py      # discovers Fusion's Inspect panels at runtime
 │   ├── preferences/            # infrastructure command; always started first
 │   ├── partnumber_shared/      # library shared by the three part/drawing-number commands
@@ -575,6 +576,39 @@ repo-wide AST guard); `test_changecyclecolor_abort.py` covers that command's
 local variant. Used by: `assigndrawingnumber`, `assignpartnumbers`,
 `measurepath`, `roundsketchdimensions`, `sketchcirclecenterpoint`,
 `versiondiff` (`changecyclecolor` has its own flag, see above).
+
+#### `_menu_plan`
+
+`commands/_menu_plan.py`, adsk-free. The rule behind every flyout that lists
+a changing set of entries (Open Recent's documents, Favorites' locations):
+buttons are *positional* -- slot 0 is always the first entry -- so a rebuild
+updates the definitions it keeps in place, adds the ones it is short of and
+removes the complement, never delete-then-add. `CommandDefinition.deleteMe()`
+returns False (no raise) for the definition whose command is in flight, which
+is exactly the slot whose `commandCreated` triggered the rebuild (#29, #34).
+
+| Name | Semantics |
+|---|---|
+| `MenuSlots(prefix, limit, empty_id="")` | The id range one flyout owns; frozen dataclass |
+| `MenuSlots.item_cmd_id(i)` | `f"{prefix}{i}"` |
+| `MenuSlots.all_ids()` | Every id the flyout can ever own (+ `empty_id` when set); what `_clear_items` sweeps |
+| `MenuSlots.plan_menu(count) -> (keep, remove)` | `keep` = the first `count` slots in order; `remove` = the whole complement (+ the placeholder when `count > 0`); `ValueError` outside `0..limit` |
+| `item_text(item, key, fallback)` | A button's text, falling back on a missing or blank field |
+| `menu_signature(items, keys, presence_keys=())` | The visible state of a list, for an "unchanged, skip" fast path stored only after a build completes |
+
+Each consumer's `entry.py` applies the plan with the same four moves:
+`_ensure_definition` (reuse an owned definition in place -- `name`/`tooltip`
+are writable -- adopt or recreate a foreign one, never `addButtonDefinition`
+for an id still present), `_ensure_control` (add only when missing, after the
+previous slot), `_remove_item` (control then definition, re-query rather than
+trust the bool, park refusals in `_leftover_ids`) and `_clear_items` (sweep
+`all_ids()`); one `commandCreated` handler per definition for its lifetime
+reads the slot's current target from `_item_targets` at click time.
+
+Enforces: rule 10 (idempotent sweep) and lesson #29. Tests:
+`test_openrecent_menu.py`, `test_favorites_menu.py` (pure cases with each
+command's `SLOTS`, then `_rebuild_menu` against fakes that refuse `deleteMe()`
+and raise on a duplicate id). Used by: `openrecent`, `favorites`.
 
 #### `_inspect_panels`
 

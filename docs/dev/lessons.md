@@ -129,13 +129,17 @@ returned False without raising (the reference says "will fail", not "throws"),
 and `addButtonDefinition` raised "a command definition with that id already
 exists" -- caught, logged, menu left half-built. A second defect compounded
 it: the "unchanged, skip" signature was stored *before* the build, so the next
-identical event froze the damage. Now `menu_plan.py` owns the id range,
+identical event froze the damage. Now the shared, adsk-free
+`commands/_menu_plan.py` owns the id range (`MenuSlots.plan_menu`),
 definitions are positional and reused (`name`/`tooltip`/`toolClipFilename` are
 writable), `_remove_item` re-queries instead of trusting the bool and parks
 refusals in `_leftover_ids` (which disables the fast path), and the signature
 is stored only after completion; one `commandCreated` handler per definition
-reads the slot's current target at click time. Favorites still uses the old
-delete-then-add shape (review item 36). -- #29
+reads the slot's current target at click time. Favorites had the same
+delete-then-add shape with the same trigger (a navigation that lands in another
+hub fires `documentActivated` inside the item's own command) and now shares
+`_menu_plan` and the four moves; `tests/test_favorites_menu.py` drives the
+in-flight hub switch. -- #29, #34
 
 **A control placed in `start()` may silently not exist; retry from
 `documentActivated`.** Symptom: Preferences unreachable for a whole session when

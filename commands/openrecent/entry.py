@@ -25,8 +25,8 @@ import adsk.core
 
 from ...lib import ptAddInUtils as ptutil
 from ...lib.ptAddInUtils import recents_utils as recents
-from . import menu_plan
-from .menu_plan import EMPTY_ITEM_ID
+from .._menu_plan import MenuSlots, item_text
+from .._menu_plan import menu_signature as _menu_signature
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -36,13 +36,46 @@ CMD_Description = "Add a flyout to the File menu that lists your recently used d
 
 # The flyout control (a DropDownControl nested in the File dropdown) and the
 # per-item command definitions it holds. The item ids are positional
-# (``PT_openrecent_item_0`` is the newest entry) and live in menu_plan.py with
-# the rest of the adsk-free rebuild logic.
+# (``PT_openrecent_item_0`` is the newest entry); the rule that splits them
+# into keep/remove on a rebuild is the shared, adsk-free commands/_menu_plan.py.
 DROPDOWN_ID = "PT_openrecent_dropdown"
+ITEM_ID_PREFIX = "PT_openrecent_item_"
+EMPTY_ITEM_ID = "PT_openrecent_empty"
 
 # Max entries shown in the flyout. The cache itself holds up to
 # recents.RECENT_LIMIT; the menu is capped shorter to stay quick to scan.
 MENU_LIMIT = 15
+
+SLOTS = MenuSlots(ITEM_ID_PREFIX, MENU_LIMIT, EMPTY_ITEM_ID)
+
+EMPTY_LABEL = "No recent documents"
+EMPTY_TOOLTIP = "Recently used documents appear here as you open and work on them."
+
+UNTITLED_LABEL = "Untitled"
+GENERIC_TOOLTIP = "Recently used document"
+
+
+def item_label(item: dict) -> str:
+    """The button text: the document name, or a placeholder for a blank one."""
+    return item_text(item, "name", UNTITLED_LABEL)
+
+
+def item_tooltip(item: dict) -> str:
+    """The tooltip: the Data Panel location, or generic text when unknown."""
+    return item_text(item, "location", GENERIC_TOOLTIP)
+
+
+def menu_signature(items: list[dict]) -> tuple:
+    """What the user can see of *items*; equal signatures need no rebuild.
+
+    ``version`` is included so a re-saved document refreshes its tool-clip;
+    ``thumbPath`` only as a presence flag, since the path itself is derived
+    from the id and does not change.
+    """
+    return _menu_signature(
+        items, ("dataFileId", "name", "location", "version"), ("thumbPath",)
+    )
+
 
 # No icon assets — an empty resource folder renders the default menu glyph,
 # matching Scripts and Add-ins / PowerTools Preferences in the same File menu.
@@ -252,11 +285,6 @@ def _dump_file_menu_ids(file_dd) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _all_item_ids() -> list[str]:
-    """Every id this flyout can ever own, whatever an earlier build tracked."""
-    return [menu_plan.item_cmd_id(i) for i in range(MENU_LIMIT)] + [EMPTY_ITEM_ID]
-
-
 def _clear_items() -> None:
     """Delete every item control and command definition the flyout can own.
 
@@ -264,7 +292,7 @@ def _clear_items() -> None:
     also sweeps up what an unclean reload or a half-finished rebuild left
     behind (rule 10: start()/stop() idempotent).
     """
-    for cmd_id in _all_item_ids():
+    for cmd_id in SLOTS.all_ids():
         _remove_item(cmd_id)
     _item_targets.clear()
 
@@ -274,7 +302,7 @@ def _remove_item(cmd_id: str) -> None:
 
     ``deleteMe()`` reports failure by returning False, not by raising, and
     does so when the definition's own command is in flight (the rebuild runs
-    inside the item's commandCreated — see menu_plan.py). A survivor is noted
+    inside the item's commandCreated — see commands/_menu_plan.py). A survivor is noted
     in ``_leftover_ids`` so the next rebuild retries instead of skipping on an
     unchanged signature. Its handler stays attached, so it stays in
     ``_owned_ids`` and is updated in place if its slot is needed again.
@@ -348,7 +376,7 @@ def _rebuild_menu() -> None:
     """Bring the flyout in line with the recents list, newest-first.
 
     Buttons are positional (slot 0 = newest), so an unchanged slot count means
-    text updates only; the plan from ``menu_plan.plan_menu`` says which slots
+    text updates only; ``SLOTS.plan_menu`` says which slots
     to keep and which to remove. ``_last_signature`` is cleared before the
     work and set only after it completes, so an exception midway leaves a
     state the next document event rebuilds rather than one it skips.
@@ -370,7 +398,7 @@ def _rebuild_menu() -> None:
 
     # Skip the rebuild when nothing visible changed — documentActivated fires
     # on every tab switch — unless a previous pass has deletions to retry.
-    signature = menu_plan.menu_signature(items)
+    signature = menu_signature(items)
     if (
         signature == _last_signature
         and _dropdown.controls.count > 0
@@ -379,14 +407,12 @@ def _rebuild_menu() -> None:
         return
     _last_signature = None
 
-    keep, remove = menu_plan.plan_menu(len(items), MENU_LIMIT)
+    keep, remove = SLOTS.plan_menu(len(items))
     for cmd_id in remove:
         _remove_item(cmd_id)
 
     if not items:
-        cmd_def = _ensure_definition(
-            EMPTY_ITEM_ID, menu_plan.EMPTY_LABEL, menu_plan.EMPTY_TOOLTIP
-        )
+        cmd_def = _ensure_definition(EMPTY_ITEM_ID, EMPTY_LABEL, EMPTY_TOOLTIP)
         ctrl = _ensure_control(cmd_def)
         try:
             ctrl.isEnabled = False  # a non-actionable placeholder
@@ -397,10 +423,10 @@ def _rebuild_menu() -> None:
 
     previous_id = ""
     for cmd_id, item in zip(keep, items, strict=True):
-        name = menu_plan.item_label(item)
+        name = item_label(item)
         # The tooltip carries the document's Data Panel location; the tool-clip
         # image carries its cached thumbnail.
-        cmd_def = _ensure_definition(cmd_id, name, menu_plan.item_tooltip(item))
+        cmd_def = _ensure_definition(cmd_id, name, item_tooltip(item))
         try:
             cmd_def.toolClipFilename = item.get("thumbPath", "") or ""
         except Exception:

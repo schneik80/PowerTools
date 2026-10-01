@@ -38,6 +38,7 @@ registry changes.
 | `commands/__init__.py` | `load_command(key)` lazy import; `start()` gates by group/command/beta/set lead; `_started` teardown newest-first; `preferences` always starts first | Start order, gating — [reference](../arch/architecture.md#commands__init__) |
 | `commands/_ui_bootstrap.py` | Creates/removes the shared Power Tools panel once; `get_power_tools_panel()` | Shared panel — [reference](../arch/architecture.md#_ui_bootstrap) |
 | `commands/_command_abort.py` | `abort_before_dialog()`, `consume_abort()`, `clear_abort()`, `was_aborted()` — the only sanctioned way to end a command from `commandCreated` (never `doExecute`) | Precondition failures before a dialog — [reference](../arch/architecture.md#_command_abort) |
+| `commands/_menu_plan.py` | `MenuSlots(prefix, limit, empty_id).plan_menu(count) -> (keep, remove)`, `all_ids()`, `item_text()`, `menu_signature()` — adsk-free positional keep/remove rule for flyouts that list a changing set (never delete-then-add a per-item definition) | A dynamic flyout rebuild — [reference](../arch/architecture.md#_menu_plan) |
 | `commands/_inspect_panels.py` | `design_inspect_panels()`, `add_to_inspect_panels()`, `remove_from_inspect_panels()` — runtime discovery of Fusion's Inspect panels | Placing a control on Inspect — [reference](../arch/architecture.md#_inspect_panels) |
 | `lib/ptAddInUtils/` | Shared helpers, imported as `ptutil` | Reuse before writing — [reference](../arch/architecture.md#libptaddinutils-ptutil) |
 | `tests/conftest.py` | `PowerTools` synthetic package + `adsk` MagicMock finder | Writing tests — [Testing](index.md#testing) |
@@ -82,9 +83,9 @@ are not repeated per row.
 | document | `dochistory` | `Document History.md` | `history_model.py`, `mfgdm_history.py` | `test_dochistory_{doc_switch,history_model}.py` | QAT button; HTML palette; custom events `PTND_history_*` |
 | document | `docinfo` | `Document Information.md` | — | — | |
 | document | `docopen` | `Show In Location.md` | — | — | settings; no control (document events); ships disabled |
-| document | `favorites` | `Favorites.md` | — | — | QAT top-level dropdown; `cache/favorites_<hub>.json`; three `commandCreated` handlers |
+| document | `favorites` | `Favorites.md` | shares `../_menu_plan.py` | `test_favorites_menu.py` | QAT top-level dropdown; `cache/favorites_<hub>.json`; positional, reused item definitions; three `commandCreated` handlers |
 | document | `matchunits` | `Match Units.md` | `logic.py`, `mfg.py` | `test_matchunits_{logic,mfg_logic}.py` | settings (2 prompts); Inspect panels; two independent Timer -> custom event deferrals; `resourceFolder` swap |
-| document | `openrecent` | `Open Recent.md` | `menu_plan.py` | `test_openrecent_menu.py` | QAT File flyout, probed placement; positional, reused item definitions; items open from `commandCreated` |
+| document | `openrecent` | `Open Recent.md` | shares `../_menu_plan.py` | `test_openrecent_menu.py` | QAT File flyout, probed placement; positional, reused item definitions; items open from `commandCreated` |
 | document | `versiondiff` | `Version Diff.md` | `timeline_model.py`, `feature_icons.py`, `html_report.py` | — | ships disabled; abort pattern |
 | exports | `exportbomcsv` | `Export BOM.md` | — | `test_csv_injection.py` | |
 | exports | `exportmermaid` | `Export Mermaid.md` | — | — | |
@@ -144,6 +145,7 @@ document. Quick routing:
 | Design-intent icons in a palette | `intent_icons.write_stylesheet` | [`intent_icons`](../arch/architecture.md#intent_icons) |
 | Open a run log in a live viewer | `log_utils.default_log_directory`, `open_live_log_viewer` | [`log_utils`](../arch/architecture.md#log_utils) |
 | Give up before the dialog | `_command_abort.abort_before_dialog` / `consume_abort` / `clear_abort` | [`_command_abort`](../arch/architecture.md#_command_abort) |
+| Rebuild a flyout of changing entries | `_menu_plan.MenuSlots(...).plan_menu` / `all_ids`, then `_ensure_definition` / `_ensure_control` / `_remove_item` / `_clear_items` as in `openrecent` and `favorites` | [`_menu_plan`](../arch/architecture.md#_menu_plan) |
 | Place a control on Inspect | `_inspect_panels.add_to_inspect_panels` / `remove_from_inspect_panels` | [`_inspect_panels`](../arch/architecture.md#_inspect_panels) |
 | The shared panel | `_ui_bootstrap.get_power_tools_panel` | [`_ui_bootstrap`](../arch/architecture.md#_ui_bootstrap) |
 | Part numbers, MFGDM properties | `partnumber_shared.{hub_fs,pn_cache,intent,schemes,mfgdm_props}` | [`partnumber_shared`](../arch/architecture.md#partnumber_shared) |
@@ -205,6 +207,7 @@ The full table with owners is
 | No-input command acting from `commandCreated` | `commands/closealldocuments/entry.py`, `scriptsmanager`, `datatoggle`, `preferences`, `exportsysml` |
 | Retrying a QAT control from `documentActivated` | `commands/preferences/entry.py::_ensure_control` / `_retry_placement` |
 | Self-correcting flyout placement, candidate control ids | `commands/openrecent/entry.py` |
+| Positional, reused per-item definitions in a dynamic flyout | `commands/_menu_plan.py`; `commands/openrecent/entry.py`, `commands/favorites/entry.py` (`_rebuild_menu`) |
 | Ending a command from `commandCreated` when a precondition fails | `commands/_command_abort.py`; `versiondiff`, `roundsketchdimensions`, `assigndrawingnumber`, `assignpartnumbers`, `measurepath`, `sketchcirclecenterpoint`; `changecyclecolor` carries a local variant of the same flag |
 | `threading.Timer` -> `fireCustomEvent` deferral | `commands/teamaddins/entry.py` (`_schedule_check` / `_fire_check`), `commands/assemblypalette/entry.py` (post-insert chain, thumbnail pump), `commands/dochistory/entry.py`, `commands/matchunits/entry.py` |
 | Polling an `adsk.core.Future` without blocking | `commands/assemblypalette/entry.py` and `commands/dochistory/entry.py` thumbnails |

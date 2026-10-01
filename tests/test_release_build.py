@@ -73,6 +73,7 @@ def test_dev_only_paths_are_excluded(path: str) -> None:
         "docs/assemblystats.md",
         "docs/assets/example.png",
         "commands/__init__.py",
+        "commands/_menu_plan.py",
         "commands/timelinecompute/resources/frame-001.svg",
         "commands/relateddata/Sample data.json",
         "lib/ptAddInUtils/intent_icons.py",

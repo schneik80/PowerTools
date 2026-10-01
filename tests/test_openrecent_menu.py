@@ -9,8 +9,9 @@ returned False for the one whose command was in flight, and
 ``addButtonDefinition`` on that id raised ``3 : a command definition with that
 id already exists``. The rebuild was abandoned with half the menu gone.
 
-Two layers are tested. ``menu_plan`` is pure (rule 13) and decides which slots
-to keep and remove. ``entry`` is driven against a fake ``commandDefinitions`` /
+Two layers are tested. ``commands/_menu_plan`` is pure (rule 13), shared with
+Favorites (``tests/test_favorites_menu.py``), and decides which slots to keep
+and remove; the cases here use Open Recent's ``SLOTS``. ``entry`` is driven against a fake ``commandDefinitions`` /
 ``ToolbarControls`` pair that behaves like Fusion on the two points that
 matter: a duplicate id raises, and ``deleteMe()`` on a locked id returns False
 and leaves the object in place.
@@ -22,62 +23,67 @@ from types import SimpleNamespace
 import pytest
 
 entry = importlib.import_module("PowerTools.commands.openrecent.entry")
-menu_plan = importlib.import_module("PowerTools.commands.openrecent.menu_plan")
+menu_plan = importlib.import_module("PowerTools.commands._menu_plan")
 
-ITEM = menu_plan.item_cmd_id
-EMPTY = menu_plan.EMPTY_ITEM_ID
+SLOTS = entry.SLOTS
+ITEM = SLOTS.item_cmd_id
+EMPTY = entry.EMPTY_ITEM_ID
 LIMIT = entry.MENU_LIMIT
 
 
 # ---------------------------------------------------------------------------
-# menu_plan (pure)
+# _menu_plan (pure), with Open Recent's slots and text
 # ---------------------------------------------------------------------------
 
 
+def test_slots_are_open_recents_ids():
+    assert SLOTS == menu_plan.MenuSlots("PT_openrecent_item_", LIMIT, EMPTY)
+    assert ITEM(0) == "PT_openrecent_item_0"
+    assert SLOTS.all_ids() == [ITEM(i) for i in range(LIMIT)] + [EMPTY]
+
+
 def test_plan_keeps_a_prefix_of_slots_and_removes_the_whole_complement():
-    keep, remove = menu_plan.plan_menu(3, LIMIT)
+    keep, remove = SLOTS.plan_menu(3)
     assert keep == [ITEM(0), ITEM(1), ITEM(2)]
     assert remove == [ITEM(i) for i in range(3, LIMIT)] + [EMPTY]
 
 
 def test_plan_for_no_items_removes_every_slot_but_not_the_placeholder():
-    keep, remove = menu_plan.plan_menu(0, LIMIT)
+    keep, remove = SLOTS.plan_menu(0)
     assert keep == []
     assert remove == [ITEM(i) for i in range(LIMIT)]
     assert EMPTY not in remove
 
 
 def test_plan_at_the_limit_removes_only_the_placeholder():
-    keep, remove = menu_plan.plan_menu(LIMIT, LIMIT)
+    keep, remove = SLOTS.plan_menu(LIMIT)
     assert len(keep) == LIMIT
     assert remove == [EMPTY]
 
 
 def test_plan_rejects_counts_outside_the_slot_range():
     with pytest.raises(ValueError):
-        menu_plan.plan_menu(LIMIT + 1, LIMIT)
+        SLOTS.plan_menu(LIMIT + 1)
     with pytest.raises(ValueError):
-        menu_plan.plan_menu(-1, LIMIT)
+        SLOTS.plan_menu(-1)
 
 
 def test_signature_tracks_version_and_thumbnail_presence_only():
     base = {"dataFileId": "a", "name": "A", "location": "Hub > P", "version": "3"}
-    assert menu_plan.menu_signature([base]) == menu_plan.menu_signature([dict(base)])
+    assert entry.menu_signature([base]) == entry.menu_signature([dict(base)])
     resaved = dict(base, version="4")
-    assert menu_plan.menu_signature([resaved]) != menu_plan.menu_signature([base])
+    assert entry.menu_signature([resaved]) != entry.menu_signature([base])
     with_thumb = dict(base, thumbPath="/tmp/x.png")
     other_thumb = dict(base, thumbPath="/tmp/y.png")
-    assert menu_plan.menu_signature([with_thumb]) != menu_plan.menu_signature([base])
-    assert menu_plan.menu_signature([with_thumb]) == menu_plan.menu_signature(
-        [other_thumb]
-    )
+    assert entry.menu_signature([with_thumb]) != entry.menu_signature([base])
+    assert entry.menu_signature([with_thumb]) == entry.menu_signature([other_thumb])
 
 
 def test_label_and_tooltip_fall_back_when_the_item_is_sparse():
-    assert menu_plan.item_label({"name": ""}) == menu_plan.UNTITLED_LABEL
-    assert menu_plan.item_label({"name": "Valve"}) == "Valve"
-    assert menu_plan.item_tooltip({}) == menu_plan.GENERIC_TOOLTIP
-    assert menu_plan.item_tooltip({"location": "Hub > P"}) == "Hub > P"
+    assert entry.item_label({"name": ""}) == entry.UNTITLED_LABEL
+    assert entry.item_label({"name": "Valve"}) == "Valve"
+    assert entry.item_tooltip({}) == entry.GENERIC_TOOLTIP
+    assert entry.item_tooltip({"location": "Hub > P"}) == "Hub > P"
 
 
 # ---------------------------------------------------------------------------
@@ -298,7 +304,7 @@ def test_a_rebuild_that_raises_midway_is_retried_on_the_next_event(menu):
     menu.controls.fail_on.clear()
     menu.rebuild(items)  # same signature: must not take the fast path
     assert menu.controls.ids() == [ITEM(0), ITEM(1), ITEM(2)]
-    assert entry._last_signature == menu_plan.menu_signature(items)
+    assert entry._last_signature == entry.menu_signature(items)
     assert menu.defs.adds == [ITEM(0), ITEM(1), ITEM(2)]  # slot 2 added once
 
 
