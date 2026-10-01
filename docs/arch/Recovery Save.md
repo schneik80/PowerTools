@@ -19,11 +19,10 @@ Writes a local recovery checkpoint for the active document without creating a cl
 
 - `start()`: `ui.commandDefinitions.addButtonDefinition(CMD_ID, CMD_NAME, CMD_Description)` (no resource folder); `ptutil.add_handler(cmd_def.commandCreated, command_created)`; `fileDropDown.controls.addCommand(cmd_def, "PLM360SaveAsLatestOnQATCommand", False)`. The QAT and dropdown are read directly, without the `None` guard that [`ptutil.get_qat_file_dropdown`](architecture.md#ui_utils) provides; if either were missing `start()` would raise and `commands/__init__.start` would log it and move on.
 - `stop()`: deletes the dropdown control and the definition.
-- `command_created(args)`: registers `command_execute` and `command_destroy`. There are no `CommandInputs`, so Fusion auto-executes.
-- `command_execute(args)`: `ui.commandDefinitions.itemById("AutoSaveFilesCommand").execute()`; any exception → `ptutil.handle_error(CMD_NAME, show_message_box=True)`.
+- `command_created(args)`: registers `command_destroy`; if `ptutil.is_user_document(app.activeDocument)` is false it shows "Open a document to write a local recovery save." and returns; otherwise it runs `ui.commandDefinitions.itemById("AutoSaveFilesCommand").execute()` directly; any exception → `ptutil.handle_error(CMD_NAME, show_message_box=True)`. There are no `CommandInputs` and no `execute` handler, so Fusion's auto-execute has nothing to run.
 - `command_destroy(args)`: drops `local_handlers`.
 
-Because the work is in `execute`, the command depends on Fusion's document-scoped pipeline: with no document open the menu item is live but nothing happens (rule 1). The guide lists an open document as the prerequisite.
+The work runs in `commandCreated` because the control sits in the File dropdown, which exists with no document open, and `execute` never fires in that state (rule 1, #16). This is the first of the three File-dropdown commands converted under #25; it pilots launching a native Fusion command from `commandCreated` (the `scriptsmanager` pattern) before Export BOM and Export Mermaid follow. The document guard is mandatory: the first pilot (`4a689c2`, reverted in `c3dfc6b`) launched without it and Fusion's own `AutoSaveCmd::onExecute` segfaulted dereferencing the document session from the start screen.
 
 ## Data and state
 
@@ -31,7 +30,7 @@ Because the work is in `execute`, the command depends on Fusion's document-scope
 
 ## Diagram
 
-None — the flow is `command_created` → `command_execute` → `AutoSaveFilesCommand.execute()`.
+None — the flow is `command_created` → `AutoSaveFilesCommand.execute()`.
 
 ## Tests
 

@@ -74,25 +74,25 @@ def stop():
 def command_created(args: adsk.core.CommandCreatedEventArgs):
     ptutil.log(f"{CMD_NAME} Command Created Event")
 
-    # Connect to the events that are needed by this command.
-    ptutil.add_handler(
-        args.command.execute, command_execute, local_handlers=local_handlers
-    )
     ptutil.add_handler(
         args.command.destroy, command_destroy, local_handlers=local_handlers
     )
 
+    # No inputs, so the work runs here: the control sits in the File dropdown,
+    # which exists with no document open, and execute never fires in that
+    # state (rule 1, #16). Launching Fusion's own command from commandCreated
+    # is the scriptsmanager pattern; #25 pilots it here before Export BOM and
+    # Export Mermaid follow.
+    # AutoSaveFilesCommand dereferences the document session unconditionally
+    # and segfaults with no document open (AutoSaveCmd::onExecute ->
+    # AssetSession::documentSession, 2026-09-30 CER, #25), so check first.
+    if not ptutil.is_user_document(app.activeDocument):
+        ui.messageBox("Open a document to write a local recovery save.", CMD_NAME)
+        return
 
-def command_execute(args: adsk.core.CommandCreatedEventArgs):
-    # this handles the document close and reopen
-    ui = None
     try:
-        app = adsk.core.Application.get()
-        ui = app.userInterface
-        cmdDefs = ui.commandDefinitions
-        autosave = cmdDefs.itemById("AutoSaveFilesCommand")
+        autosave = ui.commandDefinitions.itemById("AutoSaveFilesCommand")
         autosave.execute()
-
     except Exception:
         ptutil.handle_error(CMD_NAME, show_message_box=True)
 
