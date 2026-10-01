@@ -40,6 +40,7 @@ registry changes.
 | `commands/_command_abort.py` | `abort_before_dialog()`, `consume_abort()`, `clear_abort()`, `was_aborted()` — the only sanctioned way to end a command from `commandCreated` (never `doExecute`) | Precondition failures before a dialog — [reference](../arch/architecture.md#_command_abort) |
 | `commands/_menu_plan.py` | `MenuSlots(prefix, limit, empty_id).plan_menu(count) -> (keep, remove)`, `all_ids()`, `item_text()`, `menu_signature()` — adsk-free positional keep/remove rule for flyouts that list a changing set (never delete-then-add a per-item definition) | A dynamic flyout rebuild — [reference](../arch/architecture.md#_menu_plan) |
 | `commands/_inspect_panels.py` | `design_inspect_panels()`, `add_to_inspect_panels()`, `remove_from_inspect_panels()` — runtime discovery of Fusion's Inspect panels | Placing a control on Inspect — [reference](../arch/architecture.md#_inspect_panels) |
+| `commands/_drawing_panel.py` | `add_to_drawing_panel()`, `remove_from_drawing_panel()` — the Drawing workspace's shared Power Tools panel, created on first use and deleted when empty | Placing a control in a drawing — [reference](../arch/architecture.md#_drawing_panel) |
 | `lib/ptAddInUtils/` | Shared helpers, imported as `ptutil` | Reuse before writing — [reference](../arch/architecture.md#libptaddinutils-ptutil) |
 | `tests/conftest.py` | `PowerTools` synthetic package + `adsk` MagicMock finder | Writing tests — [Testing](index.md#testing) |
 
@@ -81,7 +82,7 @@ are not repeated per row.
 | document | `datatoggle` | `Toggle Data Pane.md` | — | — | `NavToolbar` button; work in `commandCreated` |
 | document | `defaultfolders` | `Default Folders.md` | — | — | settings (`DEFAULT_FOLDER_SETS`) |
 | document | `dochistory` | `Document History.md` | `history_model.py`, `mfgdm_history.py` | `test_dochistory_{doc_switch,history_model}.py` | QAT button; HTML palette; custom events `PTND_history_*` |
-| document | `docinfo` | `Document Information.md` | — | — | |
+| document | `docinfo` | `Document Information.md` | `mfgdm_status.py` | `test_docinfo_mfgdm_status.py` | Design and Drawing Power Tools panels; MFGDM `model` / `item` queries |
 | document | `docopen` | `Show In Location.md` | — | — | settings; no control (document events); ships disabled |
 | document | `favorites` | `Favorites.md` | shares `../_menu_plan.py` | `test_favorites_menu.py` | QAT top-level dropdown; `cache/favorites_<hub>.json`; positional, reused item definitions; three `commandCreated` handlers |
 | document | `matchunits` | `Match Units.md` | `logic.py`, `mfg.py` | `test_matchunits_{logic,mfg_logic}.py` | settings (2 prompts); Inspect panels; two independent Timer -> custom event deferrals; `resourceFolder` swap |
@@ -165,7 +166,7 @@ architecture document. One line each:
 | QAT top-level dropdown | `favorites` |
 | QATRight Share flyout (`shareDropMenu`) | `shareDocument` and the other Share commands |
 | `NavToolbar` | `datatoggle` |
-| Drawing tab panel `PT_DrawingPowerTools` | `assigndrawingnumber` |
+| Drawing tab panel `PT_DrawingPowerTools` (`_drawing_panel`) | `assigndrawingnumber`, `docinfo` |
 | Manage tab panel `PT_ManagePowerTools` (needs the Manage Extension) | `syncitempartnumber` |
 | Animation (Publisher) panel `PT_AnimationPowerTools` | `animationnamedview` |
 | Inspect panels, discovered (`_inspect_panels`) | `measurepath`, `matchunits` |

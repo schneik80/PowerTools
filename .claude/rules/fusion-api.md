@@ -134,6 +134,12 @@ explains it. Full write-ups: `docs/dev/lessons.md`.
 - **MFGDM GraphQL needs `component.hub.id` (`urn:adsk...`)**, never
   `app.data.activeHub.id`; and model-id access must not run from
   `commandCreated` (`partnumber_shared/mfgdm_props.py`, 234b043).
+- **A drawing has no local MFGDM id**: query `item(hubId: DataHub.mfgdmId,
+  itemId: DataFile.id)`. With a drawing active, `productType` raises
+  (`InternalValidationError : adapter`) -- branch on `DrawingDocument`.
+  `rootDataComponent` can be `None` on a loaded design; read the model id
+  through `mfgdm_props.design_model_id()`, which falls back to
+  `rootComponent.mfgdmModelId` (lessons.md).
 - **Fusion IDs use underscores, never hyphens** (hyphens log "invalid
   characters" on every launch). Renaming a `CMD_ID` orphans users' QAT pins
   (6789216).

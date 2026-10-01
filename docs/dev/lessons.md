@@ -546,6 +546,25 @@ shared-part-number rule is `isPresent && isModeled && (len(results) > 1 ||
 !isAllReadableByUser || pagination.cursor)`. Model-id access must not run from
 `commandCreated`. -- `234b043`, `commands/partnumber_shared/`
 
+**A drawing has no local MFGDM id; reach it through `DataHub.mfgdmId` +
+`DataFile.id`.** `item(hubId: hub.mfgdmId, itemId: dataFile.id)` returns a
+`DrawingItem` whose `tipDrawing.model.designItem` is the design MFGDM links it
+to. It should match the drawing's local `documentReferences`; a Fusion bug
+left "Arm1 Drawing Copy" referencing Arm1 locally but linked to Arm1 Copy in
+MFGDM, which is why Document Information warns on a disagreement. `DataHub.mfgdmId` is the
+`urn:adsk.ace` id GraphQL wants, so no round trip is needed to get it. Two
+traps on the way: with a drawing active, `activeProduct.productType` and
+`doc.products.item(i).productType` raise `InternalValidationError : adapter`
+(branch on `DrawingDocument`), and on the design a drawing referenced,
+`design.rootDataComponent` was `None` while the preview
+`rootComponent.mfgdmModelId` held the right id -- read the first, fall back
+to the second, through `mfgdm_props.design_model_id()`. Reading only the
+first made Assign Drawing Number refuse the titleblock sync ("source design
+has no MFGDM model id yet") on a design that had one. Probed with the Fusion
+MCP on ADSKMVG91G2F5W, pre-production channel, 2026-10-01; not yet seen on
+Windows or production. -- `commands/docinfo/`,
+`commands/partnumber_shared/mfgdm_props.py`
+
 **Fusion IDs use underscores.** Hyphenated IDs log `Component name contains
 invalid characters` on every launch (benign but floods crash logs). The
 `PT-globparm` parameter-comment sentinel is *data inside users' documents* and

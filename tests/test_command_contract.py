@@ -173,7 +173,8 @@ KNOWN_EXECUTE_ONLY_INPUTLESS = {
     "assemblybuilder": ("command_created",),
     # Same panel; aborts before the dialog on no design / unsaved document.
     "assemblystats": ("command_created",),
-    # Same panel.
+    # Same panel, and the Drawing workspace Power Tools panel
+    # (config.drawing_panel_id), likewise shown only with a drawing open.
     "docinfo": ("command_created",),
     # Design workspace > Manage tab > Power Tools panel (config.manage_panel_id).
     "syncitempartnumber": ("command_created",),

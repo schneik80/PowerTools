@@ -36,13 +36,13 @@ import adsk.core
 import adsk.drawing
 import adsk.fusion
 
-from ... import config
 from ...lib import ptAddInUtils as ptutil
 from .._command_abort import (
     abort_before_dialog,
     clear_abort,
     consume_abort,
 )
+from .._drawing_panel import add_to_drawing_panel, remove_from_drawing_panel
 from ..partnumber_shared import doc_identity, hub_fs, mfgdm_props, pn_cache, schemes
 
 app = adsk.core.Application.get()
@@ -57,13 +57,7 @@ CMD_Description = (
 IS_PROMOTED = True
 
 # Drawing command lives in the Drawing workspace on the built-in
-# FusionDocTab, in our own PowerTools panel.
-WORKSPACE_ID = config.drawing_workspace
-TAB_ID = config.drawing_tab_id
-PANEL_ID = config.drawing_panel_id
-PANEL_NAME = config.drawing_panel_name
-PANEL_AFTER = config.drawing_panel_after
-
+# FusionDocTab, in our own PowerTools panel (commands/_drawing_panel.py).
 ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "")
 
 INPUT_PREVIEW = "ad_preview"
@@ -101,49 +95,20 @@ def start():
     )
     ptutil.add_handler(cmd_def.commandCreated, command_created)
 
-    workspace = ui.workspaces.itemById(WORKSPACE_ID)
-    if workspace is None:
-        ptutil.log(f"[{CMD_NAME}] Workspace {WORKSPACE_ID} not found at start()")
+    # FusionDocTab is built-in to the Drawing workspace; the helper never
+    # creates or deletes it, only our panel on it.
+    if add_to_drawing_panel(cmd_def, CMD_NAME, IS_PROMOTED) is None:
         return
-
-    # FusionDocTab is built-in to the Drawing workspace; we never create it.
-    toolbar_tab = workspace.toolbarTabs.itemById(TAB_ID)
-    if toolbar_tab is None:
-        ptutil.log(
-            f"[{CMD_NAME}] Tab '{TAB_ID}' not found on '{WORKSPACE_ID}' — "
-            f"skipping UI registration."
-        )
-        return
-
-    panel = toolbar_tab.toolbarPanels.itemById(PANEL_ID)
-    if panel is None:
-        panel = toolbar_tab.toolbarPanels.add(PANEL_ID, PANEL_NAME, PANEL_AFTER, False)
-
-    control = panel.controls.addCommand(cmd_def)
-    control.isPromoted = IS_PROMOTED
 
     ptutil.log(f"{CMD_NAME} command started")
 
 
 def stop():
     try:
-        workspace = ui.workspaces.itemById(WORKSPACE_ID)
-        if not workspace:
-            return
-
-        toolbar_tab = workspace.toolbarTabs.itemById(TAB_ID)
-        panel = toolbar_tab.toolbarPanels.itemById(PANEL_ID) if toolbar_tab else None
-        command_control = panel.controls.itemById(CMD_ID) if panel else None
+        remove_from_drawing_panel(CMD_ID, CMD_NAME)
         command_definition = ui.commandDefinitions.itemById(CMD_ID)
-
-        if command_control:
-            command_control.deleteMe()
         if command_definition:
             command_definition.deleteMe()
-        # Delete our panel when it's empty, but never touch FusionDocTab — it
-        # is a native Fusion tab and belongs to the Drawing workspace.
-        if panel and panel.controls.count == 0:
-            panel.deleteMe()
 
         ptutil.log(f"{CMD_NAME} command stopped")
     except Exception as exc:
@@ -523,10 +488,7 @@ def _sync_drawing_number_to_source_design(
         if source_design is None:
             return "Titleblock sync skipped: source document has no Design product."
 
-        try:
-            model_id = source_design.rootDataComponent.mfgdmModelId or ""
-        except Exception:
-            model_id = ""
+        model_id = mfgdm_props.design_model_id(source_design)
         if not model_id:
             return (
                 "Titleblock sync skipped: source design has no MFGDM model "

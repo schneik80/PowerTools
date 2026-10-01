@@ -6,10 +6,10 @@
 |---|---|
 | **Command ID** | `PTND_assignDrawingNumber` |
 | **Registry** | group `document` (`Document Tools`); enabled by default; not beta |
-| **UI location** | Drawing workspace (`FusionDocumentationEnvironment`) → built-in tab `FusionDocTab` → panel `PT_DrawingPowerTools` ("Power Tools"), which this command creates when absent and appends at the end of the tab (`PANEL_AFTER = ""`); promoted button |
+| **UI location** | Drawing workspace (`FusionDocumentationEnvironment`) → built-in tab `FusionDocTab` → panel `PT_DrawingPowerTools` ("Power Tools"), shared with Document Information through [`_drawing_panel`](architecture.md#_drawing_panel) and appended at the end of the tab (`config.drawing_panel_after = ""`); promoted button |
 | **Files** | `commands/assigndrawingnumber/entry.py`; `resources/` (16/32/64 px light + dark icons) |
-| **Shared helpers** | [`partnumber_shared`](architecture.md#partnumber_shared) (`hub_fs`, `pn_cache`, `schemes`, `mfgdm_props`); [`_command_abort`](architecture.md#_command_abort) (`abort_before_dialog`, `consume_abort`, `clear_abort`); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.require_document`, `log`, `handle_error`](architecture.md#general_utils); `config.drawing_*` ids ([config](architecture.md#config)) |
-| **Tests** | `tests/test_command_icons.py` (icon set pin); `tests/test_command_contract.py`; `tests/test_command_abort.py` |
+| **Shared helpers** | [`partnumber_shared`](architecture.md#partnumber_shared) (`hub_fs`, `pn_cache`, `schemes`, `mfgdm_props`); [`_command_abort`](architecture.md#_command_abort) (`abort_before_dialog`, `consume_abort`, `clear_abort`); [`_drawing_panel`](architecture.md#_drawing_panel); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.require_document`, `log`, `handle_error`](architecture.md#general_utils); `config.drawing_*` ids ([config](architecture.md#config)) |
+| **Tests** | `tests/test_command_icons.py` (icon set pin); `tests/test_command_contract.py`; `tests/test_command_abort.py`; `tests/test_partnumber_shared_design_model_id.py` |
 
 ## Purpose
 
@@ -17,8 +17,8 @@ Reserves the next `DWG-NNNNNN` number from the hub-wide Pn-Cache counter file an
 
 ## How it is wired
 
-- `start()`: `addButtonDefinition(CMD_ID, ...)` with the resources folder; `ptutil.add_handler(cmd_def.commandCreated, command_created)`; looks up the Drawing workspace and the built-in `FusionDocTab`. If either is missing, the definition stays registered but no control is placed (logged). Otherwise `toolbarPanels.add(PANEL_ID, PANEL_NAME, "", False)` when the panel does not exist, then `panel.controls.addCommand(cmd_def)` with `isPromoted = True`.
-- `stop()`: deletes the control, the definition, and the panel only when `panel.controls.count == 0`. The tab is never touched.
+- `start()`: `addButtonDefinition(CMD_ID, ...)` with the resources folder; `ptutil.add_handler(cmd_def.commandCreated, command_created)`; `_drawing_panel.add_to_drawing_panel(cmd_def, CMD_NAME, True)`, which finds or creates the panel on the built-in `FusionDocTab` and adds the promoted control. If the Drawing workspace or the tab is missing, the definition stays registered but no control is placed (logged).
+- `stop()`: `_drawing_panel.remove_from_drawing_panel(CMD_ID, CMD_NAME)` removes the control and the panel only once it is empty (Document Information shares it); then deletes the definition. The tab is never touched.
 - `command_created(args)`:
   1. `ptutil.require_document(CMD_NAME, "drawing", saved=True)` is `None` (it shows the standard message: "Assign Drawing Number needs a drawing open. Open a drawing, then retry." or "Assign Drawing Number needs a saved drawing. Save the drawing, then retry."; see [Document preconditions](architecture.md#document-preconditions)) → `abort_before_dialog(CMD_ID, CMD_NAME, "no saved drawing")` and return. `doc = app.activeDocument`.
   2. `_read_existing_drawing_number(doc)` reads attribute group `PowerTools.PartNumber`, name `assigned`.
@@ -33,7 +33,7 @@ Reserves the next `DWG-NNNNNN` number from the hub-wide Pn-Cache counter file an
 
 1. `drawing_doc.documentReferences` empty → log and return "" (no source design; not an error).
 2. `refs.item(0)` — Fusion drawings reference at most one 3D design. `ref.referencedDocument` is used when the design is already open; otherwise `app.documents.open(ref.dataFile, False)` opens it invisibly and `opened_by_us` is set.
-3. `Design.cast(source_doc.products.itemByProductType("DesignProductType"))`; `source_design.rootDataComponent.mfgdmModelId` empty → return the "cloud metadata not ready — save the source design and retry" text.
+3. `Design.cast(source_doc.products.itemByProductType("DesignProductType"))`; `mfgdm_props.design_model_id(source_design)` (`rootDataComponent.mfgdmModelId`, falling back to `rootComponent.mfgdmModelId`) empty → return the "cloud metadata not ready — save the source design and retry" text.
 4. `mfgdm_props.set_component_custom_property(model_id, "Drawing Number", number_str)`. `PropertyNotFoundError` → `_missing_custom_property_html()` (HTML with a link to `DRAWING_NUMBER_SETUP_URL`, which is still the placeholder `https://example.com/drawing-number-setup`); `MfgdmPropsError` → short text; anything else → `ptutil.handle_error` + generic text.
 5. `finally`: when `opened_by_us`, `source_doc.close(False)`.
 
@@ -84,7 +84,7 @@ flowchart TD
     F -- no --> G{"referencedDocument open?"}
     G -- no --> H["app.documents.open(dataFile, False)"]
     G -- yes --> I
-    H --> I{"rootDataComponent.mfgdmModelId?"}
+    H --> I{"mfgdm_props.design_model_id()?"}
     I -- empty --> W["'cloud metadata not ready' text"]
     I -- set --> J["mfgdm_props.set_component_custom_property()"]
     J -- PropertyNotFoundError --> K["_missing_custom_property_html()"]
@@ -106,8 +106,9 @@ flowchart TD
 - `tests/test_command_icons.py` — pins the `assigndrawingnumber` icon set (16/32/64 px, light + dark; no `-disabled` variant) and that it differs from every other pinned set.
 - `tests/test_command_contract.py` — registry row, `CMD_Description`, docs pair, `CMD_ID` shape; also pins the two `time.sleep` calls in `partnumber_shared/pn_cache.py` as known exceptions to rule 2 (`KNOWN_TIME_SLEEP_SITES`).
 - `tests/test_command_abort.py` — the AST guard that `command_created` never calls `doExecute`, and the abort-flag semantics this command relies on.
+- `tests/test_partnumber_shared_design_model_id.py` — `mfgdm_props.design_model_id` falls back to `rootComponent.mfgdmModelId` when `rootDataComponent` is `None`, the case that skipped the titleblock sync on a source design that had an id.
 
-Nothing exercises the hub, the attribute write, or the MFGDM mutation. `entry.py` and every `partnumber_shared` module except `schemes.py` are Fusion-bound and are not exercised by the suite; nothing here is verified in Fusion on this branch except by the AST guards in `tests/test_command_contract.py` and `tests/test_command_abort.py`, which import it under the `adsk` stub.
+Nothing exercises the hub, the attribute write, or the MFGDM mutation. `entry.py` and every `partnumber_shared` module except `schemes.py` and `mfgdm_props.design_model_id` are Fusion-bound and are not exercised by the suite; nothing here is verified in Fusion on this branch except by the AST guards in `tests/test_command_contract.py` and `tests/test_command_abort.py`, which import it under the `adsk` stub.
 
 ## Learnings
 

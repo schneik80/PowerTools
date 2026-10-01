@@ -69,7 +69,7 @@ Most commands live on the **Utilities** tab of the Design workspace, in the **Po
 
 | Command | Location | Description |
 | --- | --- | --- |
-| [Document Information](./docs/Document%20Information.md) | Design › Utilities › Power Tools | Hub, project, folder and version identifiers of the active document, with a warning when saving would migrate it to a newer Fusion build. |
+| [Document Information](./docs/Document%20Information.md) | Design › Utilities › Power Tools; Drawing › Power Tools | Hub, project, folder, version and MFGDM identifiers of the active design or drawing, with a warning when saving would migrate it to a newer Fusion build. |
 | [History](./docs/Document%20History.md) | Quick Access Toolbar | The document's version history as day rows: a track per author, saves on a clock axis, elapsed time between days. |
 | [Version Diff](./docs/Version%20Diff.md) | Design › Utilities › Power Tools | Compare the timeline of two versions of the active design in an HTML report. Off by default. |
 | [Assign Part Numbers](./docs/Assign%20Part%20Numbers.md) | Design › Utilities › Power Tools | Hub-unique sequential part numbers (PRT, ASY, WLD, COT, TOL) for the design and its local components. |

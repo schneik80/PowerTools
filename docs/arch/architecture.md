@@ -31,7 +31,7 @@ suite stubs `adsk` and proves pure logic only (see
   - [Custom graphics](#custom-graphics)
 - [Shared modules](#shared-modules)
   - [Root modules](#root-modules): [`command_registry`](#command_registry), [`settings_store`](#settings_store), [`config`](#config)
-  - [Command infrastructure](#command-infrastructure): [`commands/__init__`](#commands__init__), [`_ui_bootstrap`](#_ui_bootstrap), [`_command_abort`](#_command_abort), [`_menu_plan`](#_menu_plan), [`_inspect_panels`](#_inspect_panels), [`partnumber_shared`](#partnumber_shared)
+  - [Command infrastructure](#command-infrastructure): [`commands/__init__`](#commands__init__), [`_ui_bootstrap`](#_ui_bootstrap), [`_command_abort`](#_command_abort), [`_menu_plan`](#_menu_plan), [`_inspect_panels`](#_inspect_panels), [`_drawing_panel`](#_drawing_panel), [`partnumber_shared`](#partnumber_shared)
   - [`lib/ptAddInUtils` (`ptutil`)](#libptaddinutils-ptutil): [`general_utils`](#general_utils), [`event_utils`](#event_utils), [`selection_utils`](#selection_utils), [`json_utils`](#json_utils), [`ui_utils`](#ui_utils), [`cache_utils`](#cache_utils), [`upload_utils`](#upload_utils), [`recents_utils`](#recents_utils), [`fusion_recents`](#fusion_recents), [`intent_icons`](#intent_icons), [`log_utils`](#log_utils), [`attributes_utils`](#attributes_utils), [`date_utils`](#date_utils)
 - [UI access points](#ui-access-points)
 - [State on disk](#state-on-disk)
@@ -71,6 +71,7 @@ PowerTools/
 │   ├── _command_abort.py       # bail out of commandCreated without doExecute
 │   ├── _menu_plan.py           # positional keep/remove rule for the dynamic flyouts (adsk-free)
 │   ├── _inspect_panels.py      # discovers Fusion's Inspect panels at runtime
+│   ├── _drawing_panel.py       # the Drawing workspace's Power Tools panel
 │   ├── preferences/            # infrastructure command; always started first
 │   ├── partnumber_shared/      # library shared by the three part/drawing-number commands
 │   └── <module>/               # one folder per registered command (55 of them)
@@ -531,7 +532,7 @@ at import time (rule 12; `general_utils._refresh_flags` re-reads lazily).
 |---|---|---|
 | 1 flags / identity | `DEBUG`, `PERF_TRACE`, `WAIT_FOR_DEBUGGER`, `DEBUGGER_PORT`, `DEBUGGER_BLOCK_UNTIL_ATTACHED`, `ADDIN_NAME`, `COMPANY_NAME`, `ADDIN_PATH`, `CACHE_PATH` | `DEBUG = os.path.isfile(<root>/.debug)`; `WAIT_FOR_DEBUGGER = DEBUG` |
 | 2 shared panel | `design_workspace`, `tools_tab_id`, `my_tab_name`, `my_panel_id` (`PT_Power Tools`), `my_panel_name`, `my_panel_after` | Consumed by `_ui_bootstrap` |
-| 3 Drawing tab | `drawing_workspace`, `drawing_tab_id` (`FusionDocTab`), `drawing_panel_id` (`PT_DrawingPowerTools`), ... | Built-in tab; the command adds/removes only its panel |
+| 3 Drawing tab | `drawing_workspace`, `drawing_tab_id` (`FusionDocTab`), `drawing_panel_id` (`PT_DrawingPowerTools`), ... | Built-in tab; consumed by [`_drawing_panel`](#_drawing_panel), which adds/removes only our panel |
 | 3b Manage tab | `manage_tab_id` (`ManageTab`), `manage_panel_id` (`PT_ManagePowerTools`), ... | Present only with the Manage Extension |
 | 3c Animation | `animation_*_candidates`, `animation_*_names`, `resolve_animation_workspace_id()`, `get_or_create_animation_panel(workspace_id)` | Unpublished ids (`Publisher3DEnvironment`, tab `Animation`, anchor `PublisherViewPanel`) pinned with a name fallback that logs every candidate it saw |
 | 3d Manufacture | `manufacture_workspace_candidates`, `resolve_manufacture_workspace_id()` | Watched by Match Units; nothing is placed there |
@@ -651,6 +652,21 @@ Inspect panels are discovered by walking the tab tree rather than listed.
 Enforces: rule 10 (the panels are built in). Tests: none (Fusion-bound).
 Used by: `matchunits`, `measurepath`.
 
+#### `_drawing_panel`
+
+`commands/_drawing_panel.py`. The Drawing workspace's own "Power Tools" panel
+(`config.drawing_panel_id`) on the built-in `FusionDocTab`. Whichever command
+starts first creates the panel; whichever stops last deletes it once it is
+empty, so start/stop order between its commands does not matter.
+
+| Name | Semantics |
+|---|---|
+| `add_to_drawing_panel(cmd_def, cmd_name, is_promoted=False)` | Find or create the panel, add the control unless present; returns the control, or `None` (logged) when the workspace or tab is missing |
+| `remove_from_drawing_panel(cmd_id, cmd_name)` | Remove the control, then the panel if it is empty; never the tab; never raises |
+
+Enforces: rule 10 (`FusionDocTab` is built in). Tests: none (Fusion-bound).
+Used by: `assigndrawingnumber`, `docinfo`.
+
 #### `partnumber_shared`
 
 `commands/partnumber_shared/`. Library for `assignpartnumbers`,
@@ -662,7 +678,7 @@ Used by: `matchunits`, `measurepath`.
 | `pn_cache.py` | `download_snapshot(folder, tmp_dir)`, `upload_snapshot(...)`, `commit_assignments(...)`, `default_tmp_dir()` | Optimistic-retry read/modify/write of the counter file (download, compute, upload, verify latest, up to 3 retries). Waits with `ptutil.wait_for_upload`; carries two of the three recorded `time.sleep` sites |
 | `intent.py` | `is_fusion_auto_pn(pn)`, `intent_of_design(design)`, `intent_of_component(component, parent_intent)`, `has_local_components(design)`, `iter_targets(design)`, `mfgdm_model_id(component)`, `targets_missing_model_id(targets)` | Which components can receive a number; `Target` records |
 | `schemes.py` | `prefixes_for_intent(intent_value)`, `format_number(prefix, n)` | Prefix + monotonic counter; no `adsk` |
-| `mfgdm_props.py` | `gql(query, variables)`, `set_component_custom_property(model_id, name, value)`, `fetch_item_part_hub(model_id, timestamp)`, `is_part_number_shared(hub_id, part_number)` | `mfgdm://v3` GraphQL; anchor on `rootDataComponent.mfgdmModelId`, pass `component.hub.id`, never `app.data.activeHub.id`; model-id access must not run from `commandCreated` |
+| `mfgdm_props.py` | `gql(query, variables)`, `design_model_id(design)`, `set_component_custom_property(model_id, name, value)`, `fetch_item_part_hub(model_id, timestamp)`, `is_part_number_shared(hub_id, part_number)` | `mfgdm://v3` GraphQL; anchor on `design_model_id()` (`rootDataComponent.mfgdmModelId`, else `rootComponent.mfgdmModelId`), pass `component.hub.id`, never `app.data.activeHub.id`; model-id access must not run from `commandCreated` |
 
 Tests: none of these modules has a direct test (the contract test walks them
 for `PT*_` literals and `time.sleep`). Used by: `assigndrawingnumber`,
@@ -884,7 +900,7 @@ panels are never deleted; only our controls and our own panels are.
 | Power Tools panel, Design workspace, Tools tab | `FusionSolidEnvironment` / `ToolsTab` / `PT_Power Tools` | `_ui_bootstrap` | see [`_ui_bootstrap`](#_ui_bootstrap) |
 | QAT File dropdown | `QAT` / `FileSubMenuCommand` | Fusion | `preferences` (retries from `documentActivated`), `scriptsmanager` (before `PT_preferences`), `closealldocuments` and `refresh` (after `ExportCommand`), `exportsysml` (before `ExportCommand`), `openrecent` (flyout after the native Open control, probed) |
 | QATRight Share flyout | `QATRight` / `shareDropMenu` | `shareDocument` (`addDropDown`); removed by `remove_from_qat_right_flyout` when empty | the six Share commands |
-| Drawing tab panel | `FusionDocumentationEnvironment` / `FusionDocTab` / `PT_DrawingPowerTools` | `assigndrawingnumber` | `assigndrawingnumber` |
+| Drawing tab panel | `FusionDocumentationEnvironment` / `FusionDocTab` / `PT_DrawingPowerTools` | first of its commands to start, via `_drawing_panel`; removed when empty | `assigndrawingnumber`, `docinfo` |
 | Manage tab panel | `FusionSolidEnvironment` / `ManageTab` / `PT_ManagePowerTools` | `syncitempartnumber`; skipped when the tab is absent | `syncitempartnumber` |
 | Animation tab panel | `Publisher3DEnvironment` / `Animation` / `PT_AnimationPowerTools` after `PublisherViewPanel` | `animationnamedview` via `config.get_or_create_animation_panel` | `animationnamedview` |
 | Inspect panels, every design-product workspace | discovered | Fusion; controls via `_inspect_panels` | `measurepath`, `matchunits` |

@@ -10,18 +10,22 @@
 import os
 
 import adsk.core
+import adsk.drawing
 import adsk.fusion
 
 from ... import config
 from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
+from .._drawing_panel import add_to_drawing_panel, remove_from_drawing_panel
+from ..partnumber_shared import mfgdm_props
+from . import mfgdm_status
 
 app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Document Information"
 CMD_ID = "PTND_docinfo"
-CMD_Description = "Show the hub, project, folder and version identifiers of the active document, and warn when saving it would migrate it to the running Fusion build."
+CMD_Description = "Show the hub, project, folder, version and MFGDM identifiers of the active design or drawing, and warn when saving it would migrate it to the running Fusion build."
 IS_PROMOTED = True
 
 # Global variables by referencing values from /config.py
@@ -60,6 +64,10 @@ def start():
         # Now you can set various options on the control such as promoting it to always be shown.
         control.isPromoted = IS_PROMOTED
 
+    # And to the Drawing workspace's Power Tools panel, shared with Assign
+    # Drawing Number.
+    add_to_drawing_panel(cmd_def, CMD_NAME, IS_PROMOTED)
+
 
 # Executed when add-in is stopped.
 def stop():
@@ -71,6 +79,8 @@ def stop():
     # Delete the button command control
     if command_control:
         command_control.deleteMe()
+
+    remove_from_drawing_panel(CMD_ID, CMD_NAME)
 
     # Delete the command definition
     if command_definition:
@@ -90,45 +100,99 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     )
 
 
+def _design_of(doc):
+    """The Design product of *doc*, or None.
+
+    Never ask a drawing for its products' ``productType``: on a DrawingDocument
+    it raises ``InternalValidationError : adapter`` (ADSKMVG91G2F5W,
+    pre-production, 2026-10-01). Callers branch on DrawingDocument first.
+    """
+    try:
+        return adsk.fusion.Design.cast(
+            doc.products.itemByProductType("DesignProductType")
+        )
+    except Exception:
+        return None
+
+
+def _drawing_mfgdm(doc, hub) -> tuple[str, bool]:
+    """MFGDM block for a drawing: the DrawingItem, then its source design."""
+    item = mfgdm_status.item_summary(
+        mfgdm_props.gql, hub.mfgdmId or "", doc.dataFile.id or ""
+    )
+
+    source_name = source_lineage = ""
+    source_model = None
+    refs = doc.documentReferences
+    if refs and refs.count > 0:
+        # A drawing references at most one 3D design (see Assign Drawing Number).
+        ref = refs.item(0)
+        source_name = ref.dataFile.name or ""
+        source_lineage = ref.dataFile.id or ""
+        # Never open the source design here; report what is already loaded.
+        source_doc = ref.referencedDocument
+        design = _design_of(source_doc) if source_doc else None
+        if design is None:
+            source_model = {"status": mfgdm_status.NOT_LOADED}
+        else:
+            source_model = mfgdm_status.model_summary(
+                mfgdm_props.gql, mfgdm_props.design_model_id(design)
+            )
+
+    return mfgdm_status.render_drawing(item, source_name, source_lineage, source_model)
+
+
 def command_execute(args: adsk.core.CommandCreatedEventArgs):
     ui = None
     try:
         app = adsk.core.Application.get()
         ui = app.userInterface
-        design = ptutil.require_document(CMD_NAME, "design", saved=True)
-        if design is None:
+        doc = ptutil.require_document(CMD_NAME, "document", saved=True)
+        if doc is None:
             return
 
-        root_name = design.rootComponent.name  # Get root component name.
-        mTitle = f"{root_name} Document Info"
+        is_drawing = isinstance(doc, adsk.drawing.DrawingDocument)
+        design = None if is_drawing else _design_of(doc)
+        if not is_drawing and design is None:
+            ui.messageBox(
+                ptutil.document_required_message(CMD_NAME, "design"), CMD_NAME
+            )
+            return
 
-        docHub = app.data.activeHub.id
-        docHubName = app.data.activeHub.name
+        data_file = doc.dataFile
+        title_name = doc.name if is_drawing else design.rootComponent.name
+        mTitle = f"{title_name} Document Info"
 
-        docProject = app.activeDocument.dataFile.parentProject.id
-        docProjectName = app.activeDocument.dataFile.parentProject.name
+        # The document's own hub, not the Data Panel's active one: MFGDM needs
+        # this hub's mfgdmId, and the two can differ.
+        hub = data_file.parentProject.parentHub
+        docHub = hub.id
+        docHubName = hub.name
 
-        docFolder = app.activeDocument.dataFile.parentFolder.id
-        if app.activeDocument.dataFile.parentFolder.isRoot:
+        docProject = data_file.parentProject.id
+        docProjectName = data_file.parentProject.name
+
+        docFolder = data_file.parentFolder.id
+        if data_file.parentFolder.isRoot:
             docFolderName = "Project Root"
         else:
-            docFolderName = app.activeDocument.dataFile.parentFolder.name
+            docFolderName = data_file.parentFolder.name
 
-        rootTest = app.activeDocument.dataFile.parentFolder
-        docPath = f"{app.activeDocument.dataFile.parentFolder.name}"
+        rootTest = data_file.parentFolder
+        docPath = f"{data_file.parentFolder.name}"
         while not rootTest.isRoot:
             nextFolder = rootTest.parentFolder.name
             docPath = f"{nextFolder} / {docPath}"
             rootTest = rootTest.parentFolder
 
-        docPath = f"{docPath} / {app.activeDocument.dataFile.name}"
-        docID = app.activeDocument.dataFile.id
-        docName = app.activeDocument.dataFile.name
-        docVersion = app.activeDocument.dataFile.versionNumber
-        docVersions = app.activeDocument.dataFile.latestVersionNumber
-        # docVersionUser = app.activeDocument.dataFile.lastUpdatedBy.displayName
-        docVersionComment = app.activeDocument.dataFile.description
-        docVersionBuild = app.activeDocument.version
+        docPath = f"{docPath} / {data_file.name}"
+        docID = data_file.id
+        docName = data_file.name
+        docVersion = data_file.versionNumber
+        docVersions = data_file.latestVersionNumber
+        # docVersionUser = data_file.lastUpdatedBy.displayName
+        docVersionComment = data_file.description
+        docVersionBuild = doc.version
         appVersionBuild = app.version
 
         resultString = (
@@ -146,15 +210,29 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
             f"<b>Version Build:</b> Saved by Fusion build {docVersionBuild} (current build is {appVersionBuild})"
         )
 
-        if app.activeDocument.version == app.version:
-            VersionMigration = False
-            messageIcon = 2
-        else:
-            VersionMigration = True
-            messageIcon = 3
+        # MFGDM queries are cloud round trips; one repaint so the busy
+        # indicator shows (rule 2 allows no more).
+        progress = ui.progressBar
+        progress.showBusy(f"{CMD_NAME} - checking MFGDM...")
+        adsk.doEvents()
+        try:
+            if is_drawing:
+                mfgdmHtml, mfgdmWarn = _drawing_mfgdm(doc, hub)
+            else:
+                mfgdmHtml, mfgdmWarn = mfgdm_status.render_design(
+                    mfgdm_status.model_summary(
+                        mfgdm_props.gql, mfgdm_props.design_model_id(design)
+                    )
+                )
+        finally:
+            progress.hide()
+        resultString += mfgdmHtml
+
+        VersionMigration = doc.version != app.version
+        messageIcon = 3 if (VersionMigration or mfgdmWarn) else 2
 
         if VersionMigration:
-            mTitle = f"{root_name} Document Info - Document will migrate on save"
+            mTitle = f"{title_name} Document Info - Document will migrate on save"
             resultString += (
                 f"<br>"
                 f"<br>"

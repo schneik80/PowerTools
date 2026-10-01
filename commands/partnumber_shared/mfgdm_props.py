@@ -94,6 +94,27 @@ def _gql(query: str, variables: Optional[dict] = None) -> dict:
     return parsed.get("data", {})
 
 
+def design_model_id(design) -> str:
+    """The timeless MFGDM model id of *design*'s root, or "" if Fusion has none.
+
+    ``rootDataComponent.mfgdmModelId`` first. On a design opened as a drawing's
+    source reference, ``rootDataComponent`` came back None while the preview
+    ``rootComponent.mfgdmModelId`` held the id MFGDM's ``tipRootModel.id``
+    matched (ADSKMVG91G2F5W, pre-production, 2026-10-01), so that is the
+    fallback. Never call from ``commandCreated`` (234b043).
+    """
+    try:
+        data_component = design.rootDataComponent
+        if data_component and data_component.mfgdmModelId:
+            return str(data_component.mfgdmModelId)
+    except Exception:
+        pass
+    try:
+        return str(design.rootComponent.mfgdmModelId or "")
+    except Exception:
+        return ""
+
+
 # ---------------------------------------------------------------------------
 # Queries / mutations
 # ---------------------------------------------------------------------------
