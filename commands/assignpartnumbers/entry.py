@@ -550,7 +550,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
         # intent.iter_targets already dedupes on -- for Design.findEntityByToken
         # afterwards. The root component is re-read from the Design directly.
         before = doc_identity.identity_of(app.activeDocument)
-        pre_tokens: List[str] = [_component_token(t.component) for t, _ in to_assign]
+        pre_tokens: List[str] = [
+            intent_mod.component_token(t.component) for t, _ in to_assign
+        ]
 
         # Commit to pn-cache.json with optimistic retry.
         updated_by = _current_user_id()
@@ -671,14 +673,6 @@ def command_execute(args: adsk.core.CommandEventArgs):
         _pending_error_message = deferred_error
 
     ptutil.log(f"{CMD_NAME} execute: return (dialog will close)")
-
-
-def _component_token(component: adsk.fusion.Component) -> str:
-    """``entityToken`` of *component*, or "" when the read fails."""
-    try:
-        return component.entityToken or ""
-    except Exception:
-        return ""
 
 
 def _reacquire_design(

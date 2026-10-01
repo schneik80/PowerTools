@@ -147,7 +147,7 @@ def iter_targets(design: adsk.fusion.Design) -> List[Target]:
             comp = occ.component
             if comp is None:
                 continue
-            token = _safe_token(comp)
+            token = component_token(comp)
             if token and token in seen_tokens:
                 continue
             if token:
@@ -241,7 +241,8 @@ def targets_missing_model_id(targets: List[Target]) -> List[Target]:
     return missing
 
 
-def _safe_token(component: adsk.fusion.Component) -> str:
+def component_token(component: adsk.fusion.Component) -> str:
+    """The component's entityToken, or "" when the handle cannot be read."""
     try:
         return component.entityToken or ""
     except Exception:
