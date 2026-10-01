@@ -119,6 +119,24 @@ What the probe *did* show is that the open fires `documentOpened` into every
 other command -- see "Document events fire for documents that are not the
 user's" below. -- #10
 
+**`CommandDefinition.deleteMe()` fails silently on a definition whose command
+is in flight; never delete-then-add a per-item definition, reuse it in
+place.** Open Recent rebuilt its flyout by deleting every item definition and
+adding them again. Opening a document *from the flyout itself* fires
+`documentActivated` synchronously inside that item's `commandCreated`; the
+rebuild then tried to delete the very definition that was running, `deleteMe()`
+returned False without raising (the reference says "will fail", not "throws"),
+and `addButtonDefinition` raised "a command definition with that id already
+exists" -- caught, logged, menu left half-built. A second defect compounded
+it: the "unchanged, skip" signature was stored *before* the build, so the next
+identical event froze the damage. Now `menu_plan.py` owns the id range,
+definitions are positional and reused (`name`/`tooltip`/`toolClipFilename` are
+writable), `_remove_item` re-queries instead of trusting the bool and parks
+refusals in `_leftover_ids` (which disables the fast path), and the signature
+is stored only after completion; one `commandCreated` handler per definition
+reads the slot's current target at click time. Favorites still uses the old
+delete-then-add shape (review item 36). -- #29
+
 **A control placed in `start()` may silently not exist; retry from
 `documentActivated`.** Symptom: Preferences unreachable for a whole session when
 Fusion started with no document (QAT not resolvable at load) -- a soft lockout,

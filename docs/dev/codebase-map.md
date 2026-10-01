@@ -84,7 +84,7 @@ are not repeated per row.
 | document | `docopen` | `Show In Location.md` | — | — | settings; no control (document events); ships disabled |
 | document | `favorites` | `Favorites.md` | — | — | QAT top-level dropdown; `cache/favorites_<hub>.json`; three `commandCreated` handlers |
 | document | `matchunits` | `Match Units.md` | `logic.py`, `mfg.py` | `test_matchunits_{logic,mfg_logic}.py` | settings (2 prompts); Inspect panels; two independent Timer -> custom event deferrals; `resourceFolder` swap |
-| document | `openrecent` | `Open Recent.md` | — | — | QAT File flyout, probed placement; items open from `commandCreated` |
+| document | `openrecent` | `Open Recent.md` | `menu_plan.py` | `test_openrecent_menu.py` | QAT File flyout, probed placement; positional, reused item definitions; items open from `commandCreated` |
 | document | `versiondiff` | `Version Diff.md` | `timeline_model.py`, `feature_icons.py`, `html_report.py` | — | ships disabled; abort pattern |
 | exports | `exportbomcsv` | `Export BOM.md` | — | `test_csv_injection.py` | |
 | exports | `exportmermaid` | `Export Mermaid.md` | — | — | |

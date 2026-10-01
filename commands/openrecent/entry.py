@@ -25,6 +25,8 @@ import adsk.core
 
 from ...lib import ptAddInUtils as ptutil
 from ...lib.ptAddInUtils import recents_utils as recents
+from . import menu_plan
+from .menu_plan import EMPTY_ITEM_ID
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -33,10 +35,10 @@ CMD_NAME = "Open Recent"
 CMD_Description = "Add a flyout to the File menu that lists your recently used documents, with location and thumbnail on hover, and opens one on click."
 
 # The flyout control (a DropDownControl nested in the File dropdown) and the
-# per-item command definitions it holds.
+# per-item command definitions it holds. The item ids are positional
+# (``PT_openrecent_item_0`` is the newest entry) and live in menu_plan.py with
+# the rest of the adsk-free rebuild logic.
 DROPDOWN_ID = "PT_openrecent_dropdown"
-ITEM_ID_PREFIX = "PT_openrecent_item_"
-EMPTY_ITEM_ID = "PT_openrecent_empty"
 
 # Max entries shown in the flyout. The cache itself holds up to
 # recents.RECENT_LIMIT; the menu is capped shorter to stay quick to scan.
@@ -67,12 +69,16 @@ _PREFERENCES_CMD_ID = "PT_preferences"
 
 local_handlers = []
 
-# Module state: the flyout control, the IDs of its dynamic item command
-# definitions, and a signature of the last-built list so we can skip a rebuild
-# when the visible recents have not changed (documentActivated fires on every
-# tab switch).
+# Module state: the flyout control; the definitions this module instance has
+# wired a commandCreated handler to (so a rebuild updates them in place and
+# never attaches a second handler); what each positional button opens right
+# now; ids whose deleteMe() did not take and must be retried; and a signature
+# of the last *completed* build so a rebuild can be skipped when the visible
+# recents have not changed (documentActivated fires on every tab switch).
 _dropdown = None
-_item_cmd_ids: list[str] = []
+_owned_ids: set[str] = set()
+_item_targets: dict[str, tuple[str, str]] = {}
+_leftover_ids: set[str] = set()
 _last_signature = None
 
 
@@ -129,7 +135,7 @@ def start():
 
 
 def stop():
-    global _dropdown, _item_cmd_ids, local_handlers, _last_signature
+    global _dropdown, local_handlers, _last_signature
 
     _clear_items()
     file_dd = _qat_file_dropdown()
@@ -139,7 +145,9 @@ def stop():
             ctrl.deleteMe()
 
     _dropdown = None
-    _item_cmd_ids = []
+    _owned_ids.clear()
+    _item_targets.clear()
+    _leftover_ids.clear()
     _last_signature = None
     local_handlers = []
 
@@ -244,25 +252,108 @@ def _dump_file_menu_ids(file_dd) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _all_item_ids() -> list[str]:
+    """Every id this flyout can ever own, whatever an earlier build tracked."""
+    return [menu_plan.item_cmd_id(i) for i in range(MENU_LIMIT)] + [EMPTY_ITEM_ID]
+
+
 def _clear_items() -> None:
-    """Delete the dynamic item controls and their command definitions."""
-    global _item_cmd_ids
-    ids = _item_cmd_ids + [EMPTY_ITEM_ID]
+    """Delete every item control and command definition the flyout can own.
+
+    Works from the full id range rather than a record of the last build, so it
+    also sweeps up what an unclean reload or a half-finished rebuild left
+    behind (rule 10: start()/stop() idempotent).
+    """
+    for cmd_id in _all_item_ids():
+        _remove_item(cmd_id)
+    _item_targets.clear()
+
+
+def _remove_item(cmd_id: str) -> None:
+    """Delete *cmd_id*'s control and definition; remember it if Fusion refuses.
+
+    ``deleteMe()`` reports failure by returning False, not by raising, and
+    does so when the definition's own command is in flight (the rebuild runs
+    inside the item's commandCreated — see menu_plan.py). A survivor is noted
+    in ``_leftover_ids`` so the next rebuild retries instead of skipping on an
+    unchanged signature. Its handler stays attached, so it stays in
+    ``_owned_ids`` and is updated in place if its slot is needed again.
+    """
+    _item_targets.pop(cmd_id, None)
+    survived = False
     if _dropdown is not None:
-        for cmd_id in ids:
-            ctrl = _dropdown.controls.itemById(cmd_id)
-            if ctrl:
-                ctrl.deleteMe()
-    for cmd_id in ids:
+        ctrl = _dropdown.controls.itemById(cmd_id)
+        if ctrl:
+            ctrl.deleteMe()
+            if _dropdown.controls.itemById(cmd_id):
+                survived = True
+    cmd_def = ui.commandDefinitions.itemById(cmd_id)
+    if cmd_def:
+        cmd_def.deleteMe()
+        if ui.commandDefinitions.itemById(cmd_id):
+            survived = True
+    if survived:
+        _leftover_ids.add(cmd_id)
+        ptutil.log(f"{CMD_NAME}: '{cmd_id}' refused deletion; will retry.")
+    else:
+        _leftover_ids.discard(cmd_id)
+        _owned_ids.discard(cmd_id)
+
+
+def _ensure_definition(cmd_id: str, name: str, tooltip: str):
+    """Return the definition for *cmd_id* showing *name*/*tooltip*.
+
+    Reuses the definition if this module instance already owns it (its
+    commandCreated handler is attached and routes through ``_item_targets``,
+    so only the text changes). A definition this instance did not create —
+    left by an unclean reload, with a handler from a dead module — is deleted
+    and recreated when Fusion allows, else adopted. Never calls
+    ``addButtonDefinition`` for an id that is still present.
+    """
+    cmd_def = ui.commandDefinitions.itemById(cmd_id)
+    if cmd_def and cmd_id not in _owned_ids:
+        cmd_def.deleteMe()
         cmd_def = ui.commandDefinitions.itemById(cmd_id)
         if cmd_def:
-            cmd_def.deleteMe()
-    _item_cmd_ids = []
+            ptutil.log(f"{CMD_NAME}: adopting foreign definition '{cmd_id}'.")
+    if cmd_def:
+        cmd_def.name = name
+        cmd_def.tooltip = tooltip
+    else:
+        cmd_def = ui.commandDefinitions.addButtonDefinition(
+            cmd_id, name, tooltip, ICON_FOLDER
+        )
+    if cmd_id not in _owned_ids:
+        ptutil.add_handler(
+            cmd_def.commandCreated,
+            _make_open_handler(cmd_id),
+            local_handlers=local_handlers,
+        )
+        _owned_ids.add(cmd_id)
+    return cmd_def
+
+
+def _ensure_control(cmd_def, after_id: str = ""):
+    """Return *cmd_def*'s control in the flyout, adding it after *after_id*
+    (or at the end) when it is not there yet."""
+    ctrl = _dropdown.controls.itemById(cmd_def.id)
+    if ctrl:
+        return ctrl
+    if after_id and _dropdown.controls.itemById(after_id):
+        return _dropdown.controls.addCommand(cmd_def, after_id, False)
+    return _dropdown.controls.addCommand(cmd_def)
 
 
 def _rebuild_menu() -> None:
-    """Repopulate the flyout from the recents list, newest-first."""
-    global _item_cmd_ids, _last_signature
+    """Bring the flyout in line with the recents list, newest-first.
+
+    Buttons are positional (slot 0 = newest), so an unchanged slot count means
+    text updates only; the plan from ``menu_plan.plan_menu`` says which slots
+    to keep and which to remove. ``_last_signature`` is cleared before the
+    work and set only after it completes, so an exception midway leaves a
+    state the next document event rebuilds rather than one it skips.
+    """
+    global _last_signature
 
     if _dropdown is None:
         return
@@ -277,67 +368,48 @@ def _rebuild_menu() -> None:
         file_types=None,
     )
 
-    # Skip the rebuild (and its command-definition churn) when nothing visible
-    # changed — documentActivated fires on every tab switch. ``version`` is in
-    # the signature so a re-saved document refreshes its tool-clip.
-    signature = tuple(
-        (
-            it["dataFileId"],
-            it["name"],
-            it.get("location", ""),
-            it.get("version", ""),
-            bool(it.get("thumbPath")),
-        )
-        for it in items
-    )
-    if signature == _last_signature and _dropdown.controls.count > 0:
+    # Skip the rebuild when nothing visible changed — documentActivated fires
+    # on every tab switch — unless a previous pass has deletions to retry.
+    signature = menu_plan.menu_signature(items)
+    if (
+        signature == _last_signature
+        and _dropdown.controls.count > 0
+        and not _leftover_ids
+    ):
         return
-    _last_signature = signature
+    _last_signature = None
 
-    _clear_items()
+    keep, remove = menu_plan.plan_menu(len(items), MENU_LIMIT)
+    for cmd_id in remove:
+        _remove_item(cmd_id)
 
     if not items:
-        cmd_def = ui.commandDefinitions.addButtonDefinition(
-            EMPTY_ITEM_ID,
-            "No recent documents",
-            "Recently used documents appear here as you open and work on them.",
-            ICON_FOLDER,
+        cmd_def = _ensure_definition(
+            EMPTY_ITEM_ID, menu_plan.EMPTY_LABEL, menu_plan.EMPTY_TOOLTIP
         )
-        ctrl = _dropdown.controls.addCommand(cmd_def)
+        ctrl = _ensure_control(cmd_def)
         try:
             ctrl.isEnabled = False  # a non-actionable placeholder
         except Exception:
             pass
+        _last_signature = signature
         return
 
-    for i, item in enumerate(items):
-        cmd_id = f"{ITEM_ID_PREFIX}{i}"
-        name = item["name"] or "Untitled"
-        location = item.get("location", "")
+    previous_id = ""
+    for cmd_id, item in zip(keep, items, strict=True):
+        name = menu_plan.item_label(item)
         # The tooltip carries the document's Data Panel location; the tool-clip
         # image carries its cached thumbnail.
-        tooltip = location or "Recently used document"
+        cmd_def = _ensure_definition(cmd_id, name, menu_plan.item_tooltip(item))
+        try:
+            cmd_def.toolClipFilename = item.get("thumbPath", "") or ""
+        except Exception:
+            pass
+        _item_targets[cmd_id] = (item["dataFileId"], name)
+        _ensure_control(cmd_def, previous_id)
+        previous_id = cmd_id
 
-        existing = ui.commandDefinitions.itemById(cmd_id)
-        if existing:
-            existing.deleteMe()
-        cmd_def = ui.commandDefinitions.addButtonDefinition(
-            cmd_id, name, tooltip, ICON_FOLDER
-        )
-        thumb_path = item.get("thumbPath", "")
-        if thumb_path:
-            try:
-                cmd_def.toolClipFilename = thumb_path
-            except Exception:
-                pass
-
-        ptutil.add_handler(
-            cmd_def.commandCreated,
-            _make_open_handler(item["dataFileId"], name),
-            local_handlers=local_handlers,
-        )
-        _dropdown.controls.addCommand(cmd_def)
-        _item_cmd_ids.append(cmd_id)
+    _last_signature = signature
 
 
 # ---------------------------------------------------------------------------
@@ -345,8 +417,13 @@ def _rebuild_menu() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _make_open_handler(df_id: str, name: str):
-    """Return a commandCreated handler that opens *df_id* when clicked.
+def _make_open_handler(cmd_id: str):
+    """Return a commandCreated handler that opens whatever *cmd_id* shows now.
+
+    The target is looked up in ``_item_targets`` at click time, not captured
+    when the handler is made: the definition is positional and reused across
+    rebuilds, so one handler per definition serves every document that slot
+    ever displays.
 
     The open happens directly in commandCreated, deliberately not by way of the
     command's execute event. Fusion runs commands through a document-scoped
@@ -359,7 +436,11 @@ def _make_open_handler(df_id: str, name: str):
     """
 
     def _created(args: adsk.core.CommandCreatedEventArgs):
-        _open_recent(df_id, name)
+        target = _item_targets.get(cmd_id)
+        if target is None:
+            ptutil.log(f"{CMD_NAME}: '{cmd_id}' has no target; ignoring click.")
+            return
+        _open_recent(*target)
 
     return _created
 
