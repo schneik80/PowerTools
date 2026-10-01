@@ -269,8 +269,11 @@ def command_execute(args: adsk.core.CommandEventArgs):
     try:
         doc = app.activeDocument
         if not isinstance(doc, adsk.drawing.DrawingDocument):
-            deferred_error = "Active document is no longer a drawing."
-            return
+            # Raise through the DocumentChanged path so command_destroy shows
+            # the message; a bare return skipped the stash below (#31).
+            raise doc_identity.DocumentChanged(
+                "Active document is no longer a drawing."
+            )
 
         # The dialog already showed the user an inline warning and the
         # existing number when one was present, so no modal confirmation is
