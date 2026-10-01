@@ -74,25 +74,18 @@ def stop():
 def command_created(args: adsk.core.CommandCreatedEventArgs):
     ptutil.log(f"{CMD_NAME} Command Created Event")
 
-    # Connect to the events that are needed by this command.
-    ptutil.add_handler(
-        args.command.execute, command_execute, local_handlers=local_handlers
-    )
     ptutil.add_handler(
         args.command.destroy, command_destroy, local_handlers=local_handlers
     )
 
-
-def command_execute(args: adsk.core.CommandCreatedEventArgs):
-    # this handles the document close and reopen
-    ui = None
+    # No inputs, so the work runs here: the control sits in the File dropdown,
+    # which exists with no document open, and execute never fires in that
+    # state (rule 1, #16). Launching Fusion's own command from commandCreated
+    # is the scriptsmanager pattern; #25 pilots it here before Export BOM and
+    # Export Mermaid follow.
     try:
-        app = adsk.core.Application.get()
-        ui = app.userInterface
-        cmdDefs = ui.commandDefinitions
-        autosave = cmdDefs.itemById("AutoSaveFilesCommand")
+        autosave = ui.commandDefinitions.itemById("AutoSaveFilesCommand")
         autosave.execute()
-
     except Exception:
         ptutil.handle_error(CMD_NAME, show_message_box=True)
 
