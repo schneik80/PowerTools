@@ -154,7 +154,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 1,
                 2,
             )
-            exit(0)
+            if not wasShared:
+                progressBar.hide()
+            return
 
         # Copy the shared link to the clipboard
         ptutil.clipText(shareLink)
