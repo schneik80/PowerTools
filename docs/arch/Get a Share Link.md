@@ -23,7 +23,7 @@ Turns sharing on for the active document if it is off, copies the public share l
 - The body (formerly `command_execute`), in order:
   1. `isShareAllowed = ui.commandDefinitions.itemById("SimpleSharingPublicLinkCommand").controlDefinition.isEnabled` (the hub's sharing policy).
   2. [`ptutil.isSaved()`](architecture.md#general_utils) false → return (it shows the "Please Save" prompt).
-  3. `not isShareAllowed` → `clipText(app.activeDocument.designDataFile.fusionWebURL)`, message "Sharing is not allowed … A private perma-link was copied", return.
+  3. `not isShareAllowed` → `clipText(app.activeDocument.dataFile.fusionWebURL)`, message "Sharing is not allowed … A private perma-link was copied", return.
   4. `shareState = app.activeDocument.dataFile.sharedLink`; `wasShared = shareState.isShared`. Not shared → `ui.progressBar.showBusy("Generating Share Link")`, `shareState.isShared = True`.
   5. `shareLink = shareState.linkURL`; empty → log, `progressBar.hide()`, message "Failed to share the document.", `return` (issue #9 replaced an `exit(0)` here).
   6. `clipText(shareLink)`; builds an HTML result: already shared / now shared, the link, then `shareState.isDownloadAllowed` and `shareState.isPasswordRequired` notes; when `app.activeProduct.productType == "DesignProductType"` and `has_external_child_reference(rootComponent)` (recursive over `occurrences`, true on any `isReferencedComponent`), a note whose wording depends on whether download is allowed. `progressBar.hide()`, `ui.messageBox(resultString, "Share Document", 0, 2)`.
@@ -44,7 +44,7 @@ flowchart TD
     B --> C{"ptutil.isSaved()?"}
     C -- no --> X1["return"]
     C -- yes --> D{"sharing enabled on the hub?"}
-    D -- no --> E["clipText(designDataFile.fusionWebURL)<br/>messageBox: private permalink copied"]
+    D -- no --> E["clipText(dataFile.fusionWebURL)<br/>messageBox: private permalink copied"]
     D -- yes --> F{"dataFile.sharedLink.isShared?"}
     F -- no --> G["progressBar.showBusy()<br/>sharedLink.isShared = True"]
     F -- yes --> H["wasShared = True"]
@@ -63,7 +63,7 @@ flowchart TD
 |---|---|
 | `ui.commandDefinitions.itemById("SimpleSharingPublicLinkCommand").controlDefinition.isEnabled` | Whether the hub allows public sharing |
 | `app.activeDocument.dataFile.sharedLink` | `SharedLink`: `isShared` (read and set), `linkURL`, `isDownloadAllowed`, `isPasswordRequired` |
-| `app.activeDocument.designDataFile.fusionWebURL` | Private permalink copied when sharing is disabled |
+| `app.activeDocument.dataFile.fusionWebURL` | Private permalink copied when sharing is disabled; `dataFile` (not `designDataFile`) so drawings, electronics and every other saved document type work |
 | `app.activeProduct.rootComponent` / `Occurrence.isReferencedComponent` | External-reference detection in `has_external_child_reference` |
 | `ui.progressBar.showBusy` / `hide` | Busy indicator while the link is generated |
 

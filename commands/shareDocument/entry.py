@@ -116,7 +116,10 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     isShareAllowed = shareCmdDef.controlDefinition.isEnabled
 
     if not isShareAllowed:
-        permLink = app.activeDocument.designDataFile.fusionWebURL
+        # dataFile, not designDataFile: every saved document has one (drawings,
+        # electronics projects, PCBs, schematics); designDataFile is None for
+        # anything that is not a design (#30).
+        permLink = app.activeDocument.dataFile.fusionWebURL
         ptutil.clipText(permLink)
         ui.messageBox(
             "Sharing is not allowed. Please check if your Team Hub Administrator has disabled sharing.<br><br>A private perma-link was copied to clipboard instead. This link will only allow Team hub members access to the document details page.",
