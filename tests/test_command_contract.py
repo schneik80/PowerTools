@@ -149,7 +149,7 @@ KNOWN_CLOSE_IN_EXECUTE_SITES = {
 }
 
 # Every registered dialog command registers ``.execute``; the input-less,
-# palette and event-only entry files do not (rule 1). 28 files register one as
+# palette and event-only entry files do not (rule 1). 29 files register one as
 # of 2026-09-30 (38 before issue #16 moved eight QAT launchers into
 # commandCreated, one fewer after #22 removed a Sketch-panel command); a walk
 # that sees fewer than this has broken, not found a clean tree.
@@ -181,6 +181,10 @@ KNOWN_EXECUTE_ONLY_INPUTLESS = {
     "timelinecompute": ("command_created",),
     # Design workspace > Solid tab > Create panel (SolidCreatePanel).
     "mirrorderive": ("command_created",),
+    # QAT File dropdown, after PLM360SaveAsLatestOnQATCommand: reachable with
+    # no document open; the activeProduct guard is in execute and never runs
+    # there. Found in the issue #16 sweep, not fixed.
+    "autosave": ("command_created",),
     # QAT File dropdown, before ExportCommand: same shape, same gap.
     "exportbomcsv": ("command_created",),
     # QAT File dropdown, before ExportCommand: same shape, same gap.

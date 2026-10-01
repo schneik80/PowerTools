@@ -10,7 +10,7 @@ Every cloud save in Fusion makes a new version, and on a shared assembly every n
 
 ## Prerequisites
 
-- At least one open document. The menu item is available on the start screen, but Fusion's recovery save has nothing to write with no document open.
+- A document must be open.
 
 ## Where to find it
 
