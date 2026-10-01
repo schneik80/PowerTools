@@ -8,7 +8,7 @@
 | **Registry** | group `partmodeling` (`Part Modeling`); enabled by default |
 | **UI location** | Design workspace, **Solid** tab (`SolidTab`), **Inspect** panel (`InspectPanel`); appended at the end of the panel with `addCommand(cmd_def, "", True)`, not promoted. Only this one Inspect panel, unlike Measure Path, which uses [`_inspect_panels`](architecture.md#_inspect_panels) to reach every design tab. `CMD_AFTER = "InterferenceCheckCommand"` is defined but never passed as a `positionID`. |
 | **Files** | `commands/timelinecompute/entry.py`; `resources/` PNG icons (16/32/64, light and dark); `resources/bar/sequence/000.svg` … `100.svg` (101 percentage-bar images referenced from the report) |
-| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `ptutil.handle_error`](architecture.md#general_utils); [`config.design_workspace`](architecture.md#config) |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `ptutil.handle_error`, `ptutil.require_document`](architecture.md#general_utils); [`config.design_workspace`](architecture.md#config) |
 | **Tests** | none module-specific (see [Tests](#tests)) |
 
 ## Purpose
@@ -21,7 +21,7 @@ Produces an HTML report of the compute time of every feature in a parametric des
 - `stop()`: deletes the control and the definition; the trailing delete-if-empty branches for the panel and the tab cannot fire on built-in containers that still hold Fusion's own controls.
 - `command_created(args)`: registers `execute` → `command_execute` and `destroy` → `command_destroy`. No `CommandInputs`, so Fusion's default `isAutoExecute` runs the command immediately; the Solid tab is only reachable with a design open, so `execute` does fire ([why that matters](architecture.md#acting-from-commandcreated-when-there-are-no-inputs)).
 - `command_execute(args)`, in order:
-  1. `doc_name = app.activeDocument.name`; cast `app.activeProduct` to `Design` (message box and return otherwise); if `design.designType == DirectDesignType`, message box and return.
+  1. `design = ptutil.require_document(CMD_NAME, "design")` (`None` → it has shown the standard message; return), then `doc_name = app.activeDocument.name`; if `design.designType == DirectDesignType`, message box and return.
   2. `features_data = app.executeTextCommand("fusion.DumpFeaturesByComputeTime /csv")`.
   3. `_create_temp_csv_file(features_data)` writes it to `tempfile.gettempdir()/<secrets.token_urlsafe(8)>.csv`.
   4. `_calculate_total_compute_time(csv_path)`: `csv.reader`, skip the header, sum `float(row[2])`; malformed rows are logged and skipped.

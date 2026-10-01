@@ -53,7 +53,10 @@ settings key.**
    contact.
 8. Preferences changes apply on the next Fusion restart -- the gating runs in
    `commands.start()` only. Say so in the docs if relevant.
-9. Precondition failures before the dialog: `_command_abort.abort_before_dialog()`
+9. Document preconditions go through `ptutil.require_document(CMD_NAME, kind,
+   saved=...)` -- it returns the Document/Design/Drawing or shows the one
+   standard message; never write "must be active" yourself (a contract test
+   rejects it). Failing before the dialog: `_command_abort.abort_before_dialog()`
    + return with no inputs; never `args.command.doExecute()` (segfault,
    14871d7). `consume_abort()` in `execute`, `clear_abort()` in `destroy`.
 10. Commands only usable together go in `settings_store.COMMAND_SETS` (one

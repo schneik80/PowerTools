@@ -61,13 +61,30 @@ command dereferences the document session unconditionally, and the API lets
 you execute it with none. The old `execute`-based code was only safe by
 accident (rule 1: `execute` never fired without a document). The rule that
 follows: before any `CommandDefinition.execute()` or `executeTextCommand` of a
-native command, check its precondition -- `ptutil.is_user_document(
-app.activeDocument)`, `isSaved()`, whatever the command needs -- and return
-with a message if it fails. `scriptsmanager` is fine because its command needs
-nothing. Change Share Settings and Get and Update (#16) sit behind `isSaved()`,
-which is the right guard; the with-document case is still to be confirmed in
-Fusion. The pilot was reverted; Local Recovery Save, Export BOM and Export
-Mermaid can move to `commandCreated` with that guard first. -- #25
+native command, check its precondition with `ptutil.require_document()`
+(which runs `is_user_document` first) and return if it fails. `scriptsmanager`
+is fine because its command needs nothing. Change Share Settings and Get and
+Update (#16) sit behind `require_document(..., saved=True)`; the with-document
+case is still to be confirmed in Fusion. Local Recovery Save, Export BOM and
+Export Mermaid run from `commandCreated` behind that guard. -- #25
+
+**One precondition gate, one sentence: `ptutil.require_document()`.** By
+2026-10-01 some 35 command entry points checked "is there a design / a saved
+document" by hand, with at least nine wordings ("A Fusion 3D Design must be
+active", "No active Fusion design", "A Design Must be Active.", "needs an open
+design", the `isSaved()` "Please Save" box ...) and three different checks.
+Two were wrong on the start screen, where #16 and #25 put the checks:
+Refresh read `app.activeDocument.dataFile` unguarded (AttributeError instead
+of a message) and Link Global Parameters' `getattr(doc, "isSaved", True)`
+passed with no document at all. `require_document(cmd_name, kind, saved)`
+returns the `Document` / `Design` / `Drawing` or shows
+`<Command> needs a <kind> open. Open or create a <kind>, then retry.` (a
+drawing is only "opened"; unsaved gets `needs a saved <kind>`); `isSaved()`
+is gone. A command with its own lookup (Match Units finds the design in any
+workspace) uses `document_required_message()` for the text only.
+`test_command_contract.py::test_no_handwritten_document_precondition_messages`
+fails on a new hand-written variant. Checks inside a running batch are not
+preconditions and keep reporting through the batch's own log.
 
 **Never call `args.command.doExecute()` from `commandCreated`.** It runs inside
 `CommandDefinition::createCommand`, so `doExecute(True)` *or* `doExecute(False)`

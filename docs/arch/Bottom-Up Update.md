@@ -8,7 +8,7 @@
 | **Registry** | group `assembly` (`Assembly`); enabled by default |
 | **UI location** | Power Tools panel (`config.my_panel_id`, Design workspace, Tools tab) via [`_ui_bootstrap.get_power_tools_panel`](architecture.md#_ui_bootstrap); not promoted. Three-tab command dialog (Main, Visibility, Logging) plus a `ProgressDialog` during the run |
 | **Files** | `commands/bottomupupdate/entry.py` (dialog, processing loop, resume log), `commands/bottomupupdate/document_dag.py` (`adsk`-free document DAG — see [Bottom-Up Update Dependency Ordering](Bottom-Up%20Update%20Dependency%20Ordering.md)); `resources/` PNG set |
-| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `isSaved`, `pump_events_for`, `handle_error`](architecture.md#general_utils); [`ptutil.wait_for_upload`](architecture.md#upload_utils); [`default_log_directory`, `open_live_log_viewer`](architecture.md#log_utils) |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `require_document`, `pump_events_for`, `handle_error`](architecture.md#general_utils); [`ptutil.wait_for_upload`](architecture.md#upload_utils); [`default_log_directory`, `open_live_log_viewer`](architecture.md#log_utils) |
 | **Tests** | `tests/test_bottomupupdate_document_dag.py`, `tests/test_bottomupupdate_dag.py`, `tests/test_bottomupupdate_resume.py`, `tests/test_bottomupupdate_autosave.py`, `tests/test_bottomupupdate_config_label.py`, `tests/test_bottomupupdate_stray_docs.py`, `tests/test_bottomupupdate_update_contexts.py`, `tests/test_bottomupupdate_enable_timeline.py`, `tests/test_bottomupupdate_hide_ucs.py` |
 
 ## Purpose
@@ -31,8 +31,10 @@ mitigation for that.
 - `command_created`: registers `execute -> command_execute`,
   `inputChanged -> on_input_changed`, `destroy -> command_destroy`; stores the
   globals `product`, `design`, `title`. Guards, each a `messageBox` and return
-  before any input is added: no `Design`; `activeDocument.documentReferences.count
-  == 0`; `ptutil.isSaved()` false. Then computes the resume plan —
+  before any input is added: `design = ptutil.require_document(CMD_NAME,
+  "design", saved=True)` is `None` (it shows the standard message, see
+  [Document preconditions](architecture.md#document-preconditions));
+  `activeDocument.documentReferences.count == 0`. Then computes the resume plan —
   `document_bottom_up_order(design.rootComponent)` → doc-id list →
   `_analyze_resume_state(_default_temp_log_path(), app.version, ids)` — and
   builds the dialog:

@@ -136,28 +136,21 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
     # Get the active Fusion product and cast to Design for manipulation
     product = app.activeProduct
-    design = adsk.fusion.Design.cast(product)
     # Title for dialogs and messages
     title = CMD_NAME
 
-    # Check a Design document is active. No inputs are built on any of the
-    # three bail-outs below, so Fusion auto-executes; flag it so
-    # command_execute skips its work instead of reading inputs that do not
-    # exist.
-    if not design:
-        ui.messageBox("A Fusion 3D Design must be active", title)
-        abort_before_dialog(CMD_ID, CMD_NAME, "no active design")
+    # Check a saved Design document is active. No inputs are built on either
+    # bail-out below, so Fusion auto-executes; flag it so command_execute
+    # skips its work instead of reading inputs that do not exist.
+    design = ptutil.require_document(CMD_NAME, "design", saved=True)
+    if design is None:
+        abort_before_dialog(CMD_ID, CMD_NAME, "no saved design")
         return
 
     # Check if there are any references to update
     if app.activeDocument.documentReferences.count == 0:
         ui.messageBox("No document references found", title)
         abort_before_dialog(CMD_ID, CMD_NAME, "no document references")
-        return
-
-    # Check that the active document has been saved.
-    if not ptutil.isSaved():
-        abort_before_dialog(CMD_ID, CMD_NAME, "document is not saved")
         return
 
     resume_plan = {
@@ -1001,10 +994,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
         write_log_entry(entry)
 
     try:
-        design = app.activeProduct
+        design = ptutil.require_document(CMD_NAME, "design")
         appVersionBuild = app.version  # Store Fusion version for save comments
-        if not isinstance(design, adsk.fusion.Design):
-            ui.messageBox("No active Fusion design")
+        if design is None:
             return
 
         # Keep the starting/top document open throughout command execution.

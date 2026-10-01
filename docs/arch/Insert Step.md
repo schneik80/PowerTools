@@ -8,7 +8,7 @@
 | **Registry** | group `assembly` (`Assembly`); enabled by default. Registered before `assemblypalette`, whose launch button anchors on this control id |
 | **UI location** | Design workspace (`FusionSolidEnvironment`), two panels from `TABS`: ASSEMBLY tab › INSERT panel (`InsertAssemblePanel`) and SOLID tab › Insert panel (`InsertPanel`). Tab and panel are created when absent; the control is appended with no `positionID`; not promoted |
 | **Files** | `commands/insertSTEP/entry.py`; `resources/16x16.png`, `32x32.png`, `64x64.png` (no dark or disabled variants) |
-| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`](architecture.md#general_utils) |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`, `require_document`](architecture.md#general_utils) |
 | **Tests** | none module-specific |
 
 ## Purpose
@@ -31,8 +31,9 @@ dialog of its own, so all of its work happens in `commandCreated`.
   panel can become empty; Fusion's own panels keep their native controls.
 - `command_created` — the whole command, following
   [Acting from commandCreated when there are no inputs](architecture.md#acting-from-commandcreated-when-there-are-no-inputs):
-  casts `app.activeProduct` to `Design` (else `messageBox("No active Fusion
-  design")` and return); `ui.createFileDialog()` with title `Fusion Insert
+  `ptutil.require_document(CMD_NAME, "design")` (`None` → it has shown "Insert
+  STEP File needs a design open. Open or create a design, then retry." and the
+  handler returns); `ui.createFileDialog()` with title `Fusion Insert
   STEP`, single select, filter `STEP Files(*.stp;*.STP;*.step;*.STEP);;All files
   (*.*)`; on `DialogOK` wraps the path in double quotes and runs
   `app.executeTextCommand(f"Fusion.ImportComponent {filename}")`. Exceptions go

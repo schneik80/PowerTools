@@ -248,7 +248,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         # _load_templates_for_hub already showed an error message.
         return
 
-    if not ptutil.isSaved():
+    if ptutil.require_document(CMD_NAME, saved=True) is None:
         return
 
     # Define the dialog for command

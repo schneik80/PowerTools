@@ -503,23 +503,15 @@ def _navigate(urn: str, display: str) -> None:
 def _add_favorite_created(args: adsk.core.CommandCreatedEventArgs):
     # The whole command runs here; no execute handler is registered. With no
     # document open Fusion never raises execute (issue #16), which is exactly
-    # when the "No active document found" message below has to be shown.
+    # when the "needs a saved document" message below has to be shown.
     ptutil.log(f"{CMD_NAME}: Add Favorite command created")
     _add_favorite()
 
 
 def _add_favorite():
     try:
-        doc = app.activeDocument
-        if not doc:
-            ui.messageBox("No active document found.", "Favorites")
-            return
-
-        if not doc.isSaved:
-            ui.messageBox(
-                "The active document must be saved to Fusion Hub before it can be added to Favorites.",
-                "Favorites",
-            )
+        doc = ptutil.require_document(CMD_ADD_NAME, saved=True)
+        if doc is None:
             return
 
         data_file = doc.dataFile

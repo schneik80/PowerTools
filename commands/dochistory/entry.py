@@ -242,16 +242,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     """
     ptutil.log(f"{CMD_NAME} Command Created Event")
 
-    try:
-        doc = app.activeDocument
-    except Exception:
-        doc = None
-    if doc is None:
-        ui.messageBox("Open a document to see its version history.", CMD_NAME, 0, 2)
-        return
-
     # The version history lives in the cloud, so an unsaved document has none.
-    if not ptutil.isSaved():
+    doc = ptutil.require_document(CMD_NAME, saved=True)
+    if doc is None:
         return
 
     # The palette is opened by the deferred load, not here: it can only be

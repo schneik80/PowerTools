@@ -10,7 +10,7 @@ SolidWorks and Inventor export a bill of materials straight from the assembly. I
 
 ## Prerequisites
 
-- A design document must be active.
+- A design document must be active. The menu item is available on the start screen too; with no design open it shows a message asking you to open or create one.
 
 ## Where to find it
 

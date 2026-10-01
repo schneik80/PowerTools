@@ -155,14 +155,8 @@ def _read(getter, default=None):
 
 def _export():
     """Validate, ask for a destination, scan the assembly, write both files."""
-    design = adsk.fusion.Design.cast(app.activeProduct)
-    if not design:
-        ui.messageBox(
-            "A Fusion design must be active to export an architecture document.",
-            CMD_NAME,
-            0,
-            2,
-        )
+    design = ptutil.require_document(CMD_NAME, "design")
+    if design is None:
         return
 
     root = design.rootComponent

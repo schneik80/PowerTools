@@ -8,7 +8,7 @@
 | **Registry** | group `assembly` (`Assembly`); enabled by default |
 | **UI location** | QAT **File** dropdown, obtained with [`ptutil.get_qat_file_dropdown`](architecture.md#ui_utils); `addCommand(cmd_def, "ExportCommand", False)` — directly after Fusion's Export entry. The definition is created without an icon folder, so the PNGs in `resources/` are not used |
 | **Files** | `commands/refresh/entry.py`, `commands/refresh/logic.py` (`adsk`-free) |
-| **Shared helpers** | [`ptutil.get_qat_file_dropdown`, `remove_from_qat_file_dropdown`](architecture.md#ui_utils); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`](architecture.md#general_utils) |
+| **Shared helpers** | [`ptutil.get_qat_file_dropdown`, `remove_from_qat_file_dropdown`](architecture.md#ui_utils); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`, `require_document`, `document_required_message`](architecture.md#general_utils) |
 | **Tests** | `tests/test_refresh_logic.py` |
 
 ## Purpose
@@ -19,7 +19,7 @@ Loads the newest Team Hub version of the active document in one step by closing 
 
 - `start()`: `addButtonDefinition(CMD_ID, CMD_NAME, CMD_Description)` (no icon folder), attaches `command_created`, adds the control to the QAT File dropdown after `ExportCommand` when the dropdown resolves. `stop()`: [`ptutil.remove_from_qat_file_dropdown(CMD_ID)`](architecture.md#ui_utils) and deletes the definition.
 - `command_created(args)` does all the work; the command has no inputs ([pattern](architecture.md#acting-from-commandcreated-when-there-are-no-inputs)):
-  1. `app.activeDocument.dataFile is None` → message box (document not saved to the Hub) and return.
+  1. `doc = ptutil.require_document(CMD_NAME, saved=True)` is `None` → return (it shows the standard message, see [Document preconditions](architecture.md#document-preconditions)); `doc.dataFile is None` → the same "Refresh Active Document needs a saved document. Save the document, then retry." message box and return.
   2. `app.data.findFileById(doc.dataFile.id)` → `None` → message box and return.
   3. `logic.display_name(source_file)`, `logic.open_version(doc.dataFile)`, `logic.latest_version(source_file, doc.dataFile)`; the comparison is logged with `logic.refresh_log_message`.
   4. Prompt selection (table below) with `logic.newer_version_available`, `doc.isModified`, `logic.discard_for_newer_prompt`, `logic.discard_to_reload_prompt`, `logic.up_to_date_message`. A Yes/No prompt that is not answered Yes returns.
@@ -61,8 +61,10 @@ The decision tree in `command_created`.
 
 ```mermaid
 flowchart TD
-  CC["command_created()"] --> DF{"dataFile present?"}
-  DF -->|no| M1["messageBox: save to Team Hub first"]
+  CC["command_created()"] --> RD{"require_document(CMD_NAME, saved=True)?"}
+  RD -->|None| M0["return (standard message shown)"]
+  RD -->|document| DF{"dataFile present?"}
+  DF -->|no| M1["messageBox: needs a saved document"]
   DF -->|yes| FF{"findFileById()?"}
   FF -->|none| M2["messageBox: not found in Team Hub"]
   FF -->|found| CMP["logic.latest_version() vs logic.open_version()"]

@@ -99,7 +99,7 @@ Best done once by a Fusion Team administrator:
 |---|---|---|
 | **Hub Not Configured** / **Incorrect Hub** | The active hub has no entry | Run Select Related Data Folder on this hub |
 | **Project Not Found** / **Folder Not Found** | The configured project or folder no longer exists, or the folder is not directly under the project root | Re-run Select Related Data Folder |
-| *The active document must be saved before you can continue.* | Unsaved changes | Save the document |
+| *Create Related Data needs a saved document. Save the document, then retry.* | The document has never been saved | Save the document |
 
 > **Developers:** see the [architecture notes](./arch/Related%20Data.md).
 

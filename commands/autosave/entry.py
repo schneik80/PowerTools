@@ -86,8 +86,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     # AutoSaveFilesCommand dereferences the document session unconditionally
     # and segfaults with no document open (AutoSaveCmd::onExecute ->
     # AssetSession::documentSession, 2026-09-30 CER, #25), so check first.
-    if not ptutil.is_user_document(app.activeDocument):
-        ui.messageBox("Open a document to write a local recovery save.", CMD_NAME)
+    if ptutil.require_document(CMD_NAME) is None:
         return
 
     try:

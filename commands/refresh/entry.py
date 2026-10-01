@@ -53,12 +53,11 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     # Refresh pulls the latest Team Hub version by closing and reopening the
     # active document. Closing first is required so Fusion reloads the file from
     # the Hub instead of re-activating the already-open (stale) copy.
-    doc_a = app.activeDocument
+    doc_a = ptutil.require_document(CMD_NAME, saved=True)
+    if doc_a is None:
+        return
     if doc_a.dataFile is None:
-        ui.messageBox(
-            "The active document must be saved to Team Hub before it can be refreshed.",
-            CMD_NAME,
-        )
+        ui.messageBox(ptutil.document_required_message(CMD_NAME, saved=True), CMD_NAME)
         return
 
     source_file = app.data.findFileById(doc_a.dataFile.id)

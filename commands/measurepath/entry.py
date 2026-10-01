@@ -182,9 +182,8 @@ def command_created(args: adsk.core.CommandCreatedEventArgs) -> None:
     """Build the dialog and wire the per-invocation handlers."""
     global _cmd_inputs, _active_command
     try:
-        design = adsk.fusion.Design.cast(app.activeProduct)
-        if not design:
-            ui.messageBox("Measure Path needs an open design.", CMD_NAME)
+        design = ptutil.require_document(CMD_NAME, "design")
+        if design is None:
             abort_before_dialog(CMD_ID, CMD_NAME, "no open design")
             return
 

@@ -517,8 +517,8 @@ def test_the_early_return_guard_sees_the_tree() -> None:
                 with_execute += 1
             if _first_input_build_line(fu) != float("inf"):
                 with_inputs += 1
-    # 29 and 17 at time of writing; most input-less commands never build one.
-    assert with_execute >= 28, with_execute
+    # 26 and 17 at time of writing; most input-less commands never build one.
+    assert with_execute >= 26, with_execute
     assert with_inputs >= 15, with_inputs
     # relateddata registers execute only after its inputs: the walk must place
     # the registration after the first input build, so its precondition

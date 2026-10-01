@@ -19,19 +19,18 @@ Writes a flat bill of materials for the active design to `<document name>.csv` i
 
 - `start()`: `addButtonDefinition(CMD_ID, CMD_NAME, CMD_Description)`, `command_created` on `commandCreated` (global handler list), then adds the control to the File dropdown before `ExportCommand`.
 - `stop()`: deletes the File-dropdown control and the definition.
-- `command_created(args)`: registers `command_execute` and `command_destroy` in `local_handlers`. It builds **no inputs**, so Fusion auto-executes the command; `command_execute` therefore runs only with a document open (rule 1), and the design check below is the first thing it does.
-- `command_execute(args)`:
-  1. `adsk.fusion.Design.cast(app.activeProduct)`; not a design -> message "A Design Must be Active.", return.
-  2. Reads `docname_` / `showversion_` / `showsubs_` from `command.commandInputs` into the module flags if such inputs exist; none are ever created, so the defaults `showversion = True`, `showsubs = False` always apply.
-  3. Walks `rootComponent.allOccurrences` once. `rows_by_id` maps `Component.id` -> row; a repeat occurrence increments `instances`, a first sighting builds the row: `name` (`comp.name`; the ` v<n>` suffix of a referenced component would be stripped only when `showversion` is false), `pn = comp.partNumber`, `material` = the concatenated `material.name` of every `isSolid` body in `comp.bRepBodies`, `instances = 1`, `sub = occ.childOccurrences.count` (read once per component).
-  4. `resultString = "<document name> BOM\n"` + header `Display Name,Part Number,Material,Count` + `traverseAssembly(bom)`, which with `showsubs` false emits only rows whose `sub < 1` (leaf components); each row is `"name","pn","material",<instances>,EA` — five fields under a four-column header, the unit `EA` being unlabelled. Text cells go through `_csv_cell`.
-  5. Logs the CSV, then `ui.createFolderDialog()`; on `DialogOK` writes `os.path.join(folder, safe_name + ".csv")` where `safe_name` replaces `<>:"/\|?*` in `design.parentDocument.name` with `_`, encoding `utf-8-sig` (the BOM makes Excel read UTF-8; Fusion's Python on Windows would otherwise default to the ANSI code page and raise `UnicodeEncodeError` on, say, a diameter sign). Shows "BOM saved at: <path>". Cancel -> return, nothing written.
-  6. Exceptions -> `ptutil.handle_error(CMD_NAME, show_message_box=True)`.
+- `command_created(args)`: registers `command_destroy`, then `ptutil.require_document(CMD_NAME, "design")`; with no active design it shows the standard message ("Export BOM as CSV needs a design open. Open or create a design, then retry.") and returns. Otherwise it calls `_export_bom(design)` inside a `try`. There are no inputs and no `execute` handler: the control sits in the File dropdown, which exists on the start screen, and `execute` never fires there (rule 1, #25).
+- `_export_bom(design)`:
+  1. No inputs are built, so the module defaults `showversion = True`, `showsubs = False` always apply.
+  2. Walks `rootComponent.allOccurrences` once. `rows_by_id` maps `Component.id` -> row; a repeat occurrence increments `instances`, a first sighting builds the row: `name` (`comp.name`; the ` v<n>` suffix of a referenced component would be stripped only when `showversion` is false), `pn = comp.partNumber`, `material` = the concatenated `material.name` of every `isSolid` body in `comp.bRepBodies`, `instances = 1`, `sub = occ.childOccurrences.count` (read once per component).
+  3. `resultString = "<document name> BOM\n"` + header `Display Name,Part Number,Material,Count` + `traverseAssembly(bom)`, which with `showsubs` false emits only rows whose `sub < 1` (leaf components); each row is `"name","pn","material",<instances>,EA` — five fields under a four-column header, the unit `EA` being unlabelled. Text cells go through `_csv_cell`.
+  4. Logs the CSV, then `ui.createFolderDialog()`; on `DialogOK` writes `os.path.join(folder, safe_name + ".csv")` where `safe_name` replaces `<>:"/\|?*` in `design.parentDocument.name` with `_`, encoding `utf-8-sig` (the BOM makes Excel read UTF-8; Fusion's Python on Windows would otherwise default to the ANSI code page and raise `UnicodeEncodeError` on, say, a diameter sign). Shows "BOM saved at: <path>". Cancel -> return, nothing written.
+  5. Exceptions (caught in `command_created`) -> `ptutil.handle_error(CMD_NAME, show_message_box=True)`.
 - `command_destroy(args)`: resets `local_handlers`.
 
 ## Data and state
 
-- Module-level flags `showversion`, `showsubs`, `docname` (assigned by `command_execute`, effectively constant — see above); `local_handlers`.
+- Module-level flags `showversion`, `showsubs` (constant — no inputs set them); `local_handlers`.
 - Output: the user-chosen folder, `<sanitised document name>.csv`. No caches, settings, custom events or temp files.
 
 ## CSV injection guard

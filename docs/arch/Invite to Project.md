@@ -8,7 +8,7 @@
 | **Registry** | group `share` (`Share Document`); enabled by default |
 | **UI location** | the `shareDropMenu` ("Share Menu") flyout on `QATRight`; appended (`addCommand(cmd_def, "", False)`), fifth in registry start order (issue #21) |
 | **Files** | `commands/projectInvite/entry.py` (no `__init__.py`); `resources/` (16 light/dark and `@2x` variants, 32 light/dark PNGs) |
-| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.isSaved`, `log`, `handle_error`](architecture.md#general_utils); [`ptutil.remove_from_qat_right_flyout`](architecture.md#ui_utils); [`config`](architecture.md#config) (workspace/panel constants are imported but unused) |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.require_document`, `log`, `handle_error`](architecture.md#general_utils); [`ptutil.remove_from_qat_right_flyout`](architecture.md#ui_utils); [`config`](architecture.md#config) (workspace/panel constants are imported but unused) |
 | **Tests** | none beyond `tests/test_command_contract.py` |
 
 ## Purpose
@@ -20,7 +20,7 @@ Opens the Fusion Team "Invite Members" page for the project that holds the activ
 - `start()`: `addButtonDefinition`; `commandCreated` → `command_created`; find-or-create the `shareDropMenu` flyout on `QATRight` (see [Get a Share Link](Get%20a%20Share%20Link.md)); `dropDown.controls.addCommand(cmd_def, "", False)` (appended).
 - `stop()`: [`ptutil.remove_from_qat_right_flyout(CMD_ID, "shareDropMenu")`](architecture.md#ui_utils), then delete the definition.
 - `command_created(args)`: wires `destroy` → `command_destroy`, then runs the whole command inline. No inputs and no `execute` handler: the Share Menu is live with no document open, where Fusion never raises `execute` (issue #16; [pattern](architecture.md#acting-from-commandcreated-when-there-are-no-inputs)).
-- The body (formerly `command_execute`): [`ptutil.isSaved()`](architecture.md#general_utils) false → return. Then, inside a `try` ending in `ptutil.handle_error(CMD_NAME)`: `ui.progressBar.showBusy("Generating Share Link")`; build the URL (below); `ptutil.log` it; `progressBar.hide()`; `webbrowser.open(shareLink)`. No message box is shown.
+- The body (formerly `command_execute`): [`ptutil.require_document(CMD_NAME, saved=True)`](architecture.md#document-preconditions) is `None` → return (it shows the standard message). Then, inside a `try` ending in `ptutil.handle_error(CMD_NAME)`: `ui.progressBar.showBusy("Generating Share Link")`; build the URL (below); `ptutil.log` it; `progressBar.hide()`; `webbrowser.open(shareLink)`. No message box is shown.
 - `command_destroy(args)`: resets `local_handlers`.
 
 ## URL construction

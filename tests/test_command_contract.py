@@ -149,9 +149,10 @@ KNOWN_CLOSE_IN_EXECUTE_SITES = {
 }
 
 # Every registered dialog command registers ``.execute``; the input-less,
-# palette and event-only entry files do not (rule 1). 28 files register one as
-# of 2026-09-30 (38 before issue #16 moved eight QAT launchers into
-# commandCreated, one fewer after #22 removed a Sketch-panel command); a walk
+# palette and event-only entry files do not (rule 1). 26 files register one as
+# of 2026-10-01 (38 before issue #16 moved eight QAT launchers into
+# commandCreated, one fewer after #22 removed a Sketch-panel command, three fewer
+# after #25 moved the QAT File dropdown commands); a walk
 # that sees fewer than this has broken, not found a clean tree.
 MIN_EXECUTE_HANDLER_FILES = 25
 
@@ -162,9 +163,10 @@ MIN_EXECUTE_HANDLER_FILES = 25
 # (favorites' navigate and Add items, the six share-flyout commands,
 # getandupdate, and a since-removed QAT launcher) into commandCreated. The
 # handlers below still do it. Seven sit on Design-workspace toolbar panels, which Fusion only shows
-# with a document open, so the case cannot arise there. Three sit in the QAT
-# File dropdown, live on the start screen, and have the same bug as issue #16:
-# recorded here, not fixed here. {module: (handler, ...)}. Shrinks as sites
+# with a document open, so the case cannot arise there. The three QAT File
+# dropdown commands (autosave, exportbomcsv, exportmermaid) moved to
+# commandCreated behind ptutil.require_document() under #25.
+# {module: (handler, ...)}. Shrinks as sites
 # move; never grows for a new QAT / QATRight item.
 KNOWN_EXECUTE_ONLY_INPUTLESS = {
     # Design workspace > Tools tab > Power Tools panel (config.my_panel_id).
@@ -181,10 +183,6 @@ KNOWN_EXECUTE_ONLY_INPUTLESS = {
     "timelinecompute": ("command_created",),
     # Design workspace > Solid tab > Create panel (SolidCreatePanel).
     "mirrorderive": ("command_created",),
-    # QAT File dropdown, before ExportCommand: same shape, same gap.
-    "exportbomcsv": ("command_created",),
-    # QAT File dropdown, before ExportCommand: same shape, same gap.
-    "exportmermaid": ("command_created",),
 }
 
 # Prefixes in use: PT_, PTAT_, PTND_, PTE_, PTPM_, PTAN_, PTSHD_. The rule
@@ -801,3 +799,93 @@ def test_the_anchor_walk_can_actually_see_anchors():
     which the literal walk deliberately does not see.)"""
     sites = {(module, anchor) for module, anchor, _ in _pt_anchor_sites()}
     assert ("linkGlobalParameters", "PTAT_globalParameters") in sites
+
+
+# --- Document preconditions -------------------------------------------------
+
+# A message box that tells the user a document/design/drawing is missing or
+# unsaved is ptutil.require_document()'s job: one wording, from
+# document_required_message(). These shapes are the hand-written variants it
+# replaced ("A Fusion 3D Design must be active", "No active Fusion design",
+# "requires an active Fusion 3D design", "needs an open design", "must be
+# saved before ..."). A sketch or project precondition is a different check
+# and does not match.
+_HANDWRITTEN_PRECONDITION = re.compile(
+    r"(design|document|drawing)\b[^.]*\bmust be (active|saved)"
+    r"|no active (fusion )?(2d |3d )?(design|document|drawing)"
+    r"|requires an active (fusion )?(2d |3d )?(design|document|drawing)"
+    r"|needs an? (open|active) (design|document|drawing)",
+    re.IGNORECASE,
+)
+
+
+def _message_box_texts():
+    """(path, line, text) for each literal first argument of ``*.messageBox(``
+    under ``commands/``; an f-string contributes its literal parts."""
+    for path in sorted(COMMANDS_DIR.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "messageBox"
+                and node.args
+            ):
+                continue
+            arg = node.args[0]
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                text = arg.value
+            elif isinstance(arg, ast.JoinedStr):
+                text = "".join(
+                    v.value
+                    for v in arg.values
+                    if isinstance(v, ast.Constant) and isinstance(v.value, str)
+                )
+            else:
+                continue
+            yield path.relative_to(REPO_ROOT).as_posix(), node.lineno, text
+
+
+def test_no_handwritten_document_precondition_messages():
+    """Use ptutil.require_document() (or document_required_message() where the
+    lookup is custom, as in matchunits) instead of writing the sentence."""
+    offenders = [
+        f"{path}:{line}: {text!r}"
+        for path, line, text in _message_box_texts()
+        if _HANDWRITTEN_PRECONDITION.search(text)
+    ]
+    assert not offenders, offenders
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "A Fusion 3D Design must be active",
+        "No active Fusion design.",
+        "Version Diff requires an active Fusion 3D design.",
+        "Measure Path needs an open design.",
+        "The active document must be saved before you can continue.",
+    ],
+)
+def test_the_precondition_pattern_catches_the_replaced_wordings(text):
+    """Self-check: the shapes require_document() replaced all still match, so
+    the walk above cannot pass vacuously."""
+    assert _HANDWRITTEN_PRECONDITION.search(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "A sketch must be active before running this command.",
+        "No active Fusion project found.",
+        "There are no open documents to close.",
+    ],
+)
+def test_the_precondition_pattern_leaves_other_checks_alone(text):
+    assert not _HANDWRITTEN_PRECONDITION.search(text)
+
+
+def test_the_message_box_walk_can_see_literals():
+    """Self-check: closealldocuments' literal message is visible to the walk."""
+    texts = {text for _, _, text in _message_box_texts()}
+    assert "There are no open documents to close." in texts

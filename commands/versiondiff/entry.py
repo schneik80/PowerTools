@@ -101,28 +101,10 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     try:
         # --- Phase 1: Validation ---
 
-        # Check document is saved
-        if not app.activeDocument.isSaved:
-            ui.messageBox(
-                "The active document must be saved before you can compare versions.",
-                "Document Not Saved",
-                0,
-                2,
-            )
-            abort_before_dialog(CMD_ID, CMD_NAME, "document not saved")
-            return
-
-        # Check active product is a Fusion 3D design
-        product = app.activeProduct
-        design = adsk.fusion.Design.cast(product)
-        if not design:
-            ui.messageBox(
-                "Version Diff requires an active Fusion 3D design.",
-                "No Design Found",
-                0,
-                2,
-            )
-            abort_before_dialog(CMD_ID, CMD_NAME, "no active 3D design")
+        # Check a saved Fusion 3D design is active
+        design = ptutil.require_document(CMD_NAME, "design", saved=True)
+        if design is None:
+            abort_before_dialog(CMD_ID, CMD_NAME, "no saved design")
             return
 
         # Check design is parametric (has timeline), not direct modeling

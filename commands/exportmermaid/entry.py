@@ -73,68 +73,62 @@ def stop():
 # Function that is called when a user clicks the corresponding button in the UI.
 # This defines the contents of the command dialog and connects to the command related events.
 def command_created(args: adsk.core.CommandCreatedEventArgs):
-    # Connect to the events that are needed by this command.
-    ptutil.add_handler(
-        args.command.execute, command_execute, local_handlers=local_handlers
-    )
     ptutil.add_handler(
         args.command.destroy, command_destroy, local_handlers=local_handlers
     )
 
-
-def command_execute(args: adsk.core.CommandCreatedEventArgs):
-    # this handles the relationship export
+    # No inputs, so the work runs here: the control sits in the File dropdown,
+    # which exists with no document open, and execute never fires in that
+    # state (rule 1, #25). The guard tells the user instead of doing nothing.
+    design = ptutil.require_document(CMD_NAME, "design")
+    if design is None:
+        return
     try:
-        app = adsk.core.Application.get()
-        ui = app.userInterface
-
-        product = app.activeProduct
-        design = adsk.fusion.Design.cast(product)
-        if not design:
-            ui.messageBox("A Design Must be Active.", "Mermaid Export")
-            return
-
-        # Get the root component of the active design.
-        rootComp = design.rootComponent
-
-        # Create the title for the output.
-        parentOcc = design.parentDocument.name
-        resultString = "%%{\ninit: {\n'theme':'base',\n'look': 'classic',\n'layout': 'elk',\n'themeVariables': {\n'primaryColor': '#f0f0f0',\n'primaryBorderColor': '#454F61',\n'lineColor': '#59cff0',\n'tertiaryColor': '#e1ecf5',\n'fontSize': '14px'\n}\n}\n}%%\n"
-        resultString += "graph LR\n"
-        # resultString += sParentOcc + '\n'
-
-        # Call the recursive function to traverse the assembly and build the output string.
-        resultString = traverseAssembly(
-            parentOcc, rootComp.occurrences.asList, 1, resultString
-        )
-
-        # Set styles of file dialog.
-        folderDlg = ui.createFolderDialog()
-        folderDlg.title = "Choose Folder to save Mermaid Graph"
-
-        # Show file save dialog
-        dlgResult = folderDlg.showDialog()
-        if dlgResult == adsk.core.DialogResults.DialogOK:
-            safe_name = re.sub(r'[<>:"/\\|?*]', "_", os.path.basename(parentOcc))
-            filepath = os.path.join(folderDlg.folder, safe_name + ".mmd")
-            # Write the results to the file
-            with open(filepath, "w", encoding="utf-8") as f:
-                f.write(resultString)
-            ui.messageBox("Graph saved at: " + filepath, parentOcc, 0, 2)
-
-            # Encode to base64 and open in Mermaid Live Editor
-            # The live editor expects a JSON state object, not raw mermaid text
-            state = json.dumps(
-                {"code": resultString, "mermaid": json.dumps({"theme": "base"})}
-            )
-            encoded_code = base64.b64encode(state.encode("utf-8")).decode("utf-8")
-            url = f"https://mermaid.live/view#base64:{encoded_code}"
-            webbrowser.open(url)
-        else:
-            return
-
+        _export_mermaid(design)
     except Exception:
         ptutil.handle_error(CMD_NAME, show_message_box=True)
+
+
+def _export_mermaid(design):
+    """Write *design*'s occurrence graph as Mermaid and open it in the live editor."""
+    # Get the root component of the active design.
+    rootComp = design.rootComponent
+
+    # Create the title for the output.
+    parentOcc = design.parentDocument.name
+    resultString = "%%{\ninit: {\n'theme':'base',\n'look': 'classic',\n'layout': 'elk',\n'themeVariables': {\n'primaryColor': '#f0f0f0',\n'primaryBorderColor': '#454F61',\n'lineColor': '#59cff0',\n'tertiaryColor': '#e1ecf5',\n'fontSize': '14px'\n}\n}\n}%%\n"
+    resultString += "graph LR\n"
+    # resultString += sParentOcc + '\n'
+
+    # Call the recursive function to traverse the assembly and build the output string.
+    resultString = traverseAssembly(
+        parentOcc, rootComp.occurrences.asList, 1, resultString
+    )
+
+    # Set styles of file dialog.
+    folderDlg = ui.createFolderDialog()
+    folderDlg.title = "Choose Folder to save Mermaid Graph"
+
+    # Show file save dialog
+    dlgResult = folderDlg.showDialog()
+    if dlgResult == adsk.core.DialogResults.DialogOK:
+        safe_name = re.sub(r'[<>:"/\\|?*]', "_", os.path.basename(parentOcc))
+        filepath = os.path.join(folderDlg.folder, safe_name + ".mmd")
+        # Write the results to the file
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(resultString)
+        ui.messageBox("Graph saved at: " + filepath, parentOcc, 0, 2)
+
+        # Encode to base64 and open in Mermaid Live Editor
+        # The live editor expects a JSON state object, not raw mermaid text
+        state = json.dumps(
+            {"code": resultString, "mermaid": json.dumps({"theme": "base"})}
+        )
+        encoded_code = base64.b64encode(state.encode("utf-8")).decode("utf-8")
+        url = f"https://mermaid.live/view#base64:{encoded_code}"
+        webbrowser.open(url)
+    else:
+        return
 
 
 # This function will be called when the user completes the command.

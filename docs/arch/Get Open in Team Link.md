@@ -8,7 +8,7 @@
 | **Registry** | group `share` (`Share Document`); enabled by default |
 | **UI location** | the `shareDropMenu` ("Share Menu") flyout on `QATRight`; appended (`addCommand(cmd_def, "", False)`) |
 | **Files** | `commands/OpenInTeam/entry.py`; `resources/` (16 light/dark, `16x16@2x-dark`, 32 dark PNGs) |
-| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.isSaved`, `clipText`, `log`, `handle_error`](architecture.md#general_utils); [`ptutil.remove_from_qat_right_flyout`](architecture.md#ui_utils); [`config`](architecture.md#config) (workspace/panel constants are imported but unused) |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.require_document`, `clipText`, `log`, `handle_error`](architecture.md#general_utils); [`ptutil.remove_from_qat_right_flyout`](architecture.md#ui_utils); [`config`](architecture.md#config) (workspace/panel constants are imported but unused) |
 | **Tests** | none beyond `tests/test_command_contract.py` |
 
 ## Purpose
@@ -20,7 +20,7 @@ Copies the active document's Fusion Team web URL to the clipboard so a hub membe
 - `start()`: `addButtonDefinition`; `commandCreated` → `command_created`; find-or-create the `shareDropMenu` flyout on `QATRight` (see [Get a Share Link](Get%20a%20Share%20Link.md)); `dropDown.controls.addCommand(cmd_def, "", False)`.
 - `stop()`: [`ptutil.remove_from_qat_right_flyout(CMD_ID, "shareDropMenu")`](architecture.md#ui_utils), then delete the definition.
 - `command_created(args)`: wires `destroy` → `command_destroy`, then runs the whole command inline. No inputs and no `execute` handler: the Share Menu is live with no document open, where Fusion never raises `execute` (issue #16; [pattern](architecture.md#acting-from-commandcreated-when-there-are-no-inputs)).
-- The body (formerly `command_execute`): [`ptutil.isSaved()`](architecture.md#general_utils) false → return. Then, inside a `try` ending in `ptutil.handle_error(CMD_NAME)`: `ui.progressBar.showBusy("Generating Fusion Team Link")`; `shareLink = app.activeDocument.dataFile.fusionWebURL`; `ptutil.log` it; `clipText(shareLink)`; build the HTML result with `html.escape(app.activeDocument.name)`; when `app.activeProduct.productType == "DesignProductType"` and `has_external_child_reference(rootComponent)` (recursive over `occurrences`, true on any `isReferencedComponent`), append a note that referenced designs may be shared depending on the recipient's permissions; `progressBar.hide()`; `ui.messageBox(resultString, "Share Document", 0, 2)`.
+- The body (formerly `command_execute`): [`ptutil.require_document(CMD_NAME, saved=True)`](architecture.md#document-preconditions) is `None` → return (it shows the standard message). Then, inside a `try` ending in `ptutil.handle_error(CMD_NAME)`: `ui.progressBar.showBusy("Generating Fusion Team Link")`; `shareLink = app.activeDocument.dataFile.fusionWebURL`; `ptutil.log` it; `clipText(shareLink)`; build the HTML result with `html.escape(app.activeDocument.name)`; when `app.activeProduct.productType == "DesignProductType"` and `has_external_child_reference(rootComponent)` (recursive over `occurrences`, true on any `isReferencedComponent`), append a note that referenced designs may be shared depending on the recipient's permissions; `progressBar.hide()`; `ui.messageBox(resultString, "Share Document", 0, 2)`.
 - `command_destroy(args)`: resets `local_handlers`.
 
 ## Data and state

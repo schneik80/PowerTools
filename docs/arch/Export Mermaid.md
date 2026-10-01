@@ -19,13 +19,12 @@ Writes the active design's occurrence tree as a Mermaid `graph LR` flowchart to 
 
 - `start()`: `addButtonDefinition(CMD_ID, CMD_NAME, CMD_Description)`, `command_created` on `commandCreated` (global handler list), then adds the control to the File dropdown before `ExportCommand`.
 - `stop()`: deletes the File-dropdown control and the definition.
-- `command_created(args)`: registers `command_execute` and `command_destroy` in `local_handlers`; builds no inputs, so Fusion auto-executes and `command_execute` runs only with a document open (rule 1).
-- `command_execute(args)`:
-  1. `adsk.fusion.Design.cast(app.activeProduct)`; not a design -> "A Design Must be Active.", return.
-  2. `resultString` = a `%%{init: ...}%%` front-matter block (theme `base`, look `classic`, layout `elk`, five `themeVariables`) + `graph LR\n`.
-  3. `traverseAssembly(design.parentDocument.name, rootComp.occurrences.asList, 1, resultString)` — see below.
-  4. `ui.createFolderDialog()` ("Choose Folder to save Mermaid Graph"); on `DialogOK` writes `os.path.join(folder, safe_name + ".mmd")` (`safe_name` replaces `<>:"/\|?*` in the document name with `_`), UTF-8; shows "Graph saved at: <path>"; then encodes `{"code": <mermaid>, "mermaid": "{\"theme\": \"base\"}"}` as base64 and calls `webbrowser.open("https://mermaid.live/view#base64:<state>")`. Cancel -> return, nothing written and no browser.
-  5. Exceptions -> `ptutil.handle_error(CMD_NAME, show_message_box=True)`.
+- `command_created(args)`: registers `command_destroy`, then `ptutil.require_document(CMD_NAME, "design")`; with no active design it shows the standard message ("Export Mermaid Diagram needs a design open. Open or create a design, then retry.") and returns. Otherwise it calls `_export_mermaid(design)` inside a `try`. There are no inputs and no `execute` handler: the control sits in the File dropdown, which exists on the start screen, and `execute` never fires there (rule 1, #25).
+- `_export_mermaid(design)`:
+  1. `resultString` = a `%%{init: ...}%%` front-matter block (theme `base`, look `classic`, layout `elk`, five `themeVariables`) + `graph LR\n`.
+  2. `traverseAssembly(design.parentDocument.name, rootComp.occurrences.asList, 1, resultString)` — see below.
+  3. `ui.createFolderDialog()` ("Choose Folder to save Mermaid Graph"); on `DialogOK` writes `os.path.join(folder, safe_name + ".mmd")` (`safe_name` replaces `<>:"/\|?*` in the document name with `_`), UTF-8; shows "Graph saved at: <path>"; then encodes `{"code": <mermaid>, "mermaid": "{\"theme\": \"base\"}"}` as base64 and calls `webbrowser.open("https://mermaid.live/view#base64:<state>")`. Cancel -> return, nothing written and no browser.
+  4. Exceptions (caught in `command_created`) -> `ptutil.handle_error(CMD_NAME, show_message_box=True)`.
 - `command_destroy(args)`: resets `local_handlers`.
 
 ### Tree walk

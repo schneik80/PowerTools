@@ -134,7 +134,7 @@ document. Quick routing:
 
 | Need | Use | Reference |
 |---|---|---|
-| Log, wait, clipboard, unsaved check, error trace, perf line | `ptutil.log`, `pump_events_for`, `clipText`, `isSaved`, `handle_error`, `perf_timer` | [`general_utils`](../arch/architecture.md#general_utils) |
+| Log, wait, clipboard, document precondition, error trace, perf line | `ptutil.log`, `pump_events_for`, `clipText`, `require_document`, `handle_error`, `perf_timer` | [`general_utils`](../arch/architecture.md#general_utils) |
 | Connect any Fusion event | `ptutil.add_handler(event, cb, *, name, local_handlers)` | [`event_utils`](../arch/architecture.md#event_utils) |
 | Read a `SelectionCommandInput` | `ptutil.capture_selections` in `inputChanged`, then `picked` / `picked_one` | [`selection_utils`](../arch/architecture.md#selection_utils) |
 | Read/write JSON state | `ptutil.read_json`, `write_json_atomic` | [`json_utils`](../arch/architecture.md#json_utils) |

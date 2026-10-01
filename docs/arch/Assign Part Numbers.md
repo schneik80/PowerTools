@@ -8,7 +8,7 @@
 | **Registry** | group `document` (`Document Tools`); enabled by default; not beta |
 | **UI location** | Design workspace → Tools tab → shared "Power Tools" panel (`config.my_panel_id`, `PT_Power Tools`) via `_ui_bootstrap.get_power_tools_panel()`; promoted button |
 | **Files** | `commands/assignpartnumbers/entry.py`; `resources/` (16/32/64 px light + dark icons, `generate_icons.py` — the generator is stripped from the release zip) |
-| **Shared helpers** | [`partnumber_shared`](architecture.md#partnumber_shared) (`hub_fs`, `pn_cache`, `schemes`, `intent`); [`_ui_bootstrap.get_power_tools_panel`](architecture.md#_ui_bootstrap); [`_command_abort`](architecture.md#_command_abort); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.isSaved`, `log`, `handle_error`](architecture.md#general_utils) |
+| **Shared helpers** | [`partnumber_shared`](architecture.md#partnumber_shared) (`hub_fs`, `pn_cache`, `schemes`, `intent`); [`_ui_bootstrap.get_power_tools_panel`](architecture.md#_ui_bootstrap); [`_command_abort`](architecture.md#_command_abort); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.require_document`, `log`, `handle_error`](architecture.md#general_utils) |
 | **Tests** | `tests/test_command_icons.py`; `tests/test_release_build.py`; `tests/test_command_contract.py`; `tests/test_command_abort.py` |
 
 ## Purpose
@@ -21,7 +21,7 @@ Stamps hub-unique, sequential part numbers (`PRT`, `ASY`, `WLD`, `COT`, `TOL`) o
 - `stop()`: deletes the control from the shared panel and the definition. The panel belongs to `_ui_bootstrap` and is not deleted here.
 - `command_created(args)`:
   1. Clears the per-dialog state (`_row_scheme_inputs`, `_row_preview_inputs`, `_baseline_counters`, `_baseline_loaded`).
-  2. `ptutil.isSaved()` false → `abort_before_dialog(CMD_ID, CMD_NAME, "document not saved")`; `adsk.fusion.Design.cast(app.activeProduct)` is `None` → `ui.messageBox` + `abort_before_dialog(..., "no active 3D design")`.
+  2. `design = ptutil.require_document(CMD_NAME, "design", saved=True)` is `None` (it shows the standard message, see [Document preconditions](architecture.md#document-preconditions)) → `abort_before_dialog(CMD_ID, CMD_NAME, "no saved design")`.
   3. `_targets = intent.iter_targets(design)`; `_mode_is_table = len(_targets) > 1`.
   4. `_load_baseline_counters()`: progress bar + one `adsk.doEvents()`, then `hub_fs.find_assets_project` → `find_or_create_pn_cache_folder` → `pn_cache.download_snapshot`; on success `_baseline_counters` holds the hub's `lastUsed` per prefix and `_baseline_loaded = True`; on failure previews start at 1 and carry a suffix.
   5. Builds the dialog (`okButtonText = "Assign"`): `ap_info` text box with `_intent_label(intent.intent_of_design(design))`, then `_build_simple_inputs` or `_build_table_inputs`, then `_recompute_previews(inputs)`.

@@ -94,9 +94,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
     # ******************************* Your code here ********************************
 
-    # Guard first: isSaved() shows its own message and treats a missing
-    # activeDocument as "not saved", so nothing below runs on the start screen.
-    if not ptutil.isSaved():
+    # Guard first: with no document open (the start screen) or an unsaved one,
+    # require_document shows the standard message and nothing below runs.
+    if ptutil.require_document(CMD_NAME, saved=True) is None:
         return
 
     # Fusion's own definition; never dereference it unchecked (issue #28).
@@ -124,7 +124,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     try:
         # Native command launched from commandCreated (not doExecute, rule 20):
         # needs a Fusion check on both channels before it is trusted (issue #16).
-        # Reached only after isSaved() and the None check above: a native
+        # Reached only after require_document() and the None check above: a native
         # CommandDefinition.execute() checks no precondition itself (#25 lesson).
         shareCmdDef.execute()
 

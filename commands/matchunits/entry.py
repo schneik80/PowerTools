@@ -263,7 +263,9 @@ def _match_active_document():
     """Compare the active design against the default and change it to match."""
     design = _active_design()
     if not design:
-        ui.messageBox(f"{CMD_NAME} needs an open design.", CMD_NAME)
+        # Not require_document(): _active_design finds the design in any
+        # workspace, where activeProduct would be the CAM/Drawing product.
+        ui.messageBox(ptutil.document_required_message(CMD_NAME, "design"), CMD_NAME)
         return
 
     comparison = _read_comparison(design)

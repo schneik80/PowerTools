@@ -147,9 +147,8 @@ def stop():
 def command_created(args: adsk.core.CommandCreatedEventArgs):
     ptutil.log(f"{CMD_NAME} Command Created Event")
 
-    design = adsk.fusion.Design.cast(app.activeProduct)
-    if not design:
-        ui.messageBox("A Fusion 3D Design must be active.", CMD_NAME)
+    design = ptutil.require_document(CMD_NAME, "design")
+    if design is None:
         return
 
     cmd = args.command
@@ -299,9 +298,8 @@ def _highlight_selected_row(inputs, table):
 def command_execute(args: adsk.core.CommandEventArgs):
     ptutil.log(f"{CMD_NAME} Command Execute Event")
 
-    design = adsk.fusion.Design.cast(app.activeProduct)
-    if not design:
-        ui.messageBox("A Fusion 3D Design must be active.", CMD_NAME)
+    design = ptutil.require_document(CMD_NAME, "design")
+    if design is None:
         return
 
     inputs = args.command.commandInputs

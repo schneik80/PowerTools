@@ -94,6 +94,10 @@ explains it. Full write-ups: `docs/dev/lessons.md`.
   (`bottomupupdate.update_contexts_in_document`, 2026-09-08 CER).
   `assemblypalette._active_command_id` is safe only because it runs from a
   palette event with no command of its own on the stack.
+- **`CommandDefinition.execute()` does not check the native command's
+  precondition.** `AutoSaveFilesCommand` launched with no document segfaulted
+  in `AutoSaveCmd::onExecute` with no Python frame (#25). Gate every native
+  launch with `ptutil.require_document()` first.
 - **`CommandDefinition.execute()` on a UI command can silently no-op** from
   inside a running command. `EIPContextsUpdateCmd` returned cleanly for four
   documents while Fusion's app log recorded no `Workflow start:

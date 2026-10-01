@@ -8,7 +8,7 @@
 | **Registry** | group `partmodeling` (`Part Modeling`); enabled by default |
 | **UI location** | Design workspace (`FusionSolidEnvironment`), **Tools** tab (`ToolsTab`), panel `UtilityPanel` ("Utility"). `start()` creates the tab and the panel when absent and appends the control; not promoted. This is the same built-in tab that carries the shared Power Tools panel, but the command uses its own panel rather than [`get_power_tools_panel`](architecture.md#_ui_bootstrap); no other command references `UtilityPanel`. |
 | **Files** | `commands/hideobjects/entry.py`; `resources/` holds 16/32/64 px light and dark PNGs (no `generate_icons.py`) |
-| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `ptutil.handle_error`](architecture.md#general_utils); [`config.design_workspace`](architecture.md#config) |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `ptutil.handle_error`, `ptutil.require_document`](architecture.md#general_utils); [`config.design_workspace`](architecture.md#config) |
 | **Tests** | none module-specific (see [Tests](#tests)) |
 
 ## Purpose
@@ -20,7 +20,7 @@ Switches off the visibility light bulb of up to nine categories of reference and
 - `start()`: `addButtonDefinition(CMD_ID, CMD_NAME, CMD_Description, ICON_FOLDER)`; `ptutil.add_handler(cmd_def.commandCreated, command_created)`; `ui.workspaces.itemById(config.design_workspace)` (log and return if missing); `toolbarTabs.itemById("ToolsTab")` or `toolbarTabs.add("ToolsTab", "Tools")`; `toolbarPanels.itemById("UtilityPanel")` or `toolbarPanels.add("UtilityPanel", "Utility", "", False)`; `panel.controls.addCommand(cmd_def, "", True)`; `isPromoted = False`. The whole body is wrapped so a failure is logged rather than raised.
 - `stop()`: deletes the control and the definition; deletes the panel when it is left empty (it is, since no other command adds to it); deletes the tab only if it has no panels left, which does not happen on the built-in Tools tab.
 - `command_created(args)`: adds nine `addBoolValueInput(id, label, True, "", True)` checkboxes, all initially checked, then registers `execute` → `command_execute` and `destroy` → `command_destroy`. No `inputChanged`, `validateInputs` or `executePreview` handler.
-- `command_execute(args)`: casts `app.activeProduct` to `adsk.fusion.Design` (message box and return otherwise); reads the nine values with `inputs.itemById(...).value`; iterates `design.allComponents` and applies the table below. Exceptions go to `ptutil.handle_error(CMD_NAME, show_message_box=True)`.
+- `command_execute(args)`: [`ptutil.require_document(CMD_NAME, "design")`](architecture.md#document-preconditions) (`None` → it has shown "Hide Objects needs a design open. Open or create a design, then retry."; return); reads the nine values with `inputs.itemById(...).value`; iterates `design.allComponents` and applies the table below. Exceptions go to `ptutil.handle_error(CMD_NAME, show_message_box=True)`.
 - `command_destroy(args)`: clears `local_handlers`.
 
 | Input id | Label | What `command_execute` sets, per component |

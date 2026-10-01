@@ -101,7 +101,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         local_handlers=local_handlers,  # Connect the destroy event
     )
 
-    if not ptutil.isSaved():
+    if ptutil.require_document(CMD_NAME, saved=True) is None:
         return
 
     try:

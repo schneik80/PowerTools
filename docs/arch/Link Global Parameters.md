@@ -8,7 +8,7 @@
 | **Registry** | group `assembly` (`Assembly`); enabled by default. Member of the `globalParameters` `COMMAND_SETS` entry, so it starts on Global Parameters' enabled flag and has no checkbox of its own ([settings_store](architecture.md#settings_store)) |
 | **UI location** | Shared **Power Tools** panel ([`_ui_bootstrap.get_power_tools_panel`](architecture.md#_ui_bootstrap)), inserted directly after `PTAT_globalParameters` (`addCommand(cmd_def, "PTAT_globalParameters", False)`), `isPromoted = False` |
 | **Files** | `commands/linkGlobalParameters/entry.py`; `resources/` (button icons) |
-| **Shared helpers** | [`cache_utils`](architecture.md#cache_utils): `get_active_project`, `list_param_docs`, `read_param_set_sidecar`, `safe_activate`; [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`, `perf_timer`](architecture.md#general_utils) |
+| **Shared helpers** | [`cache_utils`](architecture.md#cache_utils): `get_active_project`, `list_param_docs`, `read_param_set_sidecar`, `safe_activate`; [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`, `perf_timer`, `require_document`](architecture.md#general_utils) |
 | **Tests** | `tests/test_settings_command_sets.py` |
 
 ## Purpose
@@ -19,7 +19,7 @@ Derives a parameter set created by Global Parameters into the active design as a
 
 - `start()`: deletes any stale definition, `addButtonDefinition` with the `resources/` icon folder, attaches `command_created`, adds the control after `PTAT_globalParameters` on the Power Tools panel. `stop()` removes the control and deletes the definition.
 - `command_created(args)`:
-  1. If `app.activeDocument.isSaved` is false it shows a message box, sets `args.isCancelled = True` and returns — the command never opens.
+  1. If [`ptutil.require_document(CMD_NAME, saved=True)`](architecture.md#document-preconditions) is `None` (it shows "Link Global Parameters needs a saved document. Save the document, then retry.", or the no-document message) it sets `args.isCancelled = True` and returns — the command never opens.
   2. [`cache_utils.get_active_project`](architecture.md#cache_utils); with none it adds the `lgp_error` text box, attaches only `command_destroy` and returns.
   3. Calls `cache.list_param_docs(project, CMD_NAME)` — a Hub enumeration of the `_Global Parameters` folder on every open (folder id from the `gp_folder` cache when valid); the result populates `_param_doc_map` and `_param_doc_entries` and rewrites `gp_docs_<key>.json`. An empty result adds an `lgp_error` text box pointing at Global Parameters and returns with only `command_destroy` attached.
   4. Builds `lgp_project_name` (read-only), the `lgp_source` dropdown (first entry selected) and the read-only four-column preview table `lgp_preview_table` (`3:4:2:4`: Name, Expression, Unit, Comment), then pre-loads the preview for the first entry with `_load_preview`.

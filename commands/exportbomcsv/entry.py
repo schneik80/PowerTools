@@ -20,7 +20,6 @@ ui = app.userInterface
 
 showversion = True  # show versions in xref component names, default is on
 showsubs = False  # show the subassemblies in list, for flat BOM default is off. Children are still displayed this only affects the sub itself
-docname = ""  # a default name
 
 CMD_NAME = "Export BOM as CSV"
 CMD_ID = "PTE_exportbom"
@@ -76,118 +75,102 @@ def stop():
 # Function that is called when a user clicks the corresponding button in the UI.
 # This defines the contents of the command dialog and connects to the command related events.
 def command_created(args: adsk.core.CommandCreatedEventArgs):
-    # Connect to the events that are needed by this command.
-    ptutil.add_handler(
-        args.command.execute, command_execute, local_handlers=local_handlers
-    )
     ptutil.add_handler(
         args.command.destroy, command_destroy, local_handlers=local_handlers
     )
 
-
-def command_execute(args: adsk.core.CommandCreatedEventArgs):
-    ui = None
+    # No inputs, so the work runs here: the control sits in the File dropdown,
+    # which exists with no document open, and execute never fires in that
+    # state (rule 1, #25). The guard tells the user instead of doing nothing.
+    design = ptutil.require_document(CMD_NAME, "design")
+    if design is None:
+        return
     try:
-        app = adsk.core.Application.get()
-        ui = app.userInterface
-        global docname
-        global showversion
-        global showsubs
-
-        command = args.firingEvent.sender
-        inputs = command.commandInputs
-
-        product = app.activeProduct
-        design = adsk.fusion.Design.cast(product)
-        if not design:
-            ui.messageBox("A Design Must be Active.", "BOM Export")
-            return
-
-        # Get all occurrences in the rootComp component of the active design
-        rootComp = design.rootComponent
-        occs = rootComp.allOccurrences
-
-        for input in inputs:
-            if input.id == "docname_":
-                docname = input.value
-            elif input.id == "showversion_":
-                showversion = input.value
-            elif input.id == "showsubs_":
-                showsubs = input.value
-
-        # Gather information about each unique component, in first-seen order.
-        # Rows are keyed on Component.id (the persistent identity exportsysml
-        # also uses) so each occurrence costs one dict lookup instead of a
-        # rescan of every row, each comparison of which was a native call.
-        # childOccurrences.count is likewise read only when a component is
-        # first seen; it is a property of the component, not the occurrence.
-        bom = []
-        rows_by_id = {}
-        for occ in occs:
-            comp = occ.component
-            refocc = occ.isReferencedComponent
-            row = rows_by_id.get(comp.id)
-            if row is not None:
-                # Increment the instance count of the existing row.
-                row["instances"] += 1
-            else:
-                occtype = occ.childOccurrences.count
-                # Modify the name if versions are OFF and an occurrence is an xref
-                if not showversion and refocc:
-                    longname = comp.name
-                    shortname = " v".join(longname.split(" v")[:-1])
-                else:
-                    shortname = comp.name
-
-                mat = ""
-                bodies = comp.bRepBodies
-                for bodyK in bodies:
-                    if bodyK.isSolid:
-                        mat += bodyK.material.name
-
-                # Add this component to the BOM
-                row = {
-                    "component": comp,
-                    "name": shortname,
-                    "pn": comp.partNumber,
-                    "material": mat,
-                    "instances": 1,
-                    "sub": occtype,
-                }
-                bom.append(row)
-                rows_by_id[comp.id] = row
-
-        # collect BOM data
-        parentOcc = design.parentDocument.name
-        resultString = parentOcc + " BOM\n"
-        resultString += "Display Name," + "Part Number," + "Material," + "Count\n"
-        resultString += traverseAssembly(bom)
-
-        # Display the BOM in the console
-        ptutil.log(resultString)
-
-        # Set styles of file dialog.
-        folderDlg = ui.createFolderDialog()
-        folderDlg.title = "Choose Folder to save BOM CSV"
-
-        # Show file save dialog
-        dlgResult = folderDlg.showDialog()
-        if dlgResult == adsk.core.DialogResults.DialogOK:
-            safe_name = re.sub(r'[<>:"/\\|?*]', "_", os.path.basename(parentOcc))
-            filepath = os.path.join(folderDlg.folder, safe_name + ".csv")
-            # Write the results to the file. Fusion's Python on Windows defaults
-            # to the ANSI code page, so a name with a character outside it (a
-            # diameter sign, say) raised UnicodeEncodeError here; the BOM makes
-            # Excel read the file as UTF-8.
-            with open(filepath, "w", encoding="utf-8-sig") as f:
-                f.write(resultString)
-            ui.messageBox("BOM saved at: " + filepath, parentOcc, 0, 2)
-            ptutil.log(f"BOM Saved at {filepath}")
-        else:
-            return
-
+        _export_bom(design)
     except Exception:
         ptutil.handle_error(CMD_NAME, show_message_box=True)
+
+
+def _export_bom(design):
+    """Write the flat BOM of *design* to a CSV file the user picks.
+
+    The command builds no inputs, so ``showversion`` / ``showsubs`` keep their
+    module defaults; the old execute handler read inputs that never existed.
+    """
+    # Get all occurrences in the rootComp component of the active design
+    rootComp = design.rootComponent
+    occs = rootComp.allOccurrences
+
+    # Gather information about each unique component, in first-seen order.
+    # Rows are keyed on Component.id (the persistent identity exportsysml
+    # also uses) so each occurrence costs one dict lookup instead of a
+    # rescan of every row, each comparison of which was a native call.
+    # childOccurrences.count is likewise read only when a component is
+    # first seen; it is a property of the component, not the occurrence.
+    bom = []
+    rows_by_id = {}
+    for occ in occs:
+        comp = occ.component
+        refocc = occ.isReferencedComponent
+        row = rows_by_id.get(comp.id)
+        if row is not None:
+            # Increment the instance count of the existing row.
+            row["instances"] += 1
+        else:
+            occtype = occ.childOccurrences.count
+            # Modify the name if versions are OFF and an occurrence is an xref
+            if not showversion and refocc:
+                longname = comp.name
+                shortname = " v".join(longname.split(" v")[:-1])
+            else:
+                shortname = comp.name
+
+            mat = ""
+            bodies = comp.bRepBodies
+            for bodyK in bodies:
+                if bodyK.isSolid:
+                    mat += bodyK.material.name
+
+            # Add this component to the BOM
+            row = {
+                "component": comp,
+                "name": shortname,
+                "pn": comp.partNumber,
+                "material": mat,
+                "instances": 1,
+                "sub": occtype,
+            }
+            bom.append(row)
+            rows_by_id[comp.id] = row
+
+    # collect BOM data
+    parentOcc = design.parentDocument.name
+    resultString = parentOcc + " BOM\n"
+    resultString += "Display Name," + "Part Number," + "Material," + "Count\n"
+    resultString += traverseAssembly(bom)
+
+    # Display the BOM in the console
+    ptutil.log(resultString)
+
+    # Set styles of file dialog.
+    folderDlg = ui.createFolderDialog()
+    folderDlg.title = "Choose Folder to save BOM CSV"
+
+    # Show file save dialog
+    dlgResult = folderDlg.showDialog()
+    if dlgResult == adsk.core.DialogResults.DialogOK:
+        safe_name = re.sub(r'[<>:"/\\|?*]', "_", os.path.basename(parentOcc))
+        filepath = os.path.join(folderDlg.folder, safe_name + ".csv")
+        # Write the results to the file. Fusion's Python on Windows defaults
+        # to the ANSI code page, so a name with a character outside it (a
+        # diameter sign, say) raised UnicodeEncodeError here; the BOM makes
+        # Excel read the file as UTF-8.
+        with open(filepath, "w", encoding="utf-8-sig") as f:
+            f.write(resultString)
+        ui.messageBox("BOM saved at: " + filepath, parentOcc, 0, 2)
+        ptutil.log(f"BOM Saved at {filepath}")
+    else:
+        return
 
 
 # This function will be called when the user completes the command.

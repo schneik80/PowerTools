@@ -8,7 +8,7 @@
 | **Registry** | module `dochistory`, group `document` (`Document Tools`); enabled by default; not beta |
 | **UI location** | QAT button inserted before the `save` control (`qat.controls.addCommand(cmd_def, "save", True)`); opens the palette `config.document_history_palette_id` (`IMA_LLC_<ADDIN_NAME>_document_history_palette`), docked right, 400 × 720 px, `useNewWebBrowser=True` |
 | **Files** | `commands/dochistory/entry.py` (Fusion contact only); `history_model.py` (`adsk`-free bucketing and numbering); `mfgdm_history.py` (the GraphQL read); `resources/html/{index.html, style.css, app.js}`; generated `resources/html/init.js` (git-ignored); `resources/generate_icons.py` and the 16/32/64 px light, dark and disabled icons |
-| **Shared helpers** | [`partnumber_shared.mfgdm_props.gql`](architecture.md#partnumber_shared) (transport); [`recents_utils`](architecture.md#recents_utils) (`cached_thumbnail_data_url`, `store_thumbnail_object`, `png_to_data_url`); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.isSaved`, `log`, `handle_error`](architecture.md#general_utils); `config.DEBUG` and the palette id ([config](architecture.md#config)) |
+| **Shared helpers** | [`partnumber_shared.mfgdm_props.gql`](architecture.md#partnumber_shared) (transport); [`recents_utils`](architecture.md#recents_utils) (`cached_thumbnail_data_url`, `store_thumbnail_object`, `png_to_data_url`); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.require_document`, `log`, `handle_error`](architecture.md#general_utils); `config.DEBUG` and the palette id ([config](architecture.md#config)) |
 | **Tests** | `tests/test_dochistory_history_model.py`; `tests/test_dochistory_doc_switch.py`; `tests/test_command_contract.py`; `tests/test_command_icons.py` |
 
 ## Purpose
@@ -19,7 +19,7 @@ Draws the active document's version history as a stack of day rows, newest first
 
 - `start()`: `addButtonDefinition` with the resources folder; `ptutil.add_handler(cmd_def.commandCreated, command_created)`; the QAT button before `save`. Then, for each of `PTND_history_thumbTick`, `PTND_history_loadHistory`, `PTND_history_docSwitch`: `app.unregisterCustomEvent` (so a re-run without a Fusion restart does not stack handlers), `app.registerCustomEvent`, and `.add()` of `_ThumbTickHandler`, `_LoadHistoryHandler`, `_DocSwitchHandler` respectively, kept in module globals. Finally `application_document_changed` is added to `app.documentActivated`, `app.documentOpened` and `app.documentCreated` (`local_handlers`, for the add-in's lifetime).
 - `stop()`: deletes the QAT control, the definition and the palette; unregisters the three custom events; clears the handlers, the thumbnail pump and `_version_files`.
-- `command_created(args)`: `app.activeDocument` is `None` → "Open a document to see its version history." and return; `ptutil.isSaved()` false → return (it shows its own box). Otherwise `_schedule_load()`. The palette is not opened here and nothing is read here: this is the [deferral pattern](architecture.md#deferring-work-to-a-later-main-loop-turn), and the handler runs from `commandCreated` because the command has no `CommandInputs` (rule 1).
+- `command_created(args)`: [`ptutil.require_document(CMD_NAME, saved=True)`](architecture.md#document-preconditions) is `None` → return (it shows "History needs a document open. Open or create a document, then retry." or "History needs a saved document. Save the document, then retry."). Otherwise `_schedule_load()`. The palette is not opened here and nothing is read here: this is the [deferral pattern](architecture.md#deferring-work-to-a-later-main-loop-turn), and the handler runs from `commandCreated` because the command has no `CommandInputs` (rule 1).
 - `_schedule_load()` → `threading.Timer(0.1, _fire_load_event)` (daemon) → `app.fireCustomEvent("PTND_history_loadHistory")`, the only API call on the timer thread (rule 7).
 - `_LoadHistoryHandler.notify` → `_open_palette(_gather_history())`; a raise → `ptutil.handle_error(CMD_NAME, show_message_box=True)`.
 - `_gather_history()` builds the page state (`theme`, `docName`, `docId`, `status`, `message`, `versionCount`, `changeCount`, `rows`, `rowsWithChanges`); see [Reading the history](#reading-the-history).
@@ -130,7 +130,7 @@ sequenceDiagram
     participant M as mfgdm_history / history_model
     participant P as palette page app.js
     U->>E: click History
-    E->>E: command_created: activeDocument? isSaved?
+    E->>E: command_created: require_document(CMD_NAME, saved=True)
     E->>T: _schedule_load (0.1 s)
     T->>F: fireCustomEvent PTND_history_loadHistory
     F->>E: _LoadHistoryHandler.notify

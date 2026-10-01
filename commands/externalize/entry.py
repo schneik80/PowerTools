@@ -321,9 +321,8 @@ def command_execute(args: adsk.core.CommandEventArgs):
             )
             return
 
-        design = adsk.fusion.Design.cast(app.activeProduct)
-        if not design:
-            ui.messageBox("A Fusion 3D Design must be active.", CMD_NAME)
+        design = ptutil.require_document(CMD_NAME, "design", saved=True)
+        if design is None:
             return
 
         inputs = args.command.commandInputs
@@ -331,8 +330,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
         active_data_file = app.activeDocument.dataFile
         if active_data_file is None:
             ui.messageBox(
-                "The active document has not been saved to the cloud.\n"
-                "Please save the document to a Fusion Team / Hub folder first.",
+                ptutil.document_required_message(CMD_NAME, "design", saved=True),
                 CMD_NAME,
             )
             return

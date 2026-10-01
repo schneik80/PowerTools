@@ -31,7 +31,7 @@ Both of these, in the Design workspace:
 ## Limitations
 
 - Placement is Fusion's import behavior; the component arrives at the origin of the design.
-- The command needs an active design; otherwise it reports *No active Fusion design*.
+- The command needs an active design; otherwise it reports *Insert STEP File needs a design open. Open or create a design, then retry.*
 
 > **Developers:** see the [architecture notes](./arch/Insert%20Step.md).
 

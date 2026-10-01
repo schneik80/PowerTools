@@ -114,13 +114,11 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
 
     try:
         app = adsk.core.Application.get()
-        product = app.activeProduct
-        design = adsk.fusion.Design.cast(product)
         ui = app.userInterface
 
         # Check a Design document is active.
-        if not design:
-            ui.messageBox("No active Fusion design", CMD_NAME)
+        design = ptutil.require_document(CMD_NAME, "design")
+        if design is None:
             return
 
         if design.activeEditObject and isinstance(

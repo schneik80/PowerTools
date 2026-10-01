@@ -176,25 +176,75 @@ def clipText(linkText):
     app.log(f"link: {linkText} was added to clipboard")
 
 
-def isSaved() -> bool:
-    """Utility function to check if the active document has been saved.
+# Document kinds require_document() understands, in the words the user sees.
+DOCUMENT_KINDS = ("document", "design", "drawing")
 
-    Returns:
-    bool -- True if the active document has been saved, False otherwise.
+
+def document_required_message(cmd_name: str, kind: str = "document", saved=False):
+    """The one sentence every command shows when its document precondition fails.
+
+    ``<Command> needs a <kind> open. Open or create a <kind>, then retry.`` --
+    except that a drawing cannot be created in one step (it is made from a
+    design), so a drawing is only "opened", and a document that is open but
+    never saved gets ``<Command> needs a saved <kind>. Save the <kind>, then
+    retry.`` A trailing ellipsis on the command name is dropped. Pure, so the wording is pinned by a test and cannot drift the way
+    the seven hand-written variants it replaced did.
     """
-    # Check that the active document has been saved. With no document open at
-    # all (the callers run from commandCreated on the start screen, issue #16)
-    # ``activeDocument`` is None, which counts as "not saved".
+    if kind not in DOCUMENT_KINDS:
+        raise ValueError(f"unknown document kind {kind!r}")
+    # A dialog-opening command's name ends in "..." ("Export Mermaid
+    # Diagram..."); mid-sentence it reads as a typo.
+    cmd_name = cmd_name.rstrip(".\u2026 ")
+    if saved:
+        return f"{cmd_name} needs a saved {kind}. Save the {kind}, then retry."
+    if kind == "drawing":
+        return f"{cmd_name} needs a drawing open. Open a drawing, then retry."
+    return f"{cmd_name} needs a {kind} open. Open or create a {kind}, then retry."
+
+
+def require_document(cmd_name: str, kind: str = "document", saved=False):
+    """Return what *cmd_name* needs to run, or None after telling the user why not.
+
+    The single precondition gate for commands, usable from ``commandCreated``
+    on the start screen (where ``activeDocument`` is None) as well as from
+    ``execute``. ``kind`` picks what is returned: ``"document"`` gives the
+    active ``Document``, ``"design"`` the active ``Design`` and ``"drawing"``
+    the active ``Drawing`` (both cast from ``activeProduct``, as the commands
+    did by hand). ``saved=True`` additionally requires ``Document.isSaved``,
+    for commands that work on the cloud file.
+
+    The document must pass :func:`is_user_document` first. That is also the
+    precondition for launching a native Fusion command: ``AutoSaveFilesCommand``
+    segfaulted dereferencing the document session when launched with none
+    (#25). On failure the message comes from
+    :func:`document_required_message`, titled with the command name. A caller
+    in ``commandCreated`` that builds a dialog still calls
+    ``abort_before_dialog()`` before returning (rule 20).
+    """
+    message = document_required_message(cmd_name, kind, saved=False)
     doc = app.activeDocument
-    if doc is None or not doc.isSaved:
-        ui.messageBox(
-            "The active document must be saved before you can continue.",
-            "Please Save",
-            0,
-            2,
-        )
-        return False
-    return True
+    result = None
+    if is_user_document(doc):
+        if kind == "document":
+            result = doc
+        elif kind == "design":
+            import adsk.fusion
+
+            result = adsk.fusion.Design.cast(app.activeProduct)
+        else:
+            import adsk.drawing
+
+            result = adsk.drawing.Drawing.cast(app.activeProduct)
+    if result is not None and saved:
+        try:
+            if not doc.isSaved:
+                result = None
+                message = document_required_message(cmd_name, kind, saved=True)
+        except Exception:
+            result = None
+    if result is None:
+        ui.messageBox(message, cmd_name)
+    return result
 
 
 def is_user_document(doc) -> bool:

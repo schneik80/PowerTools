@@ -10,7 +10,7 @@ Every cloud save in Fusion makes a new version, and on a shared assembly every n
 
 ## Prerequisites
 
-- At least one open document. The menu item is available on the start screen, but with no document open it only shows a message asking you to open one.
+- At least one open document. The menu item is available on the start screen, but with no document open it shows a message asking you to open or create one.
 
 ## Where to find it
 

@@ -301,15 +301,11 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs) -> None:
     try:
         app = adsk.core.Application.get()
         ui = app.userInterface
-        doc_name = app.activeDocument.name
-
         # Check if the active document is a timeline design
-        product = app.activeProduct
-        design = adsk.fusion.Design.cast(product)
-
-        if not design:
-            ui.messageBox("No active Fusion design.")
+        design = ptutil.require_document(CMD_NAME, "design")
+        if design is None:
             return
+        doc_name = app.activeDocument.name
 
         if design.designType == adsk.fusion.DesignTypes.DirectDesignType:
             ui.messageBox("The design is in Direct Design mode.")

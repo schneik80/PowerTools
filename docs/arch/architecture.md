@@ -214,9 +214,10 @@ does its work in `commandCreated` and registers no `execute` handler:
 `exportsysml`, `refresh`, the items of the `openrecent` flyout, the Favorites
 navigate and Add items, the six Share Menu commands (`shareDocument`,
 `shareSettings`, `OpenDesktop`, `OpenInTeam`, `projectInvite`,
-`projectMembers`) and `getandupdate` (issue #16). Their document
-guards now run with no document open, so `ptutil.isSaved()` treats a `None`
-`activeDocument` as unsaved. `getandupdate` and `shareSettings`
+`projectMembers`), `getandupdate`, and the QAT File dropdown's `autosave`,
+`exportbomcsv` and `exportmermaid`. Their document guards run with no document
+open, so each goes through `ptutil.require_document()` (see
+[Document preconditions](#document-preconditions)). `getandupdate` and `shareSettings`
 launch a native Fusion command (`CommandDefinition.execute()`) from
 `commandCreated`; that is not `doExecute` (rule 20) but has not yet been
 exercised in Fusion on either channel.
@@ -225,8 +226,33 @@ the shape for one of them. `KNOWN_EXECUTE_ONLY_INPUTLESS` in
 `tests/test_command_contract.py` is the exact list of `commandCreated`
 handlers that still register `execute` without building an input: seven sit
 on Design-workspace toolbar panels, which Fusion only shows with a document
-open, and three (`autosave`, `exportbomcsv`, `exportmermaid`) are in the QAT
-File dropdown and still have the bug -- recorded there, not yet fixed.
+open, so the no-document case cannot arise there.
+
+### Document preconditions
+
+A command that needs a document checks it with
+[`ptutil.require_document(CMD_NAME, kind, saved=False)`](#general_utils)
+and returns when the result is `None`. `kind` is `"document"`, `"design"` or
+`"drawing"` and selects what is returned (the active `Document`, or the
+`Design` / `Drawing` cast from `activeProduct`); `saved=True` also requires
+`Document.isSaved`, for commands that act on the cloud file. On failure it
+shows one sentence, titled with the command name:
+
+- `<Command> needs a <kind> open. Open or create a <kind>, then retry.`
+- `<Command> needs a drawing open. Open a drawing, then retry.` (a drawing is
+  made from a design, not created on its own)
+- `<Command> needs a saved <kind>. Save the <kind>, then retry.`
+
+The document must also pass `is_user_document`, which is the precondition for
+launching a native Fusion command: `CommandDefinition.execute()` only queues
+the command, and some (`AutoSaveFilesCommand`) dereference the document
+session unconditionally and segfault with none open. A command that builds a
+dialog and fails the check in `commandCreated` still calls
+`abort_before_dialog()` before returning (rule 20). Checks inside a running
+operation -- a document that disappears between steps of a batch -- are not
+preconditions and report through the operation's own log or result.
+`tests/test_command_contract.py` rejects hand-written "must be active" /
+"needs an open" messages under `commands/`.
 
 `commandCreated` is also where a document may be closed: the API does not
 support closing a document inside a command-related event, so Close All
@@ -662,13 +688,14 @@ and `ui` the rest of the package uses.
 | `debug_log_path()` | Path of the debug log, `""` with no cache path. No caller outside the package |
 | `pump_events_for(seconds, tick_seconds=0.03)` | The sanctioned wait: `adsk.doEvents()` every tick until the deadline; `seconds <= 0` pumps once |
 | `clipText(text)` | Clipboard via `clip.exe` / `pbcopy` argument lists (no shell) |
-| `isSaved() -> bool` | If there is no active document or it is unsaved, shows "Please Save" and returns False |
+| `require_document(cmd_name, kind="document", saved=False)` | The command precondition gate (see [Document preconditions](#document-preconditions)): returns the active `Document` / `Design` / `Drawing`, or shows the standard message and returns None. Requires `is_user_document` first; `saved=True` also requires `isSaved` |
+| `document_required_message(cmd_name, kind="document", saved=False) -> str` | Pure: the sentence `require_document` shows; drops a trailing ellipsis from the command name; raises `ValueError` on an unknown kind |
 | `is_user_document(doc) -> bool` | First line of every `documentOpened` / `documentActivated` / `documentCreated` handler: True only if `doc` is non-null, `isValid`, `isVisible` and `isActive`; a missing or raising property counts as False. Filters out the invisible sibling that `app.documents.open(dataFile, False)` announces through the same events (issue #11) |
 | `handle_error(name, show_message_box=False)` | Logs the traceback through `log()` (so it is DEBUG-gated too); optional message box |
 | `perf_timer(label, context="")` | Context manager; emits a `[PERF]` line only when `config.PERF_TRACE` |
 
 Enforces: rules 2 (`pump_events_for` replaces `time.sleep` and `doEvents`
-loops) and 12 (lazy flag reads). Tests: `test_pump_events.py` (fake clock),
+loops) and 12 (lazy flag reads). Tests: `test_pump_events.py` (fake clock), `test_require_document.py`, `test_is_user_document.py`,
 `test_general_utils_debug_log.py` (the file writer). Used by: every command
 (`log`, `handle_error`); `pump_events_for` by `assemblypalette`,
 `bottomupupdate`, `closealldocuments`, `externalize` and `upload_utils`;

@@ -95,11 +95,8 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
     try:
         app = adsk.core.Application.get()
         ui = app.userInterface
-        product = app.activeProduct
-        design = adsk.fusion.Design.cast(product)
-
-        # Check that the active document has been saved.
-        if not ptutil.isSaved():
+        design = ptutil.require_document(CMD_NAME, "design", saved=True)
+        if design is None:
             return
 
         root_name = design.rootComponent.name  # Get root component name.

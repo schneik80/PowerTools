@@ -8,7 +8,7 @@
 | **Registry** | module `docinfo`, group `document` (`Document Tools`); enabled by default; not beta |
 | **UI location** | Design workspace → Tools tab → shared "Power Tools" panel (`config.my_panel_id`) via `_ui_bootstrap.get_power_tools_panel()`; promoted button |
 | **Files** | `commands/docinfo/entry.py`; `resources/` (16/32/64 px light + dark icons; `docinfo.idraw` is the design source and is stripped from the release zip) |
-| **Shared helpers** | [`_ui_bootstrap.get_power_tools_panel`](architecture.md#_ui_bootstrap); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.isSaved`, `log`, `handle_error`](architecture.md#general_utils) |
+| **Shared helpers** | [`_ui_bootstrap.get_power_tools_panel`](architecture.md#_ui_bootstrap); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.require_document`, `log`, `handle_error`](architecture.md#general_utils) |
 | **Tests** | `tests/test_release_build.py`; `tests/test_command_contract.py` |
 
 ## Purpose
@@ -21,11 +21,10 @@ Shows the cloud data identifiers behind the active design — hub, project, pare
 - `stop()`: deletes the control and the definition.
 - `command_created(args)`: registers `command_execute` and `command_destroy`. No `CommandInputs`, so Fusion auto-executes; with no document open the button does nothing (rule 1).
 - `command_execute(args)`:
-  1. `design = adsk.fusion.Design.cast(app.activeProduct)`.
-  2. `ptutil.isSaved()` false → it shows its own "Please Save" box; return.
-  3. Reads `design.rootComponent.name` (if the active product is not a design this raises and the error box shows the traceback — there is no friendlier check), `app.data.activeHub.id/.name`, `dataFile.parentProject.id/.name`, `dataFile.parentFolder.id` and its name (`"Project Root"` when `isRoot`), then walks `parentFolder` up to the root to build `A / B / C / <file name>`.
-  4. `dataFile.id`, `.name`, `.versionNumber`, `.latestVersionNumber`, `.description` (version comment), `app.activeDocument.version` (saving build) and `app.version` (running build).
-  5. Builds the HTML string and shows `ui.messageBox(text, title, 0, icon)`: icon code `2` when the builds match; when they differ, icon code `3`, the title gains " - Document will migrate on save" and the body a warning that team members must be on the same client version after the save.
+  1. `design = ptutil.require_document(CMD_NAME, "design", saved=True)` is `None` → return (it shows "Document Information needs a design open. Open or create a design, then retry." or "Document Information needs a saved design. Save the design, then retry."; see [Document preconditions](architecture.md#document-preconditions)).
+  2. Reads `design.rootComponent.name`, `app.data.activeHub.id/.name`, `dataFile.parentProject.id/.name`, `dataFile.parentFolder.id` and its name (`"Project Root"` when `isRoot`), then walks `parentFolder` up to the root to build `A / B / C / <file name>`.
+  3. `dataFile.id`, `.name`, `.versionNumber`, `.latestVersionNumber`, `.description` (version comment), `app.activeDocument.version` (saving build) and `app.version` (running build).
+  4. Builds the HTML string and shows `ui.messageBox(text, title, 0, icon)`: icon code `2` when the builds match; when they differ, icon code `3`, the title gains " - Document will migrate on save" and the body a warning that team members must be on the same client version after the save.
   Exceptions → `ptutil.handle_error(CMD_NAME, show_message_box=True)`.
 - `command_destroy(args)`: drops `local_handlers`.
 

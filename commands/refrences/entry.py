@@ -111,8 +111,6 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     try:
         app = adsk.core.Application.get()
         ui = app.userInterface
-        doc = app.activeDocument
-        design = app.activeProduct
 
         # No inputs exist yet on these paths, so Fusion auto-executes; flag
         # the bail-out so command_execute stays a no-op (rule 20, 14871d7).
@@ -123,14 +121,11 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
             )
             return
 
-        if not design:
-            abort_before_dialog(CMD_ID, CMD_NAME, "no active design")
-            ui.messageBox("No active Fusion design")
+        design = ptutil.require_document(CMD_NAME, "design", saved=True)
+        if design is None:
+            abort_before_dialog(CMD_ID, CMD_NAME, "no saved design")
             return
-
-        if not ptutil.isSaved():
-            abort_before_dialog(CMD_ID, CMD_NAME, "document is not saved")
-            return
+        doc = app.activeDocument
 
         parentDataFiles = doc.designDataFile.parentReferences
         childDataFiles = doc.designDataFile.childReferences

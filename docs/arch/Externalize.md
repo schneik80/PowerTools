@@ -8,7 +8,7 @@
 | **Registry** | group `assembly` (`Assembly`); enabled by default |
 | **UI location** | Power Tools panel (`config.my_panel_id`, Design workspace, Tools tab) via [`_ui_bootstrap.get_power_tools_panel`](architecture.md#_ui_bootstrap); not promoted. Two-tab command dialog (Main, Logging); the run itself reports through the status-bar `ui.progressBar` |
 | **Files** | `commands/externalize/entry.py`; `resources/` PNG set |
-| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`](architecture.md#general_utils); [`ptutil.capture_selections`, `picked_one`](architecture.md#selection_utils); [`ptutil.wait_for_upload`](architecture.md#upload_utils); [`default_log_directory`, `open_live_log_viewer`](architecture.md#log_utils) |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`, `require_document`, `document_required_message`](architecture.md#general_utils); [`ptutil.capture_selections`, `picked_one`](architecture.md#selection_utils); [`ptutil.wait_for_upload`](architecture.md#upload_utils); [`default_log_directory`, `open_live_log_viewer`](architecture.md#log_utils) |
 | **Tests** | `tests/test_externalize_upload.py` |
 
 ## Purpose
@@ -48,7 +48,11 @@ event handler fired from `command_execute`, after the dialog has closed.
   `enable_log` toggles the three logging inputs; `browse_log` resets itself
   and opens a save dialog (`*.log` first) into `log_path`.
 - `command_execute`: refuses when `_pending_run` is set (a run is in
-  progress); needs a `Design` and a saved document (`activeDocument.dataFile`);
+  progress); needs a saved `Design` (`ptutil.require_document(CMD_NAME,
+  "design", saved=True)`, see
+  [Document preconditions](architecture.md#document-preconditions)) and
+  `activeDocument.dataFile`, whose absence shows the same "Externalize needs a
+  saved design. Save the design, then retry." message;
   resolves the target folder — `Create Sub-folder` →
   `_get_or_create_subfolder(parentFolder, dataFile.name)`, otherwise an existing
   sub-folder of that name if present (`_find_existing_subfolder`) else the

@@ -86,23 +86,16 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         args.command.destroy, command_destroy, local_handlers=local_handlers
     )
 
-    global product, design, title
+    global design, title
 
-    product = app.activeProduct
-    design = adsk.fusion.Design.cast(product)
     title = CMD_NAME
 
-    # Check a Design document is active. No inputs are built on either bail-out
-    # below, so Fusion auto-executes; flag it so command_execute skips its work
+    # Check a saved Design document is active. No inputs are built on the
+    # bail-out below, so Fusion auto-executes; flag it so command_execute skips its work
     # instead of running against a design that is None.
-    if not design:
-        ui.messageBox("A Fusion 3D Design must be active", CMD_NAME)
-        abort_before_dialog(CMD_ID, CMD_NAME, "no active design")
-        return
-
-    # Check that the active document has been saved.
-    if not ptutil.isSaved():
-        abort_before_dialog(CMD_ID, CMD_NAME, "document is not saved")
+    design = ptutil.require_document(CMD_NAME, "design", saved=True)
+    if design is None:
+        abort_before_dialog(CMD_ID, CMD_NAME, "no saved design")
         return
 
 

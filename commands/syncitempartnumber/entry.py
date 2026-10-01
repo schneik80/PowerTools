@@ -173,11 +173,8 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
 def command_execute(args: adsk.core.CommandEventArgs):
     try:
-        design = adsk.fusion.Design.cast(app.activeProduct)
+        design = ptutil.require_document(CMD_NAME, "design")
         if design is None:
-            ui.messageBox(
-                f"{CMD_NAME} requires an active Fusion 3D design.", CMD_NAME, 0, 2
-            )
             return
 
         # Precheck: reject designs that contain local child components. Only a

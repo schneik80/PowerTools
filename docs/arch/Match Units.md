@@ -8,7 +8,7 @@
 | **Registry** | group `document` (`Document Tools`), `settings=True`; enabled by default |
 | **UI location** | every Inspect panel of every design-product workspace, placed by [`_inspect_panels.add_to_inspect_panels`](architecture.md#_inspect_panels) (`IS_PROMOTED = False`); no button in Manufacture |
 | **Files** | `commands/matchunits/entry.py`, `logic.py` (design comparison, `adsk`-free), `mfg.py` (Manufacture comparison, `adsk`-free), `resources/` + `resources/mismatch/` (two icon sets, `generate_icons.py`) |
-| **Shared helpers** | [`_inspect_panels`](architecture.md#_inspect_panels), [`config.resolve_manufacture_workspace_id`](architecture.md#config), [`settings_store.command_setting`](architecture.md#settings_store), [`ptutil.add_handler`](architecture.md#event_utils), [`ptutil.log`, `ptutil.handle_error`](architecture.md#general_utils) |
+| **Shared helpers** | [`_inspect_panels`](architecture.md#_inspect_panels), [`config.resolve_manufacture_workspace_id`](architecture.md#config), [`settings_store.command_setting`](architecture.md#settings_store), [`ptutil.add_handler`](architecture.md#event_utils), [`ptutil.log`, `ptutil.handle_error`, `ptutil.document_required_message`](architecture.md#general_utils) |
 | **Tests** | `tests/test_matchunits_logic.py`, `tests/test_matchunits_mfg_logic.py`, `tests/test_config_workspaces.py`, `tests/test_command_icons.py` |
 
 ## Purpose
@@ -33,7 +33,7 @@ Two independent comparisons live here. The **design check** (`logic.py`) reads t
 
 `command_created` is the entire command: it calls `_match_active_document()` inside a `try` that routes to `ptutil.handle_error(CMD_NAME, show_message_box=True)`. No inputs are built, so `Command.isAutoExecute` ends the command when the handler returns; there is no `execute`, `destroy`, or `_command_abort` flag (see [acting from commandCreated](architecture.md#acting-from-commandcreated-when-there-are-no-inputs)). `_match_active_document()`:
 
-1. `_active_design()` — absent: message box, return.
+1. `_active_design()` — absent: message box with `ptutil.document_required_message(CMD_NAME, "design")` ("Match Units needs a design open. Open or create a design, then retry."), return. Not `ptutil.require_document`: `_active_design()` finds the design in any workspace, where `activeProduct` is the CAM or Drawing product.
 2. `_read_comparison(design)` — `None` (a half-read): message box, return.
 3. `comparison.matches` — `_apply_indicator`, "already matching" message box, return.
 4. `_apply(design, comparison)` — `logic.change_plan` -> one `unitSystem` assignment or the differing `distanceDisplayUnits` / `massDisplayUnits` halves via `_set()`; then `_refresh_indicator()` re-reads rather than assuming; a partial write returns `False` and reports failure.

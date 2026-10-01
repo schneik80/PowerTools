@@ -10,7 +10,7 @@ A browser tree is hard to paste into a wiki, a review document or a chat. A Merm
 
 ## Prerequisites
 
-- A design document must be active.
+- A design document must be active. The menu item is available on the start screen too; with no design open it shows a message asking you to open or create one.
 
 ## Where to find it
 

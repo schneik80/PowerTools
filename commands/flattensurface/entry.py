@@ -151,9 +151,8 @@ def command_created(args: adsk.core.CommandCreatedEventArgs) -> None:
     """Build the dialog and wire the per-invocation handlers."""
     global _cmd_inputs
     try:
-        design = adsk.fusion.Design.cast(app.activeProduct)
-        if not design:
-            ui.messageBox(f"{CMD_NAME} needs an open design.", CMD_NAME)
+        design = ptutil.require_document(CMD_NAME, "design")
+        if design is None:
             return
 
         _reset_state()

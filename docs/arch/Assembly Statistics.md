@@ -8,7 +8,7 @@
 | **Registry** | group `assembly` (`Assembly`); enabled by default |
 | **UI location** | Power Tools panel (`config.my_panel_id`, Design workspace, Tools tab) via [`_ui_bootstrap.get_power_tools_panel`](architecture.md#_ui_bootstrap); not promoted |
 | **Files** | `commands/assemblystats/entry.py`; `resources/` PNG set (16/32/64, light and dark) plus the `assystats.idraw` / `assystats-d.idraw` sources, which `tools/release/build_release.py` excludes from the zip |
-| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `isSaved`, `handle_error`](architecture.md#general_utils) |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `require_document`, `handle_error`](architecture.md#general_utils) |
 | **Tests** | none module-specific |
 
 ## Purpose
@@ -26,10 +26,12 @@ verbatim.
   control added to the Power Tools panel. `stop()`: removes the control and the
   definition.
 - `command_created`: registers `execute -> command_execute` and
-  `destroy -> command_destroy`, then stores the module globals `product`,
-  `design` (`Design.cast(app.activeProduct)`) and `title`. Without a design it
-  shows a message box and returns; then `ptutil.isSaved()` shows its own
-  "Please Save" box for an unsaved document and the handler returns. No
+  `destroy -> command_destroy`, then stores the module globals `title` and
+  `design` (`ptutil.require_document(CMD_NAME, "design", saved=True)`, see
+  [Document preconditions](architecture.md#document-preconditions)). Without a
+  saved design that call shows the standard message box ("Assembly Statistics
+  needs a saved design. Save the design, then retry." when the design is
+  unsaved) and the handler returns. No
   `CommandInputs` are added, so Fusion runs `command_execute` directly after
   `command_created` in every case.
 - `command_execute` (all inside one `try`, errors to
@@ -55,7 +57,7 @@ compute dirties the document.
 
 ## Data and state
 
-Module globals `product`, `design`, `title` set in `command_created` and read
+Module globals `design`, `title` set in `command_created` and read
 in `command_execute`; `local_handlers`. No cache, settings keys or custom
 events.
 

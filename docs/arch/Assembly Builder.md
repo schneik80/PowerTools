@@ -8,7 +8,7 @@
 | **Registry** | group `assembly` (`Assembly`); enabled by default |
 | **UI location** | Power Tools panel (`config.my_panel_id`, Design workspace, Tools tab) via [`_ui_bootstrap.get_power_tools_panel`](architecture.md#_ui_bootstrap); not promoted. Opens the palette `config.assembly_builder_palette_id`, docked right, 800 × 600 |
 | **Files** | `commands/assemblybuilder/entry.py` (Fusion contact), `commands/assemblybuilder/sysml_import.py` (`adsk`-free parser), `resources/html/index.html` (Drawflow node editor, `drawflow.min.js` / `drawflow.min.css`), `resources/html/init.js` (generated per open, git-ignored) |
-| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`](architecture.md#general_utils); [`ptutil.wait_for_upload`](architecture.md#upload_utils); [`cache_utils.get_active_project`, `list_param_docs`, `resolve_target_folder`, `target_project_label`, `safe_activate`](architecture.md#cache_utils); [`config`](architecture.md#config) palette id and panel ids |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`, `require_document`](architecture.md#general_utils); [`ptutil.wait_for_upload`](architecture.md#upload_utils); [`cache_utils.get_active_project`, `list_param_docs`, `resolve_target_folder`, `target_project_label`, `safe_activate`](architecture.md#cache_utils); [`config`](architecture.md#config) palette id and panel ids |
 | **Tests** | `tests/test_assemblybuilder_sysml_import.py` |
 
 ## Purpose
@@ -32,7 +32,8 @@ three passes around one flush save.
   `destroy -> command_destroy`. There are no `CommandInputs`, so Fusion runs
   `command_execute` straight away.
 - `command_execute` — launch guards, each a `messageBox` and return: the active
-  product must be a `Design`; a saved document is accepted only when
+  product must be a `Design` (`ptutil.require_document(CMD_NAME, "design")`,
+  see [Document preconditions](architecture.md#document-preconditions)); a saved document is accepted only when
   `_design_is_empty` (no occurrences, bodies, sketches or timeline entries);
   intent must not be Part; the root must have no occurrences. Then, if the
   palette does not exist yet, `_write_init_js(_gather_palette_state())` runs

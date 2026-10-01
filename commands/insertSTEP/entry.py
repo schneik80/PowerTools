@@ -114,12 +114,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     try:
         app = adsk.core.Application.get()
         ui = app.userInterface
-        product = app.activeProduct
-        design = adsk.fusion.Design.cast(product)
-
         # Check a Design document is active.
-        if not design:
-            ui.messageBox("No active Fusion design", "No Design")
+        design = ptutil.require_document(CMD_NAME, "design")
+        if design is None:
             return
 
         # Set styles of file dialog.

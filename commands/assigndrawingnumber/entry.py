@@ -158,20 +158,10 @@ def stop():
 def command_created(args: adsk.core.CommandCreatedEventArgs):
     ptutil.log(f"{CMD_NAME} Command Created Event")
 
-    if not ptutil.isSaved():
-        abort_before_dialog(CMD_ID, CMD_NAME, "document not saved")
+    if ptutil.require_document(CMD_NAME, "drawing", saved=True) is None:
+        abort_before_dialog(CMD_ID, CMD_NAME, "no saved drawing")
         return
-
     doc = app.activeDocument
-    if not isinstance(doc, adsk.drawing.DrawingDocument):
-        ui.messageBox(
-            "Assign Drawing Number requires an active Fusion 2D drawing document.",
-            CMD_NAME,
-            0,
-            2,
-        )
-        abort_before_dialog(CMD_ID, CMD_NAME, "active document is not a drawing")
-        return
 
     current = _read_existing_drawing_number(doc) or ""
 

@@ -289,15 +289,11 @@ def stop():
 def command_created(args: adsk.core.CommandCreatedEventArgs):
     ptutil.log(f"{CMD_NAME} Command Created Event")
 
-    doc = app.activeDocument
     inputs = args.command.commandInputs
 
-    # Check if the active document is saved (not untitled)
-    if not getattr(doc, "isSaved", True):
-        ui.messageBox(
-            "Please save your document before using Link Global Parameters.\n\n"
-            "The command cannot be used on an unsaved (untitled) document."
-        )
+    # Check the active document is saved (not untitled)
+    doc = ptutil.require_document(CMD_NAME, saved=True)
+    if doc is None:
         args.isCancelled = True
         return
 

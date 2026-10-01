@@ -8,7 +8,7 @@
 | **Registry** | group `related` (`Related Data`); enabled by default |
 | **UI location** | Design workspace `FusionSolidEnvironment` → tab `SolidTab` → panel `SolidCreatePanel`, promoted (`IS_PROMOTED = True`); appended, no anchor |
 | **Files** | `commands/relateddata/entry.py`; `resources/` (16/32/64 light, dark, disabled PNGs); `Sample data.json` (`{"PROJECT_ID": "TODO…", "FOLDER_ID": "TODO…"}` — read by nothing; it is tracked, so it ships in the release zip, and `tests/test_release_build.py` pins that it does) |
-| **Shared helpers** | [`config`](architecture.md#config) (`COMPANY_HUB`, `COMPANY_HUB_CONFIGS`, `reload_hub_config`, `CACHE_PATH`); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.read_json`, `write_json_atomic`](architecture.md#json_utils); [`ptutil.isSaved`, `ptutil.log`](architecture.md#general_utils) |
+| **Shared helpers** | [`config`](architecture.md#config) (`COMPANY_HUB`, `COMPANY_HUB_CONFIGS`, `reload_hub_config`, `CACHE_PATH`); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.read_json`, `write_json_atomic`](architecture.md#json_utils); [`ptutil.require_document`, `ptutil.log`](architecture.md#general_utils) |
 | **Tests** | `tests/test_relateddata_cache.py`, `tests/test_command_contract.py`, `tests/test_release_build.py` |
 
 ## Purpose
@@ -23,7 +23,7 @@ Creates a new document from a template held in the hub's configured templates fo
   1. `config.reload_hub_config()` so a hub configured since start-up is visible; `_active_hub_id = app.data.activeHub.id`.
   2. `_active_hub_id not in config.COMPANY_HUB` → "Incorrect Hub" message box, return.
   3. `my_DocsDictSorted = _load_templates_for_hub(_active_hub_id)` (see below); empty → return, the loader has already shown its message.
-  4. [`ptutil.isSaved()`](architecture.md#general_utils) false → return (it shows the "Please Save" prompt).
+  4. [`ptutil.require_document(CMD_NAME, saved=True)`](architecture.md#document-preconditions) is `None` → return (it shows "Create Related Data needs a saved document. Save the document, then retry." or the no-document message).
   5. Adds the inputs: drop-down `dropDownCommandInput` ("Type", `LabeledIconDropDownStyle`) — every template is added with `isSelected=True`, so the last template in sorted order is the initial selection and seeds `docTitle` / `docURN`; boolean `boolvalueInput_` ("Auto-Name", on); string `stringValueInput_` ("Name", disabled, pre-filled with `docTitle`).
   6. Wires `execute` → `command_execute`, `inputChanged` → `command_input_changed`, `destroy` → `command_destroy`.
 
@@ -66,9 +66,9 @@ flowchart TD
     G --> H{"templates non-empty?"}
     E -- yes --> H
     H -- no --> X3["return"]
-    H -- yes --> I{"ptutil.isSaved()?"}
-    I -- no --> X4["return"]
-    I -- yes --> J["add Type / Auto-Name / Name inputs<br/>wire execute, inputChanged, destroy"]
+    H -- yes --> I{"ptutil.require_document(CMD_NAME, saved=True)?"}
+    I -- None --> X4["return"]
+    I -- document --> J["add Type / Auto-Name / Name inputs<br/>wire execute, inputChanged, destroy"]
     J --> K["command_execute(): open template → saveAs → addByInsert → save"]
 ```
 

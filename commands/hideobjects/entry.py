@@ -137,12 +137,8 @@ def command_created(args: adsk.core.CommandCreatedEventArgs) -> None:
 
 def command_execute(args: adsk.core.CommandEventArgs) -> None:
     try:
-        app = adsk.core.Application.get()
-        product = app.activeProduct
-        design = adsk.fusion.Design.cast(product)
-
-        if not design:
-            ui.messageBox("No active Fusion design.", CMD_NAME)
+        design = ptutil.require_document(CMD_NAME, "design")
+        if design is None:
             return
 
         inputs = args.command.commandInputs

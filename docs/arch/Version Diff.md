@@ -8,7 +8,7 @@
 | **Registry** | group `document` (`Document Tools`); **ships disabled** (`settings_store.DEFAULT_DISABLED_COMMANDS`) |
 | **UI location** | the shared Power Tools panel on the Design workspace **Tools** tab (`_ui_bootstrap.get_power_tools_panel()`, panel id `config.my_panel_id`), `isPromoted = True` |
 | **Files** | `commands/versiondiff/entry.py`; `adsk`-free: `timeline_model.py` (dataclasses), `html_report.py` (report renderer), `feature_icons.py` (SVG -> data URI); `adsk`-bound: `timeline_diff.py` (`walk_timeline`, `get_version_info`, `compute_diff`, `save_diff_json`), `param_fingerprint.py`, `sketch_hash.py`, `design_properties.py`; `resources/` (icons, `generate_icons.py`, `feature_icons/` 51 SVGs, `concepts/` design sketches) |
-| **Shared helpers** | [`_ui_bootstrap.get_power_tools_panel`](architecture.md#_ui_bootstrap), [`_command_abort`](architecture.md#_command_abort) (`abort_before_dialog`, `consume_abort`, `clear_abort`), [`ptutil.add_handler`](architecture.md#event_utils), [`ptutil.log`](architecture.md#general_utils), [`config`](architecture.md#config) |
+| **Shared helpers** | [`_ui_bootstrap.get_power_tools_panel`](architecture.md#_ui_bootstrap), [`_command_abort`](architecture.md#_command_abort) (`abort_before_dialog`, `consume_abort`, `clear_abort`), [`ptutil.add_handler`](architecture.md#event_utils), [`ptutil.log`, `ptutil.require_document`](architecture.md#general_utils), [`config`](architecture.md#config) |
 | **Tests** | none of its own; `tests/test_command_contract.py`, `tests/test_command_abort.py` |
 
 ## Purpose
@@ -20,10 +20,9 @@ Compares the active parametric design against any other saved version of the sam
 - `start()`: `addButtonDefinition(CMD_ID, ...)`, `command_created` on `commandCreated` (global handler list), `panel.controls.addCommand(cmd_def)` with `isPromoted = True` on the Power Tools panel if it exists.
 - `stop()`: deletes the panel control and the definition; errors are logged, not raised.
 - `command_created(args)`: resets `_version_map`, then validates in order, each failure showing a message box, calling [`abort_before_dialog(CMD_ID, CMD_NAME, reason)`](architecture.md#aborting-a-command-before-its-dialog) and returning with no inputs built:
-  1. `app.activeDocument.isSaved`;
-  2. `adsk.fusion.Design.cast(app.activeProduct)` is a design;
-  3. `design.designType != DirectDesignType`;
-  4. `app.activeDocument.dataFile.versions.count >= 2`.
+  1. [`ptutil.require_document(CMD_NAME, "design", saved=True)`](architecture.md#document-preconditions) returns a design (it shows its own message, "Version Diff needs a saved design. Save the design, then retry." for an unsaved one; reason `"no saved design"`);
+  2. `design.designType != DirectDesignType`;
+  3. `app.activeDocument.dataFile.versions.count >= 2`.
 
   Then, under `ui.progressBar.showBusy(...)` (single `adsk.doEvents()` calls between phases, not a loop; `progress.hide()` in `finally`), it builds the dialog: group `current_version_info` (`info_version`, `info_date`, `info_user` "Last Saved By", `info_desc`); collapsed group `version_summary` (`sum_versions`, `sum_created`, `sum_last_saved`, `sum_created_by`, `sum_last_user`, `sum_milestones`, `sum_latest_ms`, `sum_revisions`, `sum_latest_rev`, `sum_public`) computed from one pass over `versions` plus `data_file.milestones` and `sharedLink`; and the dropdown `compare_version` listing every other version newest-first as `V<n> - <date>`, with `_version_map[label] = DataFile`. Finally registers `command_execute`, `on_input_changed` (an empty stub) and `command_destroy`.
 - `command_execute(args)`: `consume_abort(CMD_ID, CMD_NAME)` first — a run whose `commandCreated` bailed out is auto-executed with no inputs and would otherwise dereference a missing dropdown. Then:

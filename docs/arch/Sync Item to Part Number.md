@@ -8,7 +8,7 @@
 | **Registry** | group `document` (`Document Tools`); enabled by default; not beta |
 | **UI location** | Design workspace (`config.design_workspace`) → built-in `ManageTab` (added by the Fusion Manage Extension) → panel `PT_ManagePowerTools` ("Power Tools"), created by this command when absent and appended at the end of the tab; promoted button. When `ManageTab` is absent the definition is registered but no control is placed |
 | **Files** | `commands/syncitempartnumber/entry.py`; `logic.py` (`adsk`-free); `resources/` (16/32/64 px light + dark icons) |
-| **Shared helpers** | [`partnumber_shared.mfgdm_props`](architecture.md#partnumber_shared) (`fetch_item_part_hub`, `is_part_number_shared`) and `partnumber_shared.intent` (`has_local_components`, `is_fusion_auto_pn`); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`](architecture.md#general_utils); `config.manage_*` ids ([config](architecture.md#config)) |
+| **Shared helpers** | [`partnumber_shared.mfgdm_props`](architecture.md#partnumber_shared) (`fetch_item_part_hub`, `is_part_number_shared`) and `partnumber_shared.intent` (`has_local_components`, `is_fusion_auto_pn`); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `handle_error`, `require_document`](architecture.md#general_utils); `config.manage_*` ids ([config](architecture.md#config)) |
 | **Tests** | `tests/test_syncitempartnumber_logic.py`; `tests/test_command_icons.py`; `tests/test_command_contract.py` |
 
 ## Purpose
@@ -22,7 +22,7 @@ Copies the active design's Fusion Manage **Item Number** into its **Part Number*
 - `_on_document_event(args)` → `_refresh_enabled()`: `cmd_def.controlDefinition.isEnabled = Design.cast(app.activeProduct) is not None`. No cloud call is made to decide enablement.
 - `command_created(args)`: registers `command_execute` and `command_destroy` only. There are no `CommandInputs`, so Fusion auto-executes.
 - `command_execute(args)`, in order, each failure a message box and return:
-  1. `Design.cast(app.activeProduct)` is `None` → "requires an active Fusion 3D design".
+  1. [`ptutil.require_document(CMD_NAME, "design")`](architecture.md#document-preconditions) is `None` → "Sync Item to Part Number needs a design open. Open or create a design, then retry." (shown by the helper).
   2. `intent.has_local_components(design)` → refuse; only a single model can be synced (referenced children are fine).
   3. `design.rootDataComponent.mfgdmModelId` empty → "Cloud data for this design isn't ready yet"; `timestamp = data.timestamp or ""`.
   4. Progress bar + `adsk.doEvents()`; `mfgdm_props.fetch_item_part_hub(model_id, timestamp)` → `(item_number, part_number, hub_id)`.
@@ -81,8 +81,8 @@ The execute path; every "no" branch is a message box and an early return.
 
 ```mermaid
 flowchart TD
-    A["command_execute()"] --> B{"Design.cast(activeProduct)?"}
-    B -- none --> X1["messageBox; return"]
+    A["command_execute()"] --> B{"ptutil.require_document(CMD_NAME, 'design')?"}
+    B -- None --> X1["messageBox; return"]
     B -- yes --> C{"intent.has_local_components()?"}
     C -- yes --> X2["messageBox; return"]
     C -- no --> D{"rootDataComponent.mfgdmModelId?"}

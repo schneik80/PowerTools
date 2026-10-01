@@ -8,7 +8,7 @@
 | **Registry** | group `exports` (`Exports`); enabled by default |
 | **UI location** | QAT **File** dropdown via [`ptutil.get_qat_file_dropdown()`](architecture.md#ui_utils), `controls.addCommand(cmd_def, "ExportCommand", True)` — directly before Fusion's **Export**, beside the other two exports; no icon folder (that menu renders text) |
 | **Files** | `commands/exportsysml/entry.py` (all Fusion contact), `model.py` (`adsk`-free records and derivations), `render.py` (`adsk`-free SysML v2 and Markdown renderers) |
-| **Shared helpers** | [`ptutil.get_qat_file_dropdown`, `ptutil.remove_from_qat_file_dropdown`](architecture.md#ui_utils), [`ptutil.add_handler`](architecture.md#event_utils), [`ptutil.log`, `ptutil.handle_error`](architecture.md#general_utils) |
+| **Shared helpers** | [`ptutil.get_qat_file_dropdown`, `ptutil.remove_from_qat_file_dropdown`](architecture.md#ui_utils), [`ptutil.add_handler`](architecture.md#event_utils), [`ptutil.log`, `ptutil.handle_error`, `ptutil.require_document`](architecture.md#general_utils) |
 | **Tests** | `tests/test_exportsysml_entry.py`, `tests/test_exportsysml_model.py`, `tests/test_exportsysml_render.py`, `tests/test_assemblybuilder_sysml_import.py` (round trip); `tests/test_command_contract.py`, `tests/test_command_abort.py` |
 
 ## Purpose
@@ -21,7 +21,7 @@ Writes the active design as an Architecture Design Document on the 4+1 View Mode
 - `stop()`: `ptutil.remove_from_qat_file_dropdown(CMD_ID)`, then deletes the definition.
 - `command_created(args)`: the entire command — `_export()` inside one `try` routed to `ptutil.handle_error(CMD_NAME, show_message_box=True)`. No inputs are built and **no `execute` or `destroy` handler is registered**, so Fusion's auto-execute is a no-op and the `_command_abort` flag is unnecessary ([pattern](architecture.md#acting-from-commandcreated-when-there-are-no-inputs)). `tests/test_exportsysml_entry.py::test_no_execute_handler_is_registered` pins this, because the repo-wide guard in `tests/test_command_abort.py` only inspects `commandCreated` bodies.
 - `_export()`, in order:
-  1. `adsk.fusion.Design.cast(app.activeProduct)`; none -> message box, return.
+  1. `ptutil.require_document(CMD_NAME, "design")`; `None` -> return (it shows "Export SysML Architecture Document needs a design open. Open or create a design, then retry."; see [Document preconditions](architecture.md#document-preconditions)).
   2. `root.occurrences.count < 1` -> "This design has no child components." message box, log, return.
   3. `document_name = design.parentDocument.name` or `"Untitled"`.
   4. Folder dialog **before** the scan, so a cancelled dialog costs nothing; cancel -> return.

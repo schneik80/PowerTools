@@ -8,7 +8,7 @@
 | **Registry** | group `assembly` (`Assembly`); enabled by default. Module folder `commands/refrences/` — the misspelling is the registry key and stays ([rule 9](../dev/lessons.md)) |
 | **UI location** | Shared **Power Tools** panel ([`_ui_bootstrap.get_power_tools_panel`](architecture.md#_ui_bootstrap)), appended with no anchor, `isPromoted = False` |
 | **Files** | `commands/refrences/entry.py`; `resources/` (button icons), `resources/open/` and `resources/web/` (row-button icons), `resources/doc_thumb.png` (thumbnail placeholder) |
-| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `isSaved`, `handle_error`](architecture.md#general_utils); `config.design_workspace` and friends ([config](architecture.md#config)) are imported but placement goes through `_ui_bootstrap` |
+| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `require_document`, `handle_error`](architecture.md#general_utils); `config.design_workspace` and friends ([config](architecture.md#config)) are imported but placement goes through `_ui_bootstrap` |
 | **Tests** | `tests/test_command_contract.py` |
 
 ## Purpose
@@ -20,7 +20,7 @@ Shows every document related to the active design in six collapsible groups — 
 - Import time: `THUMB_DIR = <tempdir>/PTAT_thumbs` is created with `os.makedirs`.
 - `start()`: `addButtonDefinition` with the `resources/` icon folder, attaches `command_created`, adds the control to the Power Tools panel. `stop()` removes the control and deletes the definition.
 - `command_created(args)`: attaches `command_execute`, `on_input_changed`, `command_destroy` first, resets the button maps, then inside one `try` (failures go to [`ptutil.handle_error`](architecture.md#general_utils) with a message box):
-  1. Preconditions — `app.isOffLine` → message box and return; no `app.activeProduct` → message box and return; [`ptutil.isSaved()`](architecture.md#general_utils) false → it has already shown its own message box; return. Each of these returns with the handlers attached and no inputs, so Fusion auto-executes and ends the command.
+  1. Preconditions — `app.isOffLine` → message box and return; [`ptutil.require_document(CMD_NAME, "design", saved=True)`](architecture.md#document-preconditions) is `None` → it has already shown the standard message ("Document References needs a saved design. Save the design, then retry." for an unsaved design) → `abort_before_dialog(CMD_ID, CMD_NAME, "no saved design")` and return. Each of these returns with the handlers attached and no inputs, so Fusion auto-executes and ends the command.
   2. Reads `doc.designDataFile.parentReferences` and `.childReferences`. Parents are classified by `make_file_data` into Related Data (name contains ` ‹+› `), Drawings (`fileExtension == "f2d"`), otherwise Used In. Children whose `parentProject.name == "Standard Components"` are Fasteners; the rest are Uses, with ` (configuration)` appended when `isConfiguration` is set.
   3. `make_file_data(file)` records name, id, `fusionWebURL`, the `DataFile` itself and a display path built by walking `parentFolder` up to ten levels to the project root; a file from another project gets a `⚠️ … (Cross Project Reference)` path.
   4. `ui.progressBar.showBusy(...)` plus `adsk.doEvents()` per item while `fetch_thumbnail` runs for every row (see below).

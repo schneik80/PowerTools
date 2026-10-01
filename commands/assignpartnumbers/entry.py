@@ -138,20 +138,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     _baseline_loaded = False
 
     # --- Pre-validation ------------------------------------------------------
-    if not ptutil.isSaved():
-        abort_before_dialog(CMD_ID, CMD_NAME, "document not saved")
-        return
-
-    product = app.activeProduct
-    design = adsk.fusion.Design.cast(product)
-    if not design:
-        ui.messageBox(
-            "Assign Part Numbers requires an active Fusion 3D design.",
-            CMD_NAME,
-            0,
-            2,
-        )
-        abort_before_dialog(CMD_ID, CMD_NAME, "no active 3D design")
+    design = ptutil.require_document(CMD_NAME, "design", saved=True)
+    if design is None:
+        abort_before_dialog(CMD_ID, CMD_NAME, "no saved design")
         return
 
     _targets = intent_mod.iter_targets(design)

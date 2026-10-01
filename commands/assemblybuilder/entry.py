@@ -125,16 +125,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
     ptutil.log(f"{CMD_NAME}: Command execute event.")
 
     # Must be a Fusion Design
-    product = app.activeProduct
-    if not product or not isinstance(product, adsk.fusion.Design):
-        ui.messageBox(
-            "Assembly Builder requires an active Fusion Design.\n\n"
-            "Please open or create a Design first.",
-            CMD_NAME,
-        )
+    design = ptutil.require_document(CMD_NAME, "design")
+    if design is None:
         return
-
-    design = adsk.fusion.Design.cast(product)
     doc = app.activeDocument
 
     # Normally a new, unsaved document. Special case: a *saved* document is
