@@ -64,9 +64,12 @@ follows: before any `CommandDefinition.execute()` or `executeTextCommand` of a
 native command, check its precondition with `ptutil.require_document()`
 (which runs `is_user_document` first) and return if it fails. `scriptsmanager`
 is fine because its command needs nothing. Change Share Settings and Get and
-Update (#16) sit behind `require_document(..., saved=True)`; the with-document
-case is still to be confirmed in Fusion. Local Recovery Save, Export BOM and
-Export Mermaid run from `commandCreated` behind that guard. -- #25
+Update (#16) sit behind `require_document(..., saved=True)`. Local Recovery
+Save, Export BOM and Export Mermaid run from `commandCreated` behind that
+guard. Verified 2026-10-01 on `ADSKMVG91G2F5W` (macOS) and `g16win.local`
+(Windows), production and pre-production: the File-dropdown commands from the start screen show
+the message and do not crash, and Change Share Settings, Get and Update and
+Assign Drawing Number behave with a document open. -- #25, `f269420`
 
 **One precondition gate, one sentence: `ptutil.require_document()`.** By
 2026-10-01 some 35 command entry points checked "is there a design / a saved

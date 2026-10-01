@@ -219,8 +219,8 @@ navigate and Add items, the six Share Menu commands (`shareDocument`,
 open, so each goes through `ptutil.require_document()` (see
 [Document preconditions](#document-preconditions)). `getandupdate` and `shareSettings`
 launch a native Fusion command (`CommandDefinition.execute()`) from
-`commandCreated`; that is not `doExecute` (rule 20) but has not yet been
-exercised in Fusion on either channel.
+`commandCreated` behind the document guard; that is not `doExecute` (rule 20)
+and is verified in Fusion on macOS and Windows, production and pre-production.
 `tests/test_exportsysml_entry.py::test_no_execute_handler_is_registered` pins
 the shape for one of them. `KNOWN_EXECUTE_ONLY_INPUTLESS` in
 `tests/test_command_contract.py` is the exact list of `commandCreated`
