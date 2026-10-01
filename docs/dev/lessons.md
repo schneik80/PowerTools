@@ -47,22 +47,27 @@ documentation review, were fixed the same way together with the eight
 input-less QAT/QATRight launchers under issue #16. -- `f18b911`, `11cfc51`,
 `8a676af`
 
-**"Act from `commandCreated`" is safe for our own Python work, not for
-launching a native Fusion command with no document open.** Local Recovery
-Save was moved to `commandCreated` as the pilot for the three File-dropdown
-commands (#25): its whole body is `AutoSaveFilesCommand.execute()`. From the
-start screen with no document open it crashed Fusion outright (2706.0.97,
-2026-09-30); the pilot was reverted the same day. `scriptsmanager` launches a
-native command from `commandCreated` without trouble because that command does
-not need a document. So: a `commandCreated` body that calls
-`CommandDefinition.execute()` on a native command must first check
-`ptutil.is_user_document(app.activeDocument)` (or the command's own
-precondition) and return -- the message box is fine, the launch is not. Change
-Share Settings and Get and Update (#16) launch native commands behind an
-`isSaved()` guard, so they do not reach the launch with no document; whether
-the launch is safe from `commandCreated` *with* a document is unverified and
-must be checked in Fusion before the branch merges. Export BOM and Export
-Mermaid have pure-Python bodies and can still move, guarded. -- #25
+**`CommandDefinition.execute()` runs a native command with no precondition
+check; guard the precondition yourself, wherever you call it from.** Local
+Recovery Save was moved to `commandCreated` as the pilot for the File-dropdown
+commands (#25) and, from the start screen with no document open, crashed
+Fusion (2706.0.97 pre-production, macOS, 2026-09-30). The CER stack settles
+the mechanism: the crashed thread is QTimer -> `ExecuteCommandTask` ->
+`CommandMgr::executeCommand` -> `Nu::Commands::AutoSaveCmd::onExecute` ->
+`AssetSession::documentSession()` null dereference, straight down to `main`,
+with **no Python or API frame anywhere** -- our call only queued a task and had
+long returned. So the launch location was irrelevant: Fusion's own AutoSave
+command dereferences the document session unconditionally, and the API lets
+you execute it with none. The old `execute`-based code was only safe by
+accident (rule 1: `execute` never fired without a document). The rule that
+follows: before any `CommandDefinition.execute()` or `executeTextCommand` of a
+native command, check its precondition -- `ptutil.is_user_document(
+app.activeDocument)`, `isSaved()`, whatever the command needs -- and return
+with a message if it fails. `scriptsmanager` is fine because its command needs
+nothing. Change Share Settings and Get and Update (#16) sit behind `isSaved()`,
+which is the right guard; the with-document case is still to be confirmed in
+Fusion. The pilot was reverted; Local Recovery Save, Export BOM and Export
+Mermaid can move to `commandCreated` with that guard first. -- #25
 
 **Never call `args.command.doExecute()` from `commandCreated`.** It runs inside
 `CommandDefinition::createCommand`, so `doExecute(True)` *or* `doExecute(False)`
