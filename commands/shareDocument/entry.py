@@ -97,11 +97,23 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
     # ******************************** Your code here ********************************
 
-    shareCmdDef = ui.commandDefinitions.itemById("SimpleSharingPublicLinkCommand")
-    isShareAllowed = shareCmdDef.controlDefinition.isEnabled
-
+    # Guard first: isSaved() shows its own message and treats a missing
+    # activeDocument as "not saved", so nothing below runs on the start screen.
     if not ptutil.isSaved():
         return
+
+    # Fusion's own definition; never dereference it unchecked (issue #28).
+    shareCmdDef = ui.commandDefinitions.itemById("SimpleSharingPublicLinkCommand")
+    if shareCmdDef is None:
+        ptutil.log(f"{CMD_NAME}: SimpleSharingPublicLinkCommand not found")
+        ui.messageBox(
+            "Fusion's sharing command is not available in this build",
+            "Share Document",
+            0,
+            2,
+        )
+        return
+    isShareAllowed = shareCmdDef.controlDefinition.isEnabled
 
     if not isShareAllowed:
         permLink = app.activeDocument.designDataFile.fusionWebURL

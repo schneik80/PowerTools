@@ -94,11 +94,23 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
     # ******************************* Your code here ********************************
 
-    shareCmdDef = ui.commandDefinitions.itemById("SimpleSharingPublicLinkCommand")
-    isShareAllowed = shareCmdDef.controlDefinition.isEnabled
-
+    # Guard first: isSaved() shows its own message and treats a missing
+    # activeDocument as "not saved", so nothing below runs on the start screen.
     if not ptutil.isSaved():
         return
+
+    # Fusion's own definition; never dereference it unchecked (issue #28).
+    shareCmdDef = ui.commandDefinitions.itemById("SimpleSharingPublicLinkCommand")
+    if shareCmdDef is None:
+        ptutil.log(f"{CMD_NAME}: SimpleSharingPublicLinkCommand not found")
+        ui.messageBox(
+            "Fusion's sharing command is not available in this build",
+            "Share Settings",
+            0,
+            2,
+        )
+        return
+    isShareAllowed = shareCmdDef.controlDefinition.isEnabled
 
     if isShareAllowed is False:
         ui.messageBox(
@@ -110,11 +122,11 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         return
 
     try:
-        cmdDefs = ui.commandDefinitions
-        showShareSettings = cmdDefs.itemById("SimpleSharingPublicLinkCommand")
         # Native command launched from commandCreated (not doExecute, rule 20):
         # needs a Fusion check on both channels before it is trusted (issue #16).
-        showShareSettings.execute()
+        # Reached only after isSaved() and the None check above: a native
+        # CommandDefinition.execute() checks no precondition itself (#25 lesson).
+        shareCmdDef.execute()
 
     except Exception:
         # Write the error message to the TEXT COMMANDS window.
