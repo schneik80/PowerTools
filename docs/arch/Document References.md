@@ -6,14 +6,14 @@
 |---|---|
 | **Command ID** | `PTAT_docrefs` |
 | **Registry** | group `assembly` (`Assembly`); enabled by default. Module folder `commands/refrences/` — the misspelling is the registry key and stays ([rule 9](../dev/lessons.md)) |
-| **UI location** | Shared **Power Tools** panel ([`_ui_bootstrap.get_power_tools_panel`](architecture.md#_ui_bootstrap)), appended with no anchor, `isPromoted = False`; and the Drawing workspace's Power Tools panel via [`_drawing_panel`](architecture.md#_drawing_panel) (first on it: the `assembly` group starts before `document`) |
-| **Files** | `commands/refrences/entry.py`; `logic.py` (adsk-free: `unique_by_id`); `resources/` (button icons), `resources/open/` and `resources/web/` (row-button icons), `resources/doc_thumb.png` (thumbnail placeholder) |
-| **Shared helpers** | [`_drawing_panel`](architecture.md#_drawing_panel); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `require_document`, `handle_error`](architecture.md#general_utils); `config.design_workspace` and friends ([config](architecture.md#config)) are imported but placement goes through `_ui_bootstrap` |
-| **Tests** | `tests/test_refrences_logic.py`; `tests/test_command_contract.py` |
+| **UI location** | Shared **Power Tools** panel ([`_ui_bootstrap.get_power_tools_panel`](architecture.md#_ui_bootstrap)), appended with no anchor, `isPromoted = False`; and the Drawing workspace's Power Tools panel via [`_drawing_panel`](architecture.md#_drawing_panel) (first on it: the `assembly` group starts before `document`); and the four electronics panels via [`_electronics_panels`](architecture.md#_electronics_panels) |
+| **Files** | `commands/refrences/entry.py`; `logic.py` (adsk-free: `unique_by_id`); `electronics.py` (adsk-free: `electronics_set`, `is_electronics_file`); `resources/` (button icons), `resources/open/` and `resources/web/` (row-button icons), `resources/doc_thumb.png` (thumbnail placeholder) |
+| **Shared helpers** | [`_drawing_panel`](architecture.md#_drawing_panel); [`_electronics_panels`](architecture.md#_electronics_panels); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `require_document`, `handle_error`](architecture.md#general_utils); `config.design_workspace` and friends ([config](architecture.md#config)) are imported but placement goes through `_ui_bootstrap` |
+| **Tests** | `tests/test_refrences_logic.py`; `tests/test_refrences_electronics.py`; `tests/test_command_contract.py` |
 
 ## Purpose
 
-Shows every document related to the active design in six collapsible groups — Roots, Used In, Uses, Drawings, Fasteners, Related Data — each row with a thumbnail tooltip and buttons to open the document in Fusion or in the browser. For a drawing it shows the Uses group alone: the designs the drawing documents. Roots are found by walking the full `parentReferences` graph, so a part buried several assemblies deep still reports the top-level assemblies that ultimately contain it. The shaping constraint is that everything, including the recursive walk and all thumbnail downloads, runs inside `commandCreated` before the dialog can appear.
+Shows every document related to the active design in six collapsible groups — Roots, Used In, Uses, Drawings, Fasteners, Related Data — each row with a thumbnail tooltip and buttons to open the document in Fusion or in the browser. For a drawing it shows the Uses group alone: the designs the drawing documents. For an electronics document it shows the electronics design it belongs to (see [Electronics](#electronics)). Roots are found by walking the full `parentReferences` graph, so a part buried several assemblies deep still reports the top-level assemblies that ultimately contain it. The shaping constraint is that everything, including the recursive walk and all thumbnail downloads, runs inside `commandCreated` before the dialog can appear.
 
 ## How it is wired
 
@@ -39,6 +39,25 @@ Shows every document related to the active design in six collapsible groups — 
 
 The poll is a `doEvents` loop with `time.sleep` on the UI thread, which [rule 2](../dev/lessons.md) forbids; it is recorded, not fixed, in `tests/test_command_contract.py` (`KNOWN_TIME_SLEEP_SITES`), and `ptutil.pump_events_for` is the replacement when it is touched.
 
+## Electronics
+
+An electronics design is four cloud files linked only by `parentReferences` / `childReferences` (`Document.documentReferences` is not dependable here: empty when each file is opened on its own, populated only after a drawing has loaded them):
+
+```mermaid
+flowchart LR
+  W["drawing (.f2d)"] --> P["project (.fprj)"]
+  P --> S["schematic (.fsch)"]
+  P --> B["2D PCB (.fbrd)"]
+  B --> D["3D PCB (.f3d)"]
+```
+
+A drawing of the 3D PCB references the **project**, not the 3D PCB it shows. `electronics_set` also accepts a drawing that references the 3D PCB directly.
+
+- `is_ecad = isinstance(active, _ECAD_DOCUMENT_TYPES)` (`adsk.electron.EcadDesignDocument`, `SchematicDocument`, `BoardDocument`); `require_document(CMD_NAME, "document", saved=True)`; the file is `doc.dataFile`.
+- `electronics.electronics_set(doc_file)` walks from the active file up to the project and back down, returning `ElectronicsSet(projects, schematics, boards, pcb3ds, drawings)`. A design counts only when a `.fbrd` is among its parents (it is a 3D PCB), a drawing only when it references a project or a 3D PCB; anything else returns `None`. Drawings are the `.f2d` parents of the project and of the 3D PCB. Files a project cannot reach (a board whose project link is missing) still list what their own references reach. Every reference read is guarded.
+- Rows: one group per file type — **Electronics Project**, **Schematic**, **2D PCB**, **3D PCB**, **Drawings** (prefixes `ecadprj`, `ecadsch`, `ecadbrd`, `ecadpcb`, `ecaddwg`). The active document is never a row; a group whose only member was the active document is not added at all. Thumbnails come from `DataFile.thumbnail`.
+- An electronics project, schematic or 2D PCB shows only these groups. A drawing of an electronics design shows them too, and its Uses group only for references outside the set (`ElectronicsSet.ids()`). A 3D PCB shows them ahead of the design groups; its `.fbrd` parent is dropped from Used In, its design Drawings group is not shown (they are in the electronics Drawings group), and `_collect_roots` skips electronics parents so Roots stay mechanical assemblies.
+
 ## Data and state
 
 - Module globals: `_fusion_btns` (input id → `DataFile`), `_browser_btns` (input id → URL), `_thumb_cache` (file id → path), `_thumb_paths`, `local_handlers`; all reset per invocation.
@@ -50,11 +69,11 @@ The poll is a `doEvents` loop with `time.sleep` on the UI thread, which [rule 2]
 `_collect_roots(data_file, visited_ids, root_ids, root_items, depth)` is a depth-first walk starting from each immediate parent:
 
 1. A file already in `visited_ids` is skipped, which terminates on cyclic and diamond-shaped graphs.
-2. Its `parentReferences` are filtered: `.f2d` drawings and ` ‹+› ` Related Data documents are dropped and never treated as roots; a `parentReferences` call that raises is logged and the file treated as having no parents.
+2. Its `parentReferences` are filtered: `.f2d` drawings, electronics files (`.fprj` / `.fsch` / `.fbrd`) and ` ‹+› ` Related Data documents are dropped and never treated as roots; a `parentReferences` call that raises is logged and the file treated as having no parents.
 3. A file with no remaining real parents is a root, added once (`root_ids`) unless it is the active document itself.
 4. Otherwise the walk recurses into each real parent with `depth + 1`.
 
-Every decision is logged through [`ptutil.log`](architecture.md#general_utils) with a `[Roots]` prefix indented by depth (`Visiting`, `raw parents`, `SKIP parent (drawing)`, `KEEP parent`, `ROOT FOUND`, …). `ptutil.log` is a no-op unless the `.debug` marker is present; with it, the lines go to the Text Commands window and the debug log file.
+Every decision is logged through [`ptutil.log`](architecture.md#general_utils) with a `[Roots]` prefix indented by depth (`Visiting`, `raw parents`, `SKIP parent (drawing)`, `SKIP parent (electronics)`, `KEEP parent`, `ROOT FOUND`, …). `ptutil.log` is a no-op unless the `.debug` marker is present; with it, the lines go to the Text Commands window and the debug log file.
 
 ## Diagram
 
@@ -65,7 +84,7 @@ flowchart TD
   S["_collect_roots(file)"] --> V{"id in visited_ids?"}
   V -->|yes| X1["return"]
   V -->|no| P["parents = file.parentReferences<br/>(raise → treat as none)"]
-  P --> F["drop .f2d drawings and ‹+› Related Data"]
+  P --> F["drop .f2d drawings, electronics files and ‹+› Related Data"]
   F --> R{"real parents left?"}
   R -->|no| A{"is the active document?"}
   A -->|yes| X2["return"]
@@ -78,6 +97,7 @@ flowchart TD
 
 ## Tests
 
+- `tests/test_refrences_electronics.py` — `electronics_set` from each of the five files of the live-recorded Air_Quality_Sensor design (drawing included) resolves the whole set; a drawing that references the 3D PCB directly; an ordinary design or its drawing is not electronics; a board or 3D PCB with a missing project link; reference reads that raise.
 - `tests/test_refrences_logic.py` — `unique_by_id` keeps the first of each id across the two sources of a drawing's Uses, and drops items whose id is unreadable or empty.
 - `tests/test_command_contract.py` — registry/description/ID contract; `PTAT_thumbs` is allow-listed as a `PTAT_` literal that is a temp-folder name rather than a command id; `commands/refrences/entry.py` is pinned with exactly one `time.sleep` call in `KNOWN_TIME_SLEEP_SITES`.
 - `tests/test_command_abort.py` — the AST guard confirms the `doExecute` in `on_input_changed` is outside any `commandCreated` handler.

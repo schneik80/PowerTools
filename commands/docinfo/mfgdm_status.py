@@ -26,6 +26,11 @@ them different local handles:
   which is compared with the drawing's local document reference. The two
   should agree; a disagreement seen on 2026-10-01 was a Fusion bug, and the
   warning exists to surface it.
+* **Electronics project, schematic, 2D board** -- the same ``item()`` lookup;
+  MFGDM answers with a ``BasicItem``: a file record (extension, tip version)
+  with no model, component or part number behind it. The 3D PCB is an
+  ordinary design. Seen on ADSKMVG91G2F5W, pre-production 2706.0.116,
+  2026-10-02.
 
 Query shapes verified against the live schema on ADSKMVG91G2F5W, pre-production
 channel, 2026-10-01, with a drawing and its source design open.
@@ -40,6 +45,8 @@ query($hubId: ID!, $itemId: ID!) {
   item(hubId: $hubId, itemId: $itemId) {
     __typename
     id
+    extensionType
+    ... on BasicItem { tipVersion { versionNumber } }
     ... on DrawingItem {
       tipVersion { versionNumber }
       tipDrawing {
@@ -114,6 +121,7 @@ def summarize_item(data: dict) -> dict:
         "status": OK,
         "kind": _dig(item, "__typename"),
         "item_id": _dig(item, "id"),
+        "extension": _dig(item, "extensionType"),
         "version_number": _dig(item, "tipVersion", "versionNumber"),
         "drawing_id": _dig(drawing, "id"),
         "item_number": _dig(drawing, "itemNumber", "id"),
@@ -207,6 +215,25 @@ def render_design(model: dict) -> tuple[str, bool]:
     """The MFGDM block for a design. Returns ``(html, warn)``."""
     html = "<p><b>MFGDM</b><br>" + _status_row("MFGDM Data", model) + _model_rows(model)
     return html, model.get("status") != OK
+
+
+def render_file(item: dict) -> tuple[str, bool]:
+    """The MFGDM block for an electronics file (a ``BasicItem``). Returns ``(html, warn)``.
+
+    MFGDM keeps a file record for these and nothing more, which the block says
+    so that a missing part number does not read as missing data.
+    """
+    html = "<p><b>MFGDM</b><br>" + _status_row("MFGDM Data", item)
+    if item.get("status") == OK:
+        html += (
+            _row("Item ID", item.get("item_id", ""))
+            + _row("Item Type", item.get("kind", ""))
+            + _row("File Type", item.get("extension", ""))
+            + _row("Tip Version", item.get("version_number", ""))
+            + "MFGDM keeps only a file record for this document type: no "
+            "model, component or part number.<br>"
+        )
+    return html, item.get("status") != OK
 
 
 def render_drawing(

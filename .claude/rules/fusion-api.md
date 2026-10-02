@@ -140,6 +140,10 @@ explains it. Full write-ups: `docs/dev/lessons.md`.
   `rootDataComponent` can be `None` on a loaded design; read the model id
   through `mfgdm_props.design_model_id()`, which falls back to
   `rootComponent.mfgdmModelId` (lessons.md).
+- **Electronics: four documents, linked by cloud references**
+  (`documentReferences` is not dependable there). Find their workspaces by `productType`,
+  not id (ids are unpublished, three spelled `...Environement`); place
+  controls through `commands/_electronics_panels.py` (lessons.md).
 - **Fusion IDs use underscores, never hyphens** (hyphens log "invalid
   characters" on every launch). Renaming a `CMD_ID` orphans users' QAT pins
   (6789216).

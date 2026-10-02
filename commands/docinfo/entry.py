@@ -11,12 +11,17 @@ import os
 
 import adsk.core
 import adsk.drawing
+import adsk.electron
 import adsk.fusion
 
 from ... import config
 from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
 from .._drawing_panel import add_to_drawing_panel, remove_from_drawing_panel
+from .._electronics_panels import (
+    add_to_electronics_panels,
+    remove_from_electronics_panels,
+)
 from ..partnumber_shared import mfgdm_props
 from . import mfgdm_status
 
@@ -25,7 +30,7 @@ ui = app.userInterface
 
 CMD_NAME = "Document Information"
 CMD_ID = "PTND_docinfo"
-CMD_Description = "Show the hub, project, folder, version and MFGDM identifiers of the active design or drawing, and warn when saving it would migrate it to the running Fusion build."
+CMD_Description = "Show the hub, project, folder, version and MFGDM identifiers of the active design, drawing or electronics document, and warn when saving it would migrate it to the running Fusion build."
 IS_PROMOTED = True
 
 # Global variables by referencing values from /config.py
@@ -67,6 +72,8 @@ def start():
     # And to the Drawing workspace's Power Tools panel, shared with Assign
     # Drawing Number.
     add_to_drawing_panel(cmd_def, CMD_NAME, IS_PROMOTED)
+    # And to the electronics environments (project, schematic, 2D and 3D PCB).
+    add_to_electronics_panels(cmd_def, CMD_NAME, IS_PROMOTED)
 
 
 # Executed when add-in is stopped.
@@ -81,6 +88,7 @@ def stop():
         command_control.deleteMe()
 
     remove_from_drawing_panel(CMD_ID, CMD_NAME)
+    remove_from_electronics_panels(CMD_ID, CMD_NAME)
 
     # Delete the command definition
     if command_definition:
@@ -152,15 +160,24 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
             return
 
         is_drawing = isinstance(doc, adsk.drawing.DrawingDocument)
-        design = None if is_drawing else _design_of(doc)
-        if not is_drawing and design is None:
+        # Electronics project, schematic and 2D board; a 3D PCB is a design.
+        is_ecad = isinstance(
+            doc,
+            (
+                adsk.electron.EcadDesignDocument,
+                adsk.electron.SchematicDocument,
+                adsk.electron.BoardDocument,
+            ),
+        )
+        design = None if (is_drawing or is_ecad) else _design_of(doc)
+        if not (is_drawing or is_ecad) and design is None:
             ui.messageBox(
                 ptutil.document_required_message(CMD_NAME, "design"), CMD_NAME
             )
             return
 
         data_file = doc.dataFile
-        title_name = doc.name if is_drawing else design.rootComponent.name
+        title_name = doc.name if design is None else design.rootComponent.name
         mTitle = f"{title_name} Document Info"
 
         # The document's own hub, not the Data Panel's active one: MFGDM needs
@@ -218,6 +235,12 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
         try:
             if is_drawing:
                 mfgdmHtml, mfgdmWarn = _drawing_mfgdm(doc, hub)
+            elif is_ecad:
+                mfgdmHtml, mfgdmWarn = mfgdm_status.render_file(
+                    mfgdm_status.item_summary(
+                        mfgdm_props.gql, hub.mfgdmId or "", data_file.id or ""
+                    )
+                )
             else:
                 mfgdmHtml, mfgdmWarn = mfgdm_status.render_design(
                     mfgdm_status.model_summary(

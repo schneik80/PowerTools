@@ -31,7 +31,7 @@ suite stubs `adsk` and proves pure logic only (see
   - [Custom graphics](#custom-graphics)
 - [Shared modules](#shared-modules)
   - [Root modules](#root-modules): [`command_registry`](#command_registry), [`settings_store`](#settings_store), [`config`](#config)
-  - [Command infrastructure](#command-infrastructure): [`commands/__init__`](#commands__init__), [`_ui_bootstrap`](#_ui_bootstrap), [`_command_abort`](#_command_abort), [`_menu_plan`](#_menu_plan), [`_inspect_panels`](#_inspect_panels), [`_drawing_panel`](#_drawing_panel), [`partnumber_shared`](#partnumber_shared)
+  - [Command infrastructure](#command-infrastructure): [`commands/__init__`](#commands__init__), [`_ui_bootstrap`](#_ui_bootstrap), [`_command_abort`](#_command_abort), [`_menu_plan`](#_menu_plan), [`_inspect_panels`](#_inspect_panels), [`_drawing_panel`](#_drawing_panel), [`_electronics_panels`](#_electronics_panels), [`partnumber_shared`](#partnumber_shared)
   - [`lib/ptAddInUtils` (`ptutil`)](#libptaddinutils-ptutil): [`general_utils`](#general_utils), [`event_utils`](#event_utils), [`selection_utils`](#selection_utils), [`json_utils`](#json_utils), [`ui_utils`](#ui_utils), [`cache_utils`](#cache_utils), [`upload_utils`](#upload_utils), [`recents_utils`](#recents_utils), [`fusion_recents`](#fusion_recents), [`intent_icons`](#intent_icons), [`log_utils`](#log_utils), [`attributes_utils`](#attributes_utils), [`date_utils`](#date_utils)
 - [UI access points](#ui-access-points)
 - [State on disk](#state-on-disk)
@@ -72,6 +72,7 @@ PowerTools/
 │   ├── _menu_plan.py           # positional keep/remove rule for the dynamic flyouts (adsk-free)
 │   ├── _inspect_panels.py      # discovers Fusion's Inspect panels at runtime
 │   ├── _drawing_panel.py       # the Drawing workspace's Power Tools panel
+│   ├── _electronics_panels.py  # Power Tools panels in the four electronics workspaces
 │   ├── preferences/            # infrastructure command; always started first
 │   ├── partnumber_shared/      # library shared by the three part/drawing-number commands
 │   └── <module>/               # one folder per registered command (55 of them)
@@ -533,6 +534,7 @@ at import time (rule 12; `general_utils._refresh_flags` re-reads lazily).
 | 1 flags / identity | `DEBUG`, `PERF_TRACE`, `WAIT_FOR_DEBUGGER`, `DEBUGGER_PORT`, `DEBUGGER_BLOCK_UNTIL_ATTACHED`, `ADDIN_NAME`, `COMPANY_NAME`, `ADDIN_PATH`, `CACHE_PATH` | `DEBUG = os.path.isfile(<root>/.debug)`; `WAIT_FOR_DEBUGGER = DEBUG` |
 | 2 shared panel | `design_workspace`, `tools_tab_id`, `my_tab_name`, `my_panel_id` (`PT_Power Tools`), `my_panel_name`, `my_panel_after` | Consumed by `_ui_bootstrap` |
 | 3 Drawing tab | `drawing_workspace`, `drawing_tab_id` (`FusionDocTab`), `drawing_panel_id` (`PT_DrawingPowerTools`), ... | Built-in tab; consumed by [`_drawing_panel`](#_drawing_panel), which adds/removes only our panel |
+| 3a Electronics | `ecad_project_panel_id`, `ecad_schematic_panel_id`, `ecad_board_panel_id`, `ecad_pcb3d_panel_id` | Our panels only; workspaces resolved by [`_electronics_panels`](#_electronics_panels) |
 | 3b Manage tab | `manage_tab_id` (`ManageTab`), `manage_panel_id` (`PT_ManagePowerTools`), ... | Present only with the Manage Extension |
 | 3c Animation | `animation_*_candidates`, `animation_*_names`, `resolve_animation_workspace_id()`, `get_or_create_animation_panel(workspace_id)` | Unpublished ids (`Publisher3DEnvironment`, tab `Animation`, anchor `PublisherViewPanel`) pinned with a name fallback that logs every candidate it saw |
 | 3d Manufacture | `manufacture_workspace_candidates`, `resolve_manufacture_workspace_id()` | Watched by Match Units; nothing is placed there |
@@ -666,6 +668,31 @@ empty, so start/stop order between its commands does not matter.
 
 Enforces: rule 10 (`FusionDocTab` is built in). Tests: none (Fusion-bound).
 Used by: `refrences`, `assigndrawingnumber`, `docinfo` (panel order follows start order).
+
+#### `_electronics_panels`
+
+`commands/_electronics_panels.py`. A Power Tools panel of our own in each of
+Fusion's electronics environments. The workspace ids are unpublished (three are
+spelled `...Environement`), so each `Place` resolves its workspace by
+`productType`, then candidate id, then display name, and logs what it found
+(rule 11). Panel ids are `config.ecad_*_panel_id`.
+
+| Place | Workspace (as observed) | Where the panel goes |
+|---|---|---|
+| `project` | `ElectronProjectDocProductType` (`PCBDesignEnvironement`) | the workspace's own `toolbarPanels` — it has no tabs; a control in its built-in OUTPUTS panel is not shown |
+| `schematic` | `ElectronSchDocProductType` (`SchEditorEnvironement`) | `ToolsTab` (UTILITIES) |
+| `board` | `ElectronPcbDocProductType` (`BoardLayoutEnvironement`) | `ToolsTab` (UTILITIES) |
+| `pcb3d` | `PCB3DEnvironment` / "3D PCB" (a `DesignProductType`, so not by type) | `PCB3DTab`; the UTILITIES tab is hidden there |
+
+| Name | Semantics |
+|---|---|
+| `pick_workspace(workspaces, place)` | Duck-typed resolution; `None` when the build has no such workspace |
+| `add_to_electronics_panels(cmd_def, cmd_name, is_promoted=False) -> list` | Find or create each panel, add the control unless present; returns the place keys placed; logs and skips what is missing |
+| `remove_from_electronics_panels(cmd_id, cmd_name)` | Remove the control, then each panel once empty; never raises |
+
+Enforces: rules 10 and 11. Tests: `tests/test_electronics_panels.py`
+(`pick_workspace` against the live-recorded workspace list). Used by:
+`refrences`, `docinfo`.
 
 #### `partnumber_shared`
 
@@ -901,6 +928,7 @@ panels are never deleted; only our controls and our own panels are.
 | QAT File dropdown | `QAT` / `FileSubMenuCommand` | Fusion | `preferences` (retries from `documentActivated`), `scriptsmanager` (before `PT_preferences`), `closealldocuments` and `refresh` (after `ExportCommand`), `exportsysml` (before `ExportCommand`), `openrecent` (flyout after the native Open control, probed) |
 | QATRight Share flyout | `QATRight` / `shareDropMenu` | `shareDocument` (`addDropDown`); removed by `remove_from_qat_right_flyout` when empty | the six Share commands |
 | Drawing tab panel | `FusionDocumentationEnvironment` / `FusionDocTab` / `PT_DrawingPowerTools` | first of its commands to start, via `_drawing_panel`; removed when empty | `refrences`, `assigndrawingnumber`, `docinfo` |
+| Electronics panels | project workspace panels; Schematic / PCB Editor `ToolsTab`; 3D PCB `PCB3DTab` — `PT_EcadProjectPowerTools`, `PT_SchPowerTools`, `PT_PcbPowerTools`, `PT_PCB3DPowerTools` | first of its commands to start, via `_electronics_panels`; removed when empty | `refrences`, `docinfo` |
 | Manage tab panel | `FusionSolidEnvironment` / `ManageTab` / `PT_ManagePowerTools` | `syncitempartnumber`; skipped when the tab is absent | `syncitempartnumber` |
 | Animation tab panel | `Publisher3DEnvironment` / `Animation` / `PT_AnimationPowerTools` after `PublisherViewPanel` | `animationnamedview` via `config.get_or_create_animation_panel` | `animationnamedview` |
 | Inspect panels, every design-product workspace | discovered | Fusion; controls via `_inspect_panels` | `measurepath`, `matchunits` |

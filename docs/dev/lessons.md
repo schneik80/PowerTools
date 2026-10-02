@@ -565,6 +565,29 @@ MCP on ADSKMVG91G2F5W, pre-production channel, 2026-10-01; not yet seen on
 Windows or production. -- `commands/docinfo/`,
 `commands/partnumber_shared/mfgdm_props.py`
 
+**An electronics design is four documents linked by cloud references.**
+Project `.fprj` (`adsk.electron.EcadDesignDocument`) -> schematic `.fsch`
+(`SchematicDocument`) and 2D PCB `.fbrd` (`BoardDocument`); the board -> 3D
+PCB `.f3d` (an ordinary `FusionDocument`). A drawing of the 3D PCB
+references the *project*, not the 3D PCB it shows. `documentReferences` is
+not dependable here: empty on all four when each was opened on its own,
+populated on the project and board once a drawing had loaded them, and
+raising "non-top-level document" on the hidden copies behind the drawing.
+`DataFile.parentReferences` / `childReferences` are the link to use, and a 3D
+PCB is recognisable only by having a `.fbrd` parent. MFGDM
+answers `item()` for the three electronics files with a `BasicItem` (a file
+record, no model); the 3D PCB is a `DesignItem`. Their workspaces are
+unpublished and three ids are spelled `...Environement`
+(`PCBDesignEnvironement`, `SchEditorEnvironement`, `BoardLayoutEnvironement`);
+resolve them by `productType` (`ElectronProjectDocProductType`,
+`ElectronSchDocProductType`, `ElectronPcbDocProductType`). The project
+workspace has no toolbar tabs: a panel of our own on its `toolbarPanels` is
+shown, a control added to its built-in OUTPUTS panel is not. The 3D PCB
+workspace hides the UTILITIES tab, so the shared Design panel is unreachable
+there. Probed with the Fusion MCP on ADSKMVG91G2F5W, pre-production
+2706.0.116, 2026-10-02. -- `commands/_electronics_panels.py`,
+`commands/refrences/electronics.py`
+
 **`ui.messageBox` can raise after the user has seen and closed it.** On
 pre-production 2706.0.116 (ADSKMVG91G2F5W, 2026-10-02) Document Information's
 dialog displayed normally, then raised `RuntimeError: 3 : Cannot send

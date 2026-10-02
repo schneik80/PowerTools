@@ -62,14 +62,14 @@ Most commands live on the **Utilities** tab of the Design workspace, in the **Po
 | [Infer Constraints](./docs/Infer%20Constraints.md) | Design › Utilities › Power Tools | Propose concentric and coincident constraints for an already-positioned assembly and apply the ones you pick. Beta. |
 | [Component Warning](./docs/Component%20Warning.md) | PowerTools Preferences (background) | Warn before a feature is created in the root component or against another component. Off by default. |
 | [Change Cycle Color](./docs/Change%20Cycle%20Color.md) | Right-click menu | Choose the color Component Color Cycling uses for the selected components, instead of the next random one. |
-| [Document References](./docs/Document%20References.md) | Design › Utilities › Power Tools; Drawing › Power Tools | Where-used for the active design: root assemblies, parents, children, drawings, fasteners and [related data](./docs/Related%20Data.md). For a drawing, the designs it documents. |
+| [Document References](./docs/Document%20References.md) | Design › Utilities › Power Tools; Drawing and electronics › Power Tools | Where-used for the active design: root assemblies, parents, children, drawings, fasteners and [related data](./docs/Related%20Data.md). For a drawing, the designs it documents; for electronics, the rest of the project, schematic, 2D and 3D PCB and drawings. |
 | [Refresh Active Document](./docs/Document%20Refresh.md) | File | Check the hub for a newer version of the open document and reload it. |
 
 ### Document Tools
 
 | Command | Location | Description |
 | --- | --- | --- |
-| [Document Information](./docs/Document%20Information.md) | Design › Utilities › Power Tools; Drawing › Power Tools | Hub, project, folder, version and MFGDM identifiers of the active design or drawing, with a warning when saving would migrate it to a newer Fusion build. |
+| [Document Information](./docs/Document%20Information.md) | Design › Utilities › Power Tools; Drawing and electronics › Power Tools | Hub, project, folder, version and MFGDM identifiers of the active design, drawing or electronics document, with a warning when saving would migrate it to a newer Fusion build. |
 | [History](./docs/Document%20History.md) | Quick Access Toolbar | The document's version history as day rows: a track per author, saves on a clock axis, elapsed time between days. |
 | [Version Diff](./docs/Version%20Diff.md) | Design › Utilities › Power Tools | Compare the timeline of two versions of the active design in an HTML report. Off by default. |
 | [Assign Part Numbers](./docs/Assign%20Part%20Numbers.md) | Design › Utilities › Power Tools | Hub-unique sequential part numbers (PRT, ASY, WLD, COT, TOL) for the design and its local components. |

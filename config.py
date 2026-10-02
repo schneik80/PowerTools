@@ -85,6 +85,18 @@ drawing_panel_name = "Power Tools"
 drawing_panel_after = ""
 
 # ---------------------------------------------------------------------------
+# 3a. Electronics environments -- our own Power Tools panel in each of the
+# project, Schematic Editor, PCB Editor and 3D PCB workspaces. Which workspace
+# and tab each goes on is resolved at runtime by commands/_electronics_panels.py
+# (the workspace ids are unpublished); only our panel ids are fixed here.
+# ---------------------------------------------------------------------------
+
+ecad_project_panel_id = "PT_EcadProjectPowerTools"
+ecad_schematic_panel_id = "PT_SchPowerTools"
+ecad_board_panel_id = "PT_PcbPowerTools"
+ecad_pcb3d_panel_id = "PT_PCB3DPowerTools"
+
+# ---------------------------------------------------------------------------
 # 3b. Manage tab (Design workspace) — added by the Fusion Manage Extension.
 # "ManageTab" is a built-in tab (name "MANAGE"); we never create or delete it,
 # we only add/remove our own PowerTools panel on it. Absent when the Manage

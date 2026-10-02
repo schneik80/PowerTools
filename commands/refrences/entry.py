@@ -17,6 +17,7 @@ import uuid
 
 import adsk.core
 import adsk.drawing
+import adsk.electron
 import adsk.fusion
 
 from ... import config
@@ -24,14 +25,18 @@ from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
 from .._command_abort import abort_before_dialog, clear_abort, consume_abort
 from .._drawing_panel import add_to_drawing_panel, remove_from_drawing_panel
-from . import logic
+from .._electronics_panels import (
+    add_to_electronics_panels,
+    remove_from_electronics_panels,
+)
+from . import electronics, logic
 
 app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Document References"
 CMD_ID = "PTAT_docrefs"
-CMD_Description = "List every document related to the active design, grouped by relationship: the top-level assemblies that ultimately contain it, the assemblies that use it directly, the documents it uses, its drawings, its fasteners, and its related-data documents. For a drawing, list the designs it documents."
+CMD_Description = "List every document related to the active design, grouped by relationship: the top-level assemblies that ultimately contain it, the assemblies that use it directly, the documents it uses, its drawings, its fasteners, and its related-data documents. For a drawing, list the designs it documents; for an electronics document, the project, schematic, 2D PCB and 3D PCB of its design."
 IS_PROMOTED = False
 
 # Global variables by referencing values from /config.py
@@ -82,6 +87,8 @@ def start():
     # And to the Drawing workspace's Power Tools panel, where it lists only the
     # designs the drawing uses.
     add_to_drawing_panel(cmd_def, CMD_NAME, IS_PROMOTED)
+    # And to the electronics environments, where it lists the electronics set.
+    add_to_electronics_panels(cmd_def, CMD_NAME, IS_PROMOTED)
 
 
 # Executed when add-in is stopped.
@@ -92,6 +99,7 @@ def stop():
         if existing:
             existing.deleteMe()
     remove_from_drawing_panel(CMD_ID, CMD_NAME)
+    remove_from_electronics_panels(CMD_ID, CMD_NAME)
     command_definition = ui.commandDefinitions.itemById(CMD_ID)
     if command_definition:
         command_definition.deleteMe()
@@ -99,7 +107,9 @@ def stop():
 
 # Function that is called when a user clicks the corresponding button in the UI.
 # Collects references, then builds the command dialog: six groups for a
-# design, the Uses group alone for a drawing.
+# design, the Uses group alone for a drawing, the electronics set for an
+# electronics document or a drawing of one (and ahead of the design groups for
+# a 3D PCB). The active document itself is never listed.
 def command_created(args: adsk.core.CommandCreatedEventArgs):
     ptutil.log(f"{CMD_NAME} Command Created Event")
 
@@ -132,22 +142,44 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
         # A drawing gets only its Uses: the designs it documents. Nothing uses
         # a drawing, and it has no fasteners, roots or related data.
-        is_drawing = isinstance(app.activeDocument, adsk.drawing.DrawingDocument)
-        kind = "drawing" if is_drawing else "design"
+        # An electronics project, schematic or 2D board gets only its
+        # electronics set; its links are cloud references, nothing else.
+        active = app.activeDocument
+        is_drawing = isinstance(active, adsk.drawing.DrawingDocument)
+        is_ecad = isinstance(active, _ECAD_DOCUMENT_TYPES)
+        kind = "drawing" if is_drawing else "document" if is_ecad else "design"
         if ptutil.require_document(CMD_NAME, kind, saved=True) is None:
             abort_before_dialog(CMD_ID, CMD_NAME, f"no saved {kind}")
             return
         doc = app.activeDocument
         # designDataFile is design-only (and absent from the API reference); a
-        # drawing has only dataFile.
-        doc_file = doc.dataFile if is_drawing else doc.designDataFile
-        design = None if is_drawing else adsk.fusion.Design.cast(app.activeProduct)
+        # drawing or an electronics document has only dataFile.
+        doc_file = doc.dataFile if (is_drawing or is_ecad) else doc.designDataFile
+        design = (
+            None
+            if (is_drawing or is_ecad)
+            else adsk.fusion.Design.cast(app.activeProduct)
+        )
+
+        # The whole electronics design, for an electronics document, a 3D PCB
+        # (a design a 2D board references) or a drawing of one (which
+        # references the project); None for anything else.
+        ecad_set = electronics.electronics_set(doc_file)
 
         if is_drawing:
             parentDataFiles = []
             childDataFiles = _drawing_uses(doc)
+        elif is_ecad:
+            parentDataFiles = []
+            childDataFiles = []
         else:
-            parentDataFiles = doc_file.parentReferences
+            # A 3D PCB's board is listed with the electronics set, not as a
+            # parent assembly.
+            parentDataFiles = [
+                f
+                for f in (doc_file.parentReferences or [])
+                if not electronics.is_electronics_file(f)
+            ]
             childDataFiles = doc_file.childReferences
         subString = " ‹+› "
 
@@ -228,6 +260,8 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                 pname = getattr(p, "name", "?")
                 if _is_drawing(p):
                     ptutil.log(f"[Roots]{indent} SKIP parent (drawing): '{pname}'")
+                elif electronics.is_electronics_file(p):
+                    ptutil.log(f"[Roots]{indent} SKIP parent (electronics): '{pname}'")
                 elif _is_related(p):
                     ptutil.log(f"[Roots]{indent} SKIP parent (related data): '{pname}'")
                 else:
@@ -409,8 +443,30 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
             except Exception:
                 docChildren.append(fd)
 
+        # The electronics set, one group per file type. The active document is
+        # never listed; the group it belongs to is dropped when it was the
+        # only member (from the schematic, there is no Schematic group).
+        ecad_groups = []
+        if ecad_set is not None:
+            for title, prefix, files in (
+                ("Electronics Project", "ecadprj", ecad_set.projects),
+                ("Schematic", "ecadsch", ecad_set.schematics),
+                ("2D PCB", "ecadbrd", ecad_set.boards),
+                ("3D PCB", "ecadpcb", ecad_set.pcb3ds),
+                ("Drawings", "ecaddwg", ecad_set.drawings),
+            ):
+                rows = [make_file_data(f) for f in files]
+                others = [fd for fd in rows if fd["id"] != _active_doc_id]
+                if len(others) < len(rows) and not others:
+                    continue
+                ecad_groups.append((title, prefix, others))
+            # A drawing's Uses that belong to the set are listed in it.
+            in_set = ecad_set.ids()
+            docChildren = [fd for fd in docChildren if fd["id"] not in in_set]
+
         # Fetch thumbnails for all collected references.
         all_items = docParents + docChildren + docDrawings + docFasteners + docRelated
+        all_items += [fd for _, _, rows in ecad_groups for fd in rows]
         for fd in all_items:
             progressBar.showBusy(f"Fetching thumbnail: {fd['name'][:40]}…", True)
             adsk.doEvents()
@@ -523,19 +579,34 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                 table.addCommandInput(open_btn, i, 1)
                 table.addCommandInput(web_btn, i, 2)
 
+        for title, prefix, rows in ecad_groups:
+            _add_table(title, rows, prefix)
         if is_drawing:
-            _add_table("Uses", docChildren, "children")
-        else:
+            # Of an electronics design, only Uses outside the set are left.
+            if ecad_set is None or docChildren:
+                _add_table("Uses", docChildren, "children")
+        elif not is_ecad:
             _add_table("Roots", docRoots, "roots")
             _add_table("Used In (Parents)", docParents, "parents")
             _add_table("Uses (Children)", docChildren, "children")
-            _add_table("Drawings", docDrawings, "drawings")
+            # A 3D PCB's drawings are in the electronics Drawings group.
+            if ecad_set is None:
+                _add_table("Drawings", docDrawings, "drawings")
             _add_table("Fasteners", docFasteners, "fasteners")
             _add_table("Related Data", docRelated, "related")
 
     except Exception:
         if ui:
             ptutil.handle_error(CMD_NAME, show_message_box=True)
+
+
+# The electronics document classes (adsk.electron). A 3D PCB is an ordinary
+# FusionDocument and is recognised by its references instead.
+_ECAD_DOCUMENT_TYPES = (
+    adsk.electron.EcadDesignDocument,
+    adsk.electron.SchematicDocument,
+    adsk.electron.BoardDocument,
+)
 
 
 def _drawing_uses(doc) -> list:

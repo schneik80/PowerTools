@@ -216,3 +216,37 @@ def test_render_escapes_names():
     )
     assert "<script>" not in html
     assert "&lt;script&gt;" in html
+
+
+# --- electronics ------------------------------------------------------------
+
+BASIC_ITEM_DATA = {
+    "item": {
+        "__typename": "BasicItem",
+        "id": "urn:adsk.wipprod:dm.lineage:yKF7TfjGQ62L22fwrY4zsg",
+        "extensionType": "fsch",
+        "tipVersion": {"versionNumber": 1},
+    }
+}
+
+
+def test_summarize_item_reads_a_basic_item():
+    s = ms.summarize_item(BASIC_ITEM_DATA)
+    assert s["status"] == ms.OK
+    assert s["kind"] == "BasicItem"
+    assert s["extension"] == "fsch"
+    assert s["version_number"] == "1"
+    assert s["drawing_id"] == ""
+
+
+def test_render_file_ok_says_it_is_a_file_record_and_does_not_warn():
+    html, warn = ms.render_file(ms.summarize_item(BASIC_ITEM_DATA))
+    assert warn is False
+    assert "BasicItem" in html and "fsch" in html
+    assert "only a file record" in html
+
+
+def test_render_file_missing_warns():
+    html, warn = ms.render_file({"status": ms.MISSING})
+    assert warn is True
+    assert "Not found" in html

@@ -4,18 +4,19 @@
 
 ## Overview
 
-Document Information shows the hub, project, folder, version and MFGDM identifiers of the active design or drawing, and warns when saving it would migrate it to the running Fusion build.
+Document Information shows the hub, project, folder, version and MFGDM identifiers of the active design, drawing or electronics document, and warns when saving it would migrate it to the running Fusion build.
 
 When a reference will not resolve, a teammate cannot see a file, or support asks "which document exactly?", the answer is an identifier the Fusion UI never shows. This command puts them all in one dialog: hub, project, folder and document IDs, the full folder path, the version you have open and the latest version on the hub. It checks whether Fusion's cloud manufacturing data model (MFGDM) holds a record for the document, where Fusion keeps cloud properties such as part numbers. It also compares the Fusion build that last saved the document with the one you are running, so you know before you save that the file will move to a new schema and that collaborators on an older client will no longer be able to open it.
 
 ## Prerequisites
 
-- A design or drawing must be open and saved to a hub. An unsaved document has no identifiers, and the command asks you to save first.
+- A design, drawing or electronics document (project, schematic or PCB) must be open and saved to a hub. An unsaved document has no identifiers, and the command asks you to save first.
 
 ## Where to find it
 
 - Design workspace: **Utilities** tab › **Power Tools** panel › **Document Information**.
 - Drawing workspace: **Power Tools** panel › **Document Information**, next to Assign Drawing Number.
+- Electronics: a **Power Tools** panel in the electronics project, on the **Utilities** tab of the Schematic and PCB editors, and on the **3D PCB** tab.
 
 ![Document Information on the Power Tools panel](./assets/docinfo_002.png)
 
@@ -55,7 +56,9 @@ For a **drawing**, the same verdict for the drawing itself, then its drawing id,
 
 The two should name the same design. If MFGDM links the drawing to a different design from the one it references in Fusion, the dialog says so and shows the warning icon. That disagreement is a Fusion defect, not something you caused; report it to Autodesk with the document names the dialog shows.
 
-If that build differs from the one you are running, the dialog title changes to say the document will migrate on save, the icon becomes a warning, and a line at the end explains it. The icon also becomes a warning when MFGDM data is missing or the drawing's links disagree.
+For an **electronics project, schematic or 2D PCB**, the verdict, then the item id, item type, file type and tip version. MFGDM keeps only a file record for these: no model, component or part number. The **3D PCB** is a design and shows the design fields.
+
+If the Fusion build that saved the document differs from the one you are running, the dialog title changes to say the document will migrate on save, the icon becomes a warning, and a line at the end explains it. The icon also becomes a warning when MFGDM data is missing or the drawing's links disagree.
 
 ## Limitations
 
