@@ -11,8 +11,8 @@
 # stretch or gather, and commit the result as a sketch.
 #
 # All Fusion API contact lives here. The flattening itself is in flatten.py and
-# the report writing in report.py; neither imports adsk, so both are unit tested
-# outside Fusion. Background and sources: docs/dev/Flatten Surface research.md.
+# the report writing in report.py, and the marker ink in backdrop.py; none imports
+# adsk, so all are unit tested outside Fusion. Background and sources: docs/dev/Flatten Surface research.md.
 
 import math
 import os
@@ -24,7 +24,11 @@ import adsk.fusion
 
 from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
-from . import flatten, report
+from ..changecyclecolor.fusion_install import (
+    find_environment_xml,
+    lighting_environment_dirs,
+)
+from . import backdrop, flatten, report
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -81,10 +85,13 @@ _SIMPLIFY_FRACTION = 0.0015
 _COLOR_SEAM = (90, 90, 90, 255)
 _COLOR_WIRE = (45, 45, 45, 255)
 
-# The Min and Max markers take the two ends of the strain ramp, so a marker's
-# colour says which end of the scale it sits at without reading the label.
-_COLOR_MIN = (59, 76, 192, 255)
-_COLOR_MAX = (180, 4, 38, 255)
+# The Min and Max markers sit on the strain map but their labels hang over the
+# viewport backdrop, so both are inked black or white to suit the active
+# lighting environment (see backdrop.py). Blue and red, the ends of the strain
+# ramp, vanished against Dark Sky and Tranquility Blue. The resolved ink is
+# cached per environment because the preview redraws on every triad drag.
+_MARKER_INK_FALLBACK = backdrop.BLACK
+_marker_ink_cache: dict = {}
 
 # Marker and label geometry in screen pixels, converted to centimetres against
 # the current view so they hold their size however far the user zooms.
@@ -816,16 +823,48 @@ def _draw_extremes(group, result, du: float, dv: float) -> None:
         # With no distortion to find, the worst spot is wherever the arithmetic
         # happened to land. Marking it would invent a defect.
         return
+    rgba = _marker_ink()
     marks = (
-        (stats.min_vertex, _COLOR_MIN, f"Min {stats.min_strain * 100.0:+.2f}%"),
-        (stats.max_vertex, _COLOR_MAX, f"Max {stats.max_strain * 100.0:+.2f}%"),
+        (stats.min_vertex, f"Min {stats.min_strain * 100.0:+.2f}%"),
+        (stats.max_vertex, f"Max {stats.max_strain * 100.0:+.2f}%"),
     )
-    for vertex, rgba, label in marks:
+    for vertex, label in marks:
         if vertex is None or vertex < 0 or vertex >= len(result.uvs):
             continue
         u, v = result.uvs[vertex]
         point = _to_model(u, v, du, dv)
         _draw_marker(group, point, rgba, label)
+
+
+def _marker_ink() -> tuple:
+    """Black or white RGBA for the markers, to read against the backdrop.
+
+    Falls back to black, logged, when the environment cannot be identified or
+    its XML is missing, as with a custom-loaded environment.
+    """
+    try:
+        value = app.lightingEnvironment
+    except Exception as exc:
+        ptutil.log(f"{CMD_NAME}: could not read lightingEnvironment: {exc!r}")
+        return _MARKER_INK_FALLBACK
+    if value in _marker_ink_cache:
+        return _marker_ink_cache[value]
+
+    name = lighting_environment_dirs(adsk.core.LightingEnvironments).get(value)
+    ink = backdrop.ink_for_environment_xml(find_environment_xml(name or ""))
+    if ink is None:
+        ptutil.log(
+            f"{CMD_NAME}: no backdrop for lightingEnvironment {value!r} "
+            f"({name}); markers fall back to black"
+        )
+        ink = _MARKER_INK_FALLBACK
+    else:
+        ptutil.log(
+            f"{CMD_NAME}: markers inked "
+            f"{'white' if ink == backdrop.WHITE else 'black'} for {name}"
+        )
+    _marker_ink_cache[value] = ink
+    return ink
 
 
 def _draw_marker(group, point, rgba, label: str) -> None:
@@ -1037,8 +1076,6 @@ def _create_sketch(result):
                 closed=False,
                 construction=True,
             )
-
-        _mark_extremes(sketch, result, du, dv)
     finally:
         sketch.isComputeDeferred = False
     return sketch
@@ -1125,16 +1162,6 @@ def _pattern_tolerance(result) -> float:
     ys = [uv[1] for uv in result.uvs]
     size = max(max(xs) - min(xs), max(ys) - min(ys), 1e-6)
     return size * _SIMPLIFY_FRACTION
-
-
-def _mark_extremes(sketch, result, du: float, dv: float) -> None:
-    """Drop a sketch point on the worst stretch and the worst gather."""
-    stats = result.stats
-    for vertex in (stats.min_vertex, stats.max_vertex):
-        if vertex is None or vertex < 0 or vertex >= len(result.uvs):
-            continue
-        u, v = result.uvs[vertex]
-        sketch.sketchPoints.add(sketch.modelToSketchSpace(_to_model(u, v, du, dv)))
 
 
 # ---------------------------------------------------------------------------

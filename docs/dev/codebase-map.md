@@ -98,7 +98,7 @@ are not repeated per row.
 | partmodeling | `measurepath` | `Measure Path.md` | `pathgraph.py` | `test_measurepath_pathgraph.py` | Inspect panels; custom graphics reference impl; abort pattern |
 | partmodeling | `mirrorderive` | `MirrorDerive.md` | — | — | |
 | partmodeling | `hideobjects` | `HideObjects.md` | — | — | |
-| partmodeling | `flattensurface` | `Flatten Surface.md` | `flatten.py`, `report.py` | `test_flattensurface_{flatten,segments,cracks,report,entry}.py` | beta; pure solver — [`Flatten Surface solver.md`](Flatten%20Surface%20solver.md) |
+| partmodeling | `flattensurface` | `Flatten Surface.md` | `flatten.py`, `report.py`, `backdrop.py` | `test_flattensurface_{flatten,segments,cracks,report,backdrop,entry}.py` | beta; pure solver — [`Flatten Surface solver.md`](Flatten%20Surface%20solver.md) |
 | animation | `animationnamedview` | `Animation Named View.md` | `logic.py` | `test_animationnamedview_logic.py` | Publisher workspace ids via `config` |
 | related | `confighub` | `Select Related Data Folder.md` | — | — | f-string `CMD_ID` (allowlisted); writes `cache/hub.json`; launched from Preferences |
 | related | `relateddata` | `Related Data.md` | — | `test_relateddata_cache.py` | f-string `CMD_ID` (allowlisted); `cache/<hub_id>.json` |

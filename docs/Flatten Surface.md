@@ -64,7 +64,7 @@ The preview is shaded by strain: how much the local size has to change between t
 
 A developable face comes out white all over and the dialog says **Flattens exactly** rather than quoting zeros. Otherwise it reports the worst stretch, the worst gather and the average. The colour scale adapts to the part, so colours show where distortion is concentrated; it stops adapting below a tenth of a percent, which no material notices, so a part that flattens perfectly is not shown with its rounding error magnified.
 
-When there is distortion, two labelled spheres mark the extremes: **Max** in red at the worst stretch and **Min** in blue at the worst gather, each with its percentage. Grey lines are the seams between the faces you selected. Whether the numbers are acceptable is a material question: woven fabric and leather absorb a few percent, sheet steel and carbon-fibre prepreg do not.
+When there is distortion, two labelled spheres mark the extremes: **Max** at the worst stretch and **Min** at the worst gather, each with its percentage. They are black or white, whichever reads against the viewport background of the active environment (white on Dark Sky, black on Photo Booth). Grey lines are the seams between the faces you selected. Whether the numbers are acceptable is a material question: woven fabric and leather absorb a few percent, sheet steel and carbon-fibre prepreg do not.
 
 ## What the sketch contains
 
@@ -74,7 +74,6 @@ A sketch named **Flatten Surface pattern**, on the plane you picked and position
 |---|---|
 | Lines, arcs, circles and splines | The outline of the pattern and of any holes in it |
 | Construction geometry | The seams between selected faces |
-| Two sketch points | The worst stretch and the worst gather |
 
 The outline is cut at its corners first, so a corner stays sharp. Each run then becomes the geometry it actually is: straight runs become lines, circular runs arcs, and a round hole a real circle, but only when the fit is exact, so the outline of a doubly-curved panel stays one spline rather than a chain of little arcs. Refining the mesh does not change which is which. Nothing else in the design is touched.
 
