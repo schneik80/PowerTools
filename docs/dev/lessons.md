@@ -565,6 +565,15 @@ MCP on ADSKMVG91G2F5W, pre-production channel, 2026-10-01; not yet seen on
 Windows or production. -- `commands/docinfo/`,
 `commands/partnumber_shared/mfgdm_props.py`
 
+**`ui.messageBox` can raise after the user has seen and closed it.** On
+pre-production 2706.0.116 (ADSKMVG91G2F5W, 2026-10-02) Document Information's
+dialog displayed normally, then raised `RuntimeError: 3 : Cannot send
+information to native palette` on close; the `handle_error` box that followed
+did the same. It did not reproduce on the next run, nor from a script. When a
+message box is the last thing a handler does, catch `RuntimeError` around it
+and log, so a close-time fault does not become a second, misleading traceback
+box. -- `commands/docinfo/entry.py`
+
 **Fusion IDs use underscores.** Hyphenated IDs log `Component name contains
 invalid characters` on every launch (benign but floods crash logs). The
 `PT-globparm` parameter-comment sentinel is *data inside users' documents* and

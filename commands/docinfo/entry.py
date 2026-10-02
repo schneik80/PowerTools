@@ -240,7 +240,14 @@ def command_execute(args: adsk.core.CommandCreatedEventArgs):
                 f"Team members must be on the same client version to work with this document after save."
             )
 
-        ui.messageBox(resultString, mTitle, 0, messageIcon)
+        try:
+            ui.messageBox(resultString, mTitle, 0, messageIcon)
+        except RuntimeError as exc:
+            # Pre-production 2706.0.116 (ADSKMVG91G2F5W, 2026-10-02) showed the
+            # box, then raised "Cannot send information to native palette" when
+            # the user closed it -- intermittently. The information was already
+            # seen, so a second (traceback) box would only mislead; log it.
+            ptutil.log(f"{CMD_NAME}: messageBox raised on close: {exc}")
 
     except Exception:
         ptutil.handle_error(CMD_NAME, show_message_box=True)
