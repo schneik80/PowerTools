@@ -16,19 +16,22 @@ import traceback
 import uuid
 
 import adsk.core
+import adsk.drawing
 import adsk.fusion
 
 from ... import config
 from ...lib import ptAddInUtils as ptutil
 from .. import _ui_bootstrap
 from .._command_abort import abort_before_dialog, clear_abort, consume_abort
+from .._drawing_panel import add_to_drawing_panel, remove_from_drawing_panel
+from . import logic
 
 app = adsk.core.Application.get()
 ui = app.userInterface
 
 CMD_NAME = "Document References"
 CMD_ID = "PTAT_docrefs"
-CMD_Description = "List every document related to the active design, grouped by relationship: the top-level assemblies that ultimately contain it, the assemblies that use it directly, the documents it uses, its drawings, its fasteners, and its related-data documents."
+CMD_Description = "List every document related to the active design, grouped by relationship: the top-level assemblies that ultimately contain it, the assemblies that use it directly, the documents it uses, its drawings, its fasteners, and its related-data documents. For a drawing, list the designs it documents."
 IS_PROMOTED = False
 
 # Global variables by referencing values from /config.py
@@ -76,6 +79,10 @@ def start():
         control = panel.controls.addCommand(cmd_def)
         control.isPromoted = IS_PROMOTED
 
+    # And to the Drawing workspace's Power Tools panel, where it lists only the
+    # designs the drawing uses.
+    add_to_drawing_panel(cmd_def, CMD_NAME, IS_PROMOTED)
+
 
 # Executed when add-in is stopped.
 def stop():
@@ -84,13 +91,15 @@ def stop():
         existing = panel.controls.itemById(CMD_ID)
         if existing:
             existing.deleteMe()
+    remove_from_drawing_panel(CMD_ID, CMD_NAME)
     command_definition = ui.commandDefinitions.itemById(CMD_ID)
     if command_definition:
         command_definition.deleteMe()
 
 
 # Function that is called when a user clicks the corresponding button in the UI.
-# Collects references, then builds the command dialog with five tables.
+# Collects references, then builds the command dialog: six groups for a
+# design, the Uses group alone for a drawing.
 def command_created(args: adsk.core.CommandCreatedEventArgs):
     ptutil.log(f"{CMD_NAME} Command Created Event")
 
@@ -121,14 +130,25 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
             )
             return
 
-        design = ptutil.require_document(CMD_NAME, "design", saved=True)
-        if design is None:
-            abort_before_dialog(CMD_ID, CMD_NAME, "no saved design")
+        # A drawing gets only its Uses: the designs it documents. Nothing uses
+        # a drawing, and it has no fasteners, roots or related data.
+        is_drawing = isinstance(app.activeDocument, adsk.drawing.DrawingDocument)
+        kind = "drawing" if is_drawing else "design"
+        if ptutil.require_document(CMD_NAME, kind, saved=True) is None:
+            abort_before_dialog(CMD_ID, CMD_NAME, f"no saved {kind}")
             return
         doc = app.activeDocument
+        # designDataFile is design-only (and absent from the API reference); a
+        # drawing has only dataFile.
+        doc_file = doc.dataFile if is_drawing else doc.designDataFile
+        design = None if is_drawing else adsk.fusion.Design.cast(app.activeProduct)
 
-        parentDataFiles = doc.designDataFile.parentReferences
-        childDataFiles = doc.designDataFile.childReferences
+        if is_drawing:
+            parentDataFiles = []
+            childDataFiles = _drawing_uses(doc)
+        else:
+            parentDataFiles = doc_file.parentReferences
+            childDataFiles = doc_file.childReferences
         subString = " ‹+› "
 
         docParents, docChildren, docDrawings, docRelated, docFasteners, docRoots = (
@@ -142,10 +162,10 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
         # The special substring that identifies Related Data documents.
         _related_marker = subString  # " ‹+› "
-        _active_doc_id = doc.designDataFile.id if doc.designDataFile else None
+        _active_doc_id = doc_file.id if doc_file else None
         _active_project_id = None
         try:
-            _active_project_id = doc.designDataFile.parentProject.id
+            _active_project_id = doc_file.parentProject.id
         except Exception:
             pass
 
@@ -233,8 +253,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                 for parent in real_parents:
                     _collect_roots(parent, visited_ids, root_ids, root_items, depth + 1)
 
-        # Build a name→component map for all components in the active design
-        _comp_by_name = {c.name: c for c in design.allComponents}
+        # Build a name→component map for all components in the active design;
+        # a drawing has none, so its thumbnails all come from the cloud.
+        _comp_by_name = {c.name: c for c in design.allComponents} if design else {}
 
         def _save_data_object(data_obj, dest) -> bool:
             """Try all known methods to persist a DataObject to a PNG file."""
@@ -379,7 +400,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         for file in childDataFiles or []:
             fd = make_file_data(file)
             try:
-                if file.parentProject.name == "Standard Components":
+                if not is_drawing and file.parentProject.name == "Standard Components":
                     docFasteners.append(fd)
                 else:
                     if hasattr(file, "isConfiguration") and file.isConfiguration:
@@ -502,16 +523,46 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
                 table.addCommandInput(open_btn, i, 1)
                 table.addCommandInput(web_btn, i, 2)
 
-        _add_table("Roots", docRoots, "roots")
-        _add_table("Used In (Parents)", docParents, "parents")
-        _add_table("Uses (Children)", docChildren, "children")
-        _add_table("Drawings", docDrawings, "drawings")
-        _add_table("Fasteners", docFasteners, "fasteners")
-        _add_table("Related Data", docRelated, "related")
+        if is_drawing:
+            _add_table("Uses", docChildren, "children")
+        else:
+            _add_table("Roots", docRoots, "roots")
+            _add_table("Used In (Parents)", docParents, "parents")
+            _add_table("Uses (Children)", docChildren, "children")
+            _add_table("Drawings", docDrawings, "drawings")
+            _add_table("Fasteners", docFasteners, "fasteners")
+            _add_table("Related Data", docRelated, "related")
 
     except Exception:
         if ui:
             ptutil.handle_error(CMD_NAME, show_message_box=True)
+
+
+def _drawing_uses(doc) -> list:
+    """The DataFiles a drawing documents, each once.
+
+    ``DataFile.childReferences`` is documented as the "referenced designs" of
+    a file but only described for designs, so the open drawing's own
+    ``documentReferences`` are merged in behind it. A read that fails yields
+    nothing from that source rather than failing the command.
+    """
+    try:
+        children = list(doc.dataFile.childReferences or [])
+    except Exception:
+        ptutil.log(f"{CMD_NAME}: drawing childReferences raised")
+        children = []
+    local = []
+    try:
+        for ref in doc.documentReferences or []:
+            if ref.dataFile is not None:
+                local.append(ref.dataFile)
+    except Exception:
+        ptutil.log(f"{CMD_NAME}: drawing documentReferences raised")
+    ptutil.log(
+        f"{CMD_NAME}: drawing uses -- childReferences={len(children)}, "
+        f"documentReferences={len(local)}"
+    )
+    return logic.unique_by_id(children, local)
 
 
 def on_input_changed(args: adsk.core.InputChangedEventArgs):

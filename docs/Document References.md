@@ -4,18 +4,19 @@
 
 ## Overview
 
-Document References lists every document related to the active design, grouped by relationship: the top-level assemblies that ultimately contain it, the assemblies that use it directly, the documents it uses, its drawings, its fasteners, and its related-data documents.
+Document References lists every document related to the active design, grouped by relationship: the top-level assemblies that ultimately contain it, the assemblies that use it directly, the documents it uses, its drawings, its fasteners, and its related-data documents. For a drawing, it lists the designs the drawing documents.
 
 "Where is this part used?" is a PDM question. SolidWorks PDM answers it on a Where Used tab and Vault on a Uses/Where Used view; Fusion's desktop client shows only the references *inside* the open document. Document References walks the parent chain the other way, all the way to the root assemblies, and puts parents, children, drawings and related documents in one dialog you can open documents from.
 
 ## Prerequisites
 
-- A design document saved to a hub.
+- A design or drawing saved to a hub.
 - An internet connection. Offline, the command says so and stops.
 
 ## Where to find it
 
-**Utilities** tab › **Power Tools** panel › **Document References**, in the Design workspace.
+- Design workspace: **Utilities** tab › **Power Tools** panel › **Document References**.
+- Drawing workspace: **Power Tools** panel › **Document References**.
 
 ![Document References on the Power Tools panel](./assets/docrefs_002.png)
 
@@ -33,6 +34,8 @@ Document References lists every document related to the active design, grouped b
    | **Fasteners** | Components from Fusion's **Standard Components** library |
    | **Related Data** | Documents created with [Create Related Data](./Related%20Data.md), recognised by the `‹+›` in their name |
 
+   From a drawing, the dialog has one group, **Uses**: the designs the drawing documents. The other groups do not apply to a drawing and are not shown.
+
 3. Hover a row for its project and folder path and a thumbnail; a reference in another project is flagged **Cross Project Reference**.
 4. Select a row's folder button to open the document in Fusion (this closes the dialog), or its web button to open it in Fusion Team.
 5. Select **Close**.
@@ -42,7 +45,6 @@ Document References lists every document related to the active design, grouped b
 ## Limitations
 
 - Thumbnails are downloaded while the dialog is open and discarded when it closes.
-- The command needs a design document; it does not run from a drawing.
 
 > **Developers:** see the [architecture notes](./arch/Document%20References.md).
 

@@ -6,7 +6,7 @@
 |---|---|
 | **Command ID** | `PTND_assignDrawingNumber` |
 | **Registry** | group `document` (`Document Tools`); enabled by default; not beta |
-| **UI location** | Drawing workspace (`FusionDocumentationEnvironment`) → built-in tab `FusionDocTab` → panel `PT_DrawingPowerTools` ("Power Tools"), shared with Document Information through [`_drawing_panel`](architecture.md#_drawing_panel) and appended at the end of the tab (`config.drawing_panel_after = ""`); promoted button |
+| **UI location** | Drawing workspace (`FusionDocumentationEnvironment`) → built-in tab `FusionDocTab` → panel `PT_DrawingPowerTools` ("Power Tools"), shared with Document References and Document Information through [`_drawing_panel`](architecture.md#_drawing_panel) and appended at the end of the tab (`config.drawing_panel_after = ""`); promoted button |
 | **Files** | `commands/assigndrawingnumber/entry.py`; `resources/` (16/32/64 px light + dark icons) |
 | **Shared helpers** | [`partnumber_shared`](architecture.md#partnumber_shared) (`hub_fs`, `pn_cache`, `schemes`, `mfgdm_props`); [`_command_abort`](architecture.md#_command_abort) (`abort_before_dialog`, `consume_abort`, `clear_abort`); [`_drawing_panel`](architecture.md#_drawing_panel); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.require_document`, `log`, `handle_error`](architecture.md#general_utils); `config.drawing_*` ids ([config](architecture.md#config)) |
 | **Tests** | `tests/test_command_icons.py` (icon set pin); `tests/test_command_contract.py`; `tests/test_command_abort.py`; `tests/test_partnumber_shared_design_model_id.py` |
@@ -18,7 +18,7 @@ Reserves the next `DWG-NNNNNN` number from the hub-wide Pn-Cache counter file an
 ## How it is wired
 
 - `start()`: `addButtonDefinition(CMD_ID, ...)` with the resources folder; `ptutil.add_handler(cmd_def.commandCreated, command_created)`; `_drawing_panel.add_to_drawing_panel(cmd_def, CMD_NAME, True)`, which finds or creates the panel on the built-in `FusionDocTab` and adds the promoted control. If the Drawing workspace or the tab is missing, the definition stays registered but no control is placed (logged).
-- `stop()`: `_drawing_panel.remove_from_drawing_panel(CMD_ID, CMD_NAME)` removes the control and the panel only once it is empty (Document Information shares it); then deletes the definition. The tab is never touched.
+- `stop()`: `_drawing_panel.remove_from_drawing_panel(CMD_ID, CMD_NAME)` removes the control and the panel only once it is empty (Document References and Document Information share it); then deletes the definition. The tab is never touched.
 - `command_created(args)`:
   1. `ptutil.require_document(CMD_NAME, "drawing", saved=True)` is `None` (it shows the standard message: "Assign Drawing Number needs a drawing open. Open a drawing, then retry." or "Assign Drawing Number needs a saved drawing. Save the drawing, then retry."; see [Document preconditions](architecture.md#document-preconditions)) → `abort_before_dialog(CMD_ID, CMD_NAME, "no saved drawing")` and return. `doc = app.activeDocument`.
   2. `_read_existing_drawing_number(doc)` reads attribute group `PowerTools.PartNumber`, name `assigned`.

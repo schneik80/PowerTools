@@ -665,7 +665,7 @@ empty, so start/stop order between its commands does not matter.
 | `remove_from_drawing_panel(cmd_id, cmd_name)` | Remove the control, then the panel if it is empty; never the tab; never raises |
 
 Enforces: rule 10 (`FusionDocTab` is built in). Tests: none (Fusion-bound).
-Used by: `assigndrawingnumber`, `docinfo`.
+Used by: `refrences`, `assigndrawingnumber`, `docinfo` (panel order follows start order).
 
 #### `partnumber_shared`
 
@@ -900,7 +900,7 @@ panels are never deleted; only our controls and our own panels are.
 | Power Tools panel, Design workspace, Tools tab | `FusionSolidEnvironment` / `ToolsTab` / `PT_Power Tools` | `_ui_bootstrap` | see [`_ui_bootstrap`](#_ui_bootstrap) |
 | QAT File dropdown | `QAT` / `FileSubMenuCommand` | Fusion | `preferences` (retries from `documentActivated`), `scriptsmanager` (before `PT_preferences`), `closealldocuments` and `refresh` (after `ExportCommand`), `exportsysml` (before `ExportCommand`), `openrecent` (flyout after the native Open control, probed) |
 | QATRight Share flyout | `QATRight` / `shareDropMenu` | `shareDocument` (`addDropDown`); removed by `remove_from_qat_right_flyout` when empty | the six Share commands |
-| Drawing tab panel | `FusionDocumentationEnvironment` / `FusionDocTab` / `PT_DrawingPowerTools` | first of its commands to start, via `_drawing_panel`; removed when empty | `assigndrawingnumber`, `docinfo` |
+| Drawing tab panel | `FusionDocumentationEnvironment` / `FusionDocTab` / `PT_DrawingPowerTools` | first of its commands to start, via `_drawing_panel`; removed when empty | `refrences`, `assigndrawingnumber`, `docinfo` |
 | Manage tab panel | `FusionSolidEnvironment` / `ManageTab` / `PT_ManagePowerTools` | `syncitempartnumber`; skipped when the tab is absent | `syncitempartnumber` |
 | Animation tab panel | `Publisher3DEnvironment` / `Animation` / `PT_AnimationPowerTools` after `PublisherViewPanel` | `animationnamedview` via `config.get_or_create_animation_panel` | `animationnamedview` |
 | Inspect panels, every design-product workspace | discovered | Fusion; controls via `_inspect_panels` | `measurepath`, `matchunits` |

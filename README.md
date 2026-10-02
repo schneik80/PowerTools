@@ -62,7 +62,7 @@ Most commands live on the **Utilities** tab of the Design workspace, in the **Po
 | [Infer Constraints](./docs/Infer%20Constraints.md) | Design › Utilities › Power Tools | Propose concentric and coincident constraints for an already-positioned assembly and apply the ones you pick. Beta. |
 | [Component Warning](./docs/Component%20Warning.md) | PowerTools Preferences (background) | Warn before a feature is created in the root component or against another component. Off by default. |
 | [Change Cycle Color](./docs/Change%20Cycle%20Color.md) | Right-click menu | Choose the color Component Color Cycling uses for the selected components, instead of the next random one. |
-| [Document References](./docs/Document%20References.md) | Design › Utilities › Power Tools | Where-used for the active design: root assemblies, parents, children, drawings, fasteners and [related data](./docs/Related%20Data.md). |
+| [Document References](./docs/Document%20References.md) | Design › Utilities › Power Tools; Drawing › Power Tools | Where-used for the active design: root assemblies, parents, children, drawings, fasteners and [related data](./docs/Related%20Data.md). For a drawing, the designs it documents. |
 | [Refresh Active Document](./docs/Document%20Refresh.md) | File | Check the hub for a newer version of the open document and reload it. |
 
 ### Document Tools

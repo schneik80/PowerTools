@@ -6,25 +6,25 @@
 |---|---|
 | **Command ID** | `PTAT_docrefs` |
 | **Registry** | group `assembly` (`Assembly`); enabled by default. Module folder `commands/refrences/` — the misspelling is the registry key and stays ([rule 9](../dev/lessons.md)) |
-| **UI location** | Shared **Power Tools** panel ([`_ui_bootstrap.get_power_tools_panel`](architecture.md#_ui_bootstrap)), appended with no anchor, `isPromoted = False` |
-| **Files** | `commands/refrences/entry.py`; `resources/` (button icons), `resources/open/` and `resources/web/` (row-button icons), `resources/doc_thumb.png` (thumbnail placeholder) |
-| **Shared helpers** | [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `require_document`, `handle_error`](architecture.md#general_utils); `config.design_workspace` and friends ([config](architecture.md#config)) are imported but placement goes through `_ui_bootstrap` |
-| **Tests** | `tests/test_command_contract.py` |
+| **UI location** | Shared **Power Tools** panel ([`_ui_bootstrap.get_power_tools_panel`](architecture.md#_ui_bootstrap)), appended with no anchor, `isPromoted = False`; and the Drawing workspace's Power Tools panel via [`_drawing_panel`](architecture.md#_drawing_panel) (first on it: the `assembly` group starts before `document`) |
+| **Files** | `commands/refrences/entry.py`; `logic.py` (adsk-free: `unique_by_id`); `resources/` (button icons), `resources/open/` and `resources/web/` (row-button icons), `resources/doc_thumb.png` (thumbnail placeholder) |
+| **Shared helpers** | [`_drawing_panel`](architecture.md#_drawing_panel); [`ptutil.add_handler`](architecture.md#event_utils); [`ptutil.log`, `require_document`, `handle_error`](architecture.md#general_utils); `config.design_workspace` and friends ([config](architecture.md#config)) are imported but placement goes through `_ui_bootstrap` |
+| **Tests** | `tests/test_refrences_logic.py`; `tests/test_command_contract.py` |
 
 ## Purpose
 
-Shows every document related to the active design in six collapsible groups — Roots, Used In, Uses, Drawings, Fasteners, Related Data — each row with a thumbnail tooltip and buttons to open the document in Fusion or in the browser. Roots are found by walking the full `parentReferences` graph, so a part buried several assemblies deep still reports the top-level assemblies that ultimately contain it. The shaping constraint is that everything, including the recursive walk and all thumbnail downloads, runs inside `commandCreated` before the dialog can appear.
+Shows every document related to the active design in six collapsible groups — Roots, Used In, Uses, Drawings, Fasteners, Related Data — each row with a thumbnail tooltip and buttons to open the document in Fusion or in the browser. For a drawing it shows the Uses group alone: the designs the drawing documents. Roots are found by walking the full `parentReferences` graph, so a part buried several assemblies deep still reports the top-level assemblies that ultimately contain it. The shaping constraint is that everything, including the recursive walk and all thumbnail downloads, runs inside `commandCreated` before the dialog can appear.
 
 ## How it is wired
 
 - Import time: `THUMB_DIR = <tempdir>/PTAT_thumbs` is created with `os.makedirs`.
-- `start()`: `addButtonDefinition` with the `resources/` icon folder, attaches `command_created`, adds the control to the Power Tools panel. `stop()` removes the control and deletes the definition.
+- `start()`: `addButtonDefinition` with the `resources/` icon folder, attaches `command_created`, adds the control to the Power Tools panel, then `add_to_drawing_panel(cmd_def, CMD_NAME, False)`. `stop()` removes the Design control, calls `remove_from_drawing_panel(CMD_ID, CMD_NAME)` and deletes the definition.
 - `command_created(args)`: attaches `command_execute`, `on_input_changed`, `command_destroy` first, resets the button maps, then inside one `try` (failures go to [`ptutil.handle_error`](architecture.md#general_utils) with a message box):
-  1. Preconditions — `app.isOffLine` → message box and return; [`ptutil.require_document(CMD_NAME, "design", saved=True)`](architecture.md#document-preconditions) is `None` → it has already shown the standard message ("Document References needs a saved design. Save the design, then retry." for an unsaved design) → `abort_before_dialog(CMD_ID, CMD_NAME, "no saved design")` and return. Each of these returns with the handlers attached and no inputs, so Fusion auto-executes and ends the command.
-  2. Reads `doc.designDataFile.parentReferences` and `.childReferences`. Parents are classified by `make_file_data` into Related Data (name contains ` ‹+› `), Drawings (`fileExtension == "f2d"`), otherwise Used In. Children whose `parentProject.name == "Standard Components"` are Fasteners; the rest are Uses, with ` (configuration)` appended when `isConfiguration` is set.
+  1. Preconditions — `app.isOffLine` → message box and return; `is_drawing = isinstance(app.activeDocument, adsk.drawing.DrawingDocument)` picks the kind; [`ptutil.require_document(CMD_NAME, kind, saved=True)`](architecture.md#document-preconditions) with `kind` `"drawing"` or `"design"` is `None` → it has already shown the standard message → `abort_before_dialog(CMD_ID, CMD_NAME, f"no saved {kind}")` and return. Each of these returns with the handlers attached and no inputs, so Fusion auto-executes and ends the command.
+  2. The file is `doc.designDataFile` for a design and `doc.dataFile` for a drawing (`designDataFile` is design-only). A drawing has no parents; its children come from `_drawing_uses(doc)`: `dataFile.childReferences` merged with the `dataFile` of each `documentReferences` entry through `logic.unique_by_id`, because the API reference describes `childReferences` only for designs. A design reads `designDataFile.parentReferences` and `.childReferences`. Parents are classified by `make_file_data` into Related Data (name contains ` ‹+› `), Drawings (`fileExtension == "f2d"`), otherwise Used In. For a design, children whose `parentProject.name == "Standard Components"` are Fasteners (a drawing's children are all Uses); the rest are Uses, with ` (configuration)` appended when `isConfiguration` is set.
   3. `make_file_data(file)` records name, id, `fusionWebURL`, the `DataFile` itself and a display path built by walking `parentFolder` up to ten levels to the project root; a file from another project gets a `⚠️ … (Cross Project Reference)` path.
   4. `ui.progressBar.showBusy(...)` plus `adsk.doEvents()` per item while `fetch_thumbnail` runs for every row (see below).
-  5. `_collect_roots` runs for each Used In parent (see [Roots](#roots--recursive-parent-walk)); roots get thumbnails too. The progress bar is hidden.
+  5. `_collect_roots` runs for each Used In parent (none for a drawing) (see [Roots](#roots--recursive-parent-walk)); roots get thumbnails too. The progress bar is hidden.
   6. Dialog: `okButtonText = "Close"`. `_add_table(title, items, prefix)` creates a `GroupCommandInput` `<prefix>_group` titled `Title  (n)`, expanded only when non-empty, holding a three-column table `<prefix>_table` (`10:1:1`, up to 8 visible rows). Each row is a read-only `TextBoxCommandInput` with the HTML-escaped name, an `<prefix>_open_<i>` button-style `BoolValueInput` (icons from `resources/open/`) registered in `_fusion_btns`, and an `<prefix>_web_<i>` button (`resources/web/`) registered in `_browser_btns`; a missing file or URL is shown as `–`. `_set_row_tooltip` puts the action text in `tooltip`, the project path in `tooltipDescription` and the thumbnail file in `toolClipFilename`.
 - `on_input_changed(args)`: ignores the release half of a button press (`value == False`). An open button first ends this command — `ui.commandDefinitions.itemById("SelectCommand").execute()`, or `args.input.parentCommand.doExecute(False)` when `SelectCommand` is missing — then `adsk.doEvents()` and `app.documents.open(data_file)`. The `doExecute` fallback is one of the three deliberate sites in the repo; it runs from `inputChanged`, not `commandCreated` ([the doExecute rule](../dev/lessons.md)). A web button rejects anything not starting with `http://` or `https://`, then `os.startfile(url)` on Windows or `subprocess.Popen(["open", url])` elsewhere.
 - `command_execute(args)`: logs only — the dialog is read-only.
@@ -34,7 +34,7 @@ Shows every document related to the active design in six collapsible groups — 
 
 `fetch_thumbnail(data_file)` returns a PNG path or `THUMB_PLACEHOLDER`, caching by file id in `_thumb_cache` for the invocation:
 
-1. If a component in `design.allComponents` has the same name as the file, `component.createThumbnail(32, 32, "PNG")` and `_save_data_object` (tries `saveToFile`, then the `imageData` / `data` / `bytes` / `content` attributes, and logs the object's attributes when none works).
+1. For a design, if a component in `design.allComponents` has the same name as the file, `component.createThumbnail(32, 32, "PNG")` and `_save_data_object` (tries `saveToFile`, then the `imageData` / `data` / `bytes` / `content` attributes, and logs the object's attributes when none works).
 2. Otherwise `data_file.thumbnail` returns a future that is polled — `adsk.doEvents()` then `time.sleep(0.05)` — for up to 5 s until `state != 0`; `state == 1` yields a `dataObject` saved the same way.
 
 The poll is a `doEvents` loop with `time.sleep` on the UI thread, which [rule 2](../dev/lessons.md) forbids; it is recorded, not fixed, in `tests/test_command_contract.py` (`KNOWN_TIME_SLEEP_SITES`), and `ptutil.pump_events_for` is the replacement when it is touched.
@@ -78,6 +78,7 @@ flowchart TD
 
 ## Tests
 
+- `tests/test_refrences_logic.py` — `unique_by_id` keeps the first of each id across the two sources of a drawing's Uses, and drops items whose id is unreadable or empty.
 - `tests/test_command_contract.py` — registry/description/ID contract; `PTAT_thumbs` is allow-listed as a `PTAT_` literal that is a temp-folder name rather than a command id; `commands/refrences/entry.py` is pinned with exactly one `time.sleep` call in `KNOWN_TIME_SLEEP_SITES`.
 - `tests/test_command_abort.py` — the AST guard confirms the `doExecute` in `on_input_changed` is outside any `commandCreated` handler.
 

@@ -72,7 +72,7 @@ are not repeated per row.
 | assembly | `inferconstraints` | `Infer Constraints.md` | — | — | beta |
 | assembly | `linkGlobalParameters` | `Link Global Parameters.md` | — | — | set member |
 | assembly | `refreshGlobalParametersCache` | `Refresh Global Parameters Cache.md` | — | — | set member |
-| assembly | `refrences` | `Document References.md` | — | — | folder name is misspelled on purpose (stable key); one deliberate `doExecute`; one recorded `time.sleep` |
+| assembly | `refrences` | `Document References.md` | `logic.py` | `test_refrences_logic.py` | Design and Drawing Power Tools panels; folder name is misspelled on purpose (stable key); one deliberate `doExecute`; one recorded `time.sleep` |
 | assembly | `refresh` | `Document Refresh.md` | `logic.py` | `test_refresh_logic.py` | QAT File; closes from `commandCreated` |
 | document | `assigndrawingnumber` | `Assign Drawing Number.md` | — | — | Drawing-tab panel; `partnumber_shared`; abort pattern |
 | document | `assignpartnumbers` | `Assign Part Numbers.md` | — | — | `partnumber_shared`; abort pattern |
@@ -166,7 +166,7 @@ architecture document. One line each:
 | QAT top-level dropdown | `favorites` |
 | QATRight Share flyout (`shareDropMenu`) | `shareDocument` and the other Share commands |
 | `NavToolbar` | `datatoggle` |
-| Drawing tab panel `PT_DrawingPowerTools` (`_drawing_panel`) | `assigndrawingnumber`, `docinfo` |
+| Drawing tab panel `PT_DrawingPowerTools` (`_drawing_panel`) | `refrences`, `assigndrawingnumber`, `docinfo` |
 | Manage tab panel `PT_ManagePowerTools` (needs the Manage Extension) | `syncitempartnumber` |
 | Animation (Publisher) panel `PT_AnimationPowerTools` | `animationnamedview` |
 | Inspect panels, discovered (`_inspect_panels`) | `measurepath`, `matchunits` |
