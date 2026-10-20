@@ -167,3 +167,174 @@ def test_analyze_resume_state_clears_after_completed_run(tmp_path):
     assert result["completed_successfully"] is True
     assert result["clear_log"] is True
     assert result["should_resume"] is False
+
+
+# --- crash suspects -----------------------------------------------------------
+#
+# Both 2026-10-20 crashes (ADSKMVG91G2F5W, pre-production) faulted natively
+# inside updateAllReferences on the same document, and the second one was the
+# resume re-opening the document the first one died on. OPEN_BEGIN is written
+# before every open so the next resume can recognise that document.
+
+
+def _open(doc_id, name):
+    return f"CHECKPOINT|OPEN_BEGIN|doc_id={doc_id}|component={name}|timestamp=t"
+
+
+def _saved(doc_id, name, index):
+    return (
+        f"CHECKPOINT|SAVE_UPLOAD_COMPLETE|doc_id={doc_id}|component={name}"
+        f"|saved_index={index}|total=3"
+    )
+
+
+def test_extract_crash_suspects_flags_open_with_nothing_after_it():
+    """An OPEN_BEGIN that is the last checkpoint of the log is a suspect."""
+    # Arrange: docA saved, docB opened, then silence (the crash).
+    log_lines = [_saved("docA", "A", 1), _open("docB", "B"), "Opened component: B"]
+
+    # Act
+    suspects = entry._extract_crash_suspects(log_lines)
+
+    # Assert
+    assert suspects == [{"doc_id": "docB", "name": "B"}]
+
+
+def test_extract_crash_suspects_ignores_opens_that_reached_a_checkpoint():
+    """A later checkpoint of any kind clears the pending open."""
+    # Arrange: saved, open-failed, save-failed, and the root checkpoint all follow
+    # an OPEN_BEGIN; none of them is a crash.
+    log_lines = [
+        _open("docA", "A"),
+        _saved("docA", "A", 1),
+        _open("docB", "B"),
+        "CHECKPOINT|OPEN_FAILED|doc_id=docB|component=B",
+        _open("docC", "C"),
+        "CHECKPOINT|SAVE_FAILED|doc_id=docC|component=C",
+        _open("docD", "D"),
+        "CHECKPOINT|SAVE_UPLOAD_COMPLETE|component=main assembly|saved_index=1|total=3",
+    ]
+
+    # Act / Assert
+    assert entry._extract_crash_suspects(log_lines) == []
+
+
+def test_extract_crash_suspects_next_open_clears_the_previous_one():
+    """A second OPEN_BEGIN means the first document finished without a checkpoint."""
+    # Arrange
+    log_lines = [_open("docA", "A"), _open("docB", "B")]
+
+    # Act / Assert: only docB is still pending at the end.
+    assert entry._extract_crash_suspects(log_lines) == [{"doc_id": "docB", "name": "B"}]
+
+
+def test_extract_crash_suspects_survives_a_resume_that_died_on_the_same_document():
+    """Two attempts ending on the same document yield one suspect."""
+    # Arrange: exactly the 2026-10-20 shape.
+    log_lines = [
+        _saved("docA", "A", 1),
+        _open("docB", "B"),
+        entry.RESUME_ATTEMPT_MARKER,
+        "Resume available. Processing will continue after the last saved document.",
+        _open("docB", "B"),
+    ]
+
+    # Act / Assert
+    assert entry._extract_crash_suspects(log_lines) == [{"doc_id": "docB", "name": "B"}]
+
+
+def test_extract_crash_suspects_keeps_a_skipped_suspect_across_attempts():
+    """A suspect the next attempt skipped stays a suspect for the one after."""
+    # Arrange: attempt 1 dies on docB; attempt 2 skips it and saves docC.
+    log_lines = [
+        _open("docB", "B"),
+        entry.RESUME_ATTEMPT_MARKER,
+        _open("docC", "C"),
+        _saved("docC", "C", 1),
+    ]
+
+    # Act / Assert
+    assert entry._extract_crash_suspects(log_lines) == [{"doc_id": "docB", "name": "B"}]
+
+
+def test_extract_crash_suspects_drops_a_suspect_a_later_attempt_saved():
+    """A retried suspect that saved is no longer a suspect."""
+    # Arrange
+    log_lines = [
+        _open("docB", "B"),
+        entry.RESUME_ATTEMPT_MARKER,
+        _open("docB", "B"),
+        _saved("docB", "B", 1),
+    ]
+
+    # Act / Assert
+    assert entry._extract_crash_suspects(log_lines) == []
+
+
+def test_extract_crash_suspects_completion_line_clears_pending():
+    """The completion marker ends the run cleanly."""
+    # Arrange
+    log_lines = [_open("docB", "B"), "Bottom-up Update completed successfully"]
+
+    # Act / Assert
+    assert entry._extract_crash_suspects(log_lines) == []
+
+
+def test_analyze_resume_state_reports_suspects_and_still_resumes(tmp_path):
+    """A resumable log that died on docB resumes after docA and names docB."""
+    # Arrange
+    body = _resumable_log() + "\n" + _open("docB", "B") + "\nOpened component: B"
+    log_path = _write_log(tmp_path, body)
+
+    # Act
+    result = entry._analyze_resume_state(log_path, "2.0.1", ["docA", "docB", "docC"])
+
+    # Assert
+    assert result["should_resume"] is True
+    assert result["resume_start_index"] == 1
+    assert result["crash_suspects"] == [{"doc_id": "docB", "name": "B"}]
+    assert "B" in result["status_message"]
+    assert "will be skipped" in result["status_message"]
+
+
+def test_analyze_resume_state_suspect_without_any_checkpoint_restarts_as_resume(
+    tmp_path,
+):
+    """A run that died on its first document restarts from 0 but keeps the log."""
+    # Arrange: no SAVE_UPLOAD_COMPLETE at all, one dangling OPEN_BEGIN.
+    body = "\n".join(
+        [
+            "Fusion client version: 2.0.1",
+            "",
+            "Bottom-up order:",
+            "docA|A",
+            "docB|B",
+            "",
+            "Document save log:",
+            _open("docA", "A"),
+        ]
+    )
+    log_path = _write_log(tmp_path, body)
+
+    # Act
+    result = entry._analyze_resume_state(log_path, "2.0.1", ["docA", "docB"])
+
+    # Assert: should_resume keeps the log in append mode so OPEN_BEGIN survives.
+    assert result["should_resume"] is True
+    assert result["resume_start_index"] == 0
+    assert result["last_saved_index"] == 0
+    assert result["crash_suspects"] == [{"doc_id": "docA", "name": "A"}]
+
+
+def test_analyze_resume_state_ignores_suspects_not_in_the_current_order(tmp_path):
+    """A suspect that left the assembly is not reported."""
+    # Arrange: the order still matches (docA..docC) but the dangling open names docZ.
+    body = _resumable_log() + "\n" + _open("docZ", "Z")
+    log_path = _write_log(tmp_path, body)
+
+    # Act
+    result = entry._analyze_resume_state(log_path, "2.0.1", ["docA", "docB", "docC"])
+
+    # Assert
+    assert result["crash_suspects"] == []
+    assert "skipped" not in result["status_message"]

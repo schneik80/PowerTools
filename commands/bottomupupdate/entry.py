@@ -78,6 +78,13 @@ LOG_PATH_ID = "log_path"  # Text input for custom log file path
 LOG_BROWSE_ID = "browse_log"  # Button to browse for log file location
 LOG_OPEN_VIEW_ID = "open_log_view"  # Checkbox to auto-open a live log viewer
 RESUME_STATUS_ID = "resume_status"  # Read-only status for resume behavior
+RETRY_SUSPECTS_ID = (
+    "retry_crash_suspects"  # Checkbox to re-open documents the previous run died on
+)
+
+# Written to the run log at the start of every resumed attempt; the crash-suspect
+# scan treats it as the boundary between attempts.
+RESUME_ATTEMPT_MARKER = "----- Resume attempt -----"
 
 # Fusion's UI command for updating out-of-date assembly contexts. There is no
 # API equivalent, and CommandDefinition.execute() on it is a silent no-op from
@@ -241,6 +248,24 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         True,
     )
     resume_status_input.tooltip = "Startup check based on temp log, Fusion client version, and current bottom-up list."
+
+    # Offered only when the previous attempt died with a document open. The
+    # default skips that document: re-opening it is how the 2026-10-20 resume
+    # reproduced the native fault it was resuming from.
+    if resume_plan.get("crash_suspects"):
+        retry_input = main_inputs.addBoolValueInput(
+            RETRY_SUSPECTS_ID,
+            "Retry documents that crashed the previous run",
+            True,
+            "",
+            False,
+        )
+        retry_input.tooltip = (
+            "The previous run ended while one of its documents was open, which "
+            "usually means Fusion crashed on it. Off (default): skip those "
+            "documents; update their references manually with Refresh in the "
+            "Quick Access Toolbar and save them. On: open them again."
+        )
 
     advanced_group = main_inputs.addGroupCommandInput("advancedGroup", "Advanced")
     advanced_group.isExpanded = False
@@ -1103,6 +1128,12 @@ def command_execute(args: adsk.core.CommandEventArgs):
             if skip_configs_input
             else True
         )
+        retry_input = inputs.itemById(RETRY_SUSPECTS_ID)
+        retry_suspects = (
+            adsk.core.BoolValueCommandInput.cast(retry_input).value
+            if retry_input
+            else False
+        )
         update_contexts_input = inputs.itemById(UPDATE_CONTEXTS_ID)
         update_contexts = (
             adsk.core.BoolValueCommandInput.cast(update_contexts_input).value
@@ -1195,6 +1226,10 @@ def command_execute(args: adsk.core.CommandEventArgs):
             else 0
         )
 
+        crash_suspect_ids = {
+            suspect["doc_id"] for suspect in resume_info.get("crash_suspects", [])
+        }
+
         emit(f"Bottom-up order (doc_id, name): {bottom_up_records}")
         emit(resume_info.get("status_message", "A full run will start."))
         if docCount == 0:
@@ -1214,7 +1249,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 log_mode = "a" if resume_info.get("should_resume") else "w"
                 with open(file_path, log_mode, encoding="utf-8") as fh:
                     if log_mode == "a":
-                        fh.write("\n----- Resume attempt -----\n")
+                        fh.write(f"\n{RESUME_ATTEMPT_MARKER}\n")
                     parent_project_name = None
                     doc_id = None
                     try:
@@ -1244,6 +1279,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
                         f"  Resume requested: {resume_info.get('should_resume', False)}\n"
                     )
                     fh.write(f"  Resume start index: {resume_start_index}\n")
+                    fh.write(f"  Retry crashed documents: {retry_suspects}\n")
                     fh.write("\nBottom-up order:\n")
                     fh.write(
                         "\n".join(
@@ -1390,6 +1426,20 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 f"Updating component {processed_count} of {docCount}: {component_name}"
             )
 
+            # A document the previous attempt died on is skipped unless the user
+            # asked to retry it. The fault is native and document-specific (both
+            # 2026-10-20 crashes faulted inside updateAllReferences on the same
+            # document), so resuming straight into it just crashes again.
+            if docid in crash_suspect_ids and not retry_suspects:
+                emit(
+                    f"Skipping {component_name}: it was open when the previous run "
+                    "died. Update its references manually (Refresh in the Quick "
+                    "Access Toolbar) and save it, or tick 'Retry documents that "
+                    "crashed the previous run'."
+                )
+                progress_bar.message = f"Skipping crashed document: {component_name} ({processed_count} of {docCount})"
+                continue
+
             # Open the component's document for editing
             try:
                 document = app.data.findFileById(docid)
@@ -1418,6 +1468,14 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 # 2026-07-02 crash faulted in that event consumer mid-open.
                 ptutil.pump_events_for(0.25)
 
+                # Record the open before it happens. A native fault in the open
+                # or in updateAllReferences leaves no Python trace; the next
+                # resume reads this line to recognise the document that killed
+                # the run (_extract_crash_suspects) instead of re-opening it.
+                emit(
+                    f"CHECKPOINT|OPEN_BEGIN|doc_id={docid}|component={component_name}|"
+                    f"timestamp={datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                )
                 app.documents.open(document, True)
                 # Log the document open event
                 emit(f"Opened component: {component_name}")
@@ -1426,6 +1484,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
                     f"Failed to open document for {component_name}: {str(open_error)}"
                 )
                 emit(error_msg)
+                emit(
+                    f"CHECKPOINT|OPEN_FAILED|doc_id={docid}|component={component_name}"
+                )
                 progress_bar.message = f"Failed to open document: {component_name} ({processed_count} of {docCount})"
                 continue  # Skip this component and move to the next one
             # Update all references in the newly opened document
@@ -1594,6 +1655,9 @@ def command_execute(args: adsk.core.CommandEventArgs):
             )
             emit(f"   {save_msg}")
             if not save_ok:
+                emit(
+                    f"CHECKPOINT|SAVE_FAILED|doc_id={docid}|component={component_name}"
+                )
                 close_processed_document(docid, component_name)
                 continue
 
@@ -1805,6 +1869,23 @@ def _extract_latest_bottom_up_order(log_lines):
     return order
 
 
+def _checkpoint_fields(line):
+    """Split ``CHECKPOINT|<kind>|k=v|k=v…`` into ``(kind, {k: v})``.
+
+    Returns ``(None, {})`` for anything that is not a checkpoint line.
+    """
+    parts = line.strip().split("|")
+    if len(parts) < 2 or parts[0] != "CHECKPOINT":
+        return None, {}
+    fields = {}
+    for part in parts[2:]:
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        fields[key] = value
+    return parts[1], fields
+
+
 def _extract_last_checkpoint(log_lines):
     """Return the last document checkpoint tuple (doc_id, saved_index).
 
@@ -1815,16 +1896,9 @@ def _extract_last_checkpoint(log_lines):
     last_saved_index = 0
 
     for line in log_lines:
-        line = line.strip()
-        if not line.startswith("CHECKPOINT|SAVE_UPLOAD_COMPLETE|"):
+        kind, fields = _checkpoint_fields(line)
+        if kind != "SAVE_UPLOAD_COMPLETE":
             continue
-        parts = line.split("|")
-        fields = {}
-        for part in parts[2:]:
-            if "=" not in part:
-                continue
-            k, v = part.split("=", 1)
-            fields[k] = v
 
         doc_id = fields.get("doc_id")
         if not doc_id:
@@ -1839,6 +1913,70 @@ def _extract_last_checkpoint(log_lines):
         last_saved_index = saved_index
 
     return last_doc_id, last_saved_index
+
+
+def _extract_crash_suspects(log_lines):
+    """Return the documents a previous attempt was holding open when it died.
+
+    ``CHECKPOINT|OPEN_BEGIN|doc_id=…|component=…`` is written just before a
+    document is opened. In a healthy run another checkpoint line always
+    follows it: the document's own ``SAVE_UPLOAD_COMPLETE``, an
+    ``OPEN_FAILED`` / ``SAVE_FAILED`` (the loop continued), the next document's
+    ``OPEN_BEGIN``, the root checkpoint, or the completion line. An
+    ``OPEN_BEGIN`` that is still the last checkpoint when the next
+    ``RESUME_ATTEMPT_MARKER`` or the end of the log arrives means the attempt
+    never came back from that document -- a native fault leaves no other
+    trace. A suspect that a later attempt did save is dropped.
+
+    :return: ``[{"doc_id": …, "name": …}]`` in first-seen order, no duplicates
+    """
+    suspects = []
+    saved_ids = set()
+    pending = None
+
+    def close_attempt():
+        nonlocal pending
+        if pending and all(s["doc_id"] != pending["doc_id"] for s in suspects):
+            suspects.append(pending)
+        pending = None
+
+    for raw in log_lines:
+        line = raw.strip()
+        if line == RESUME_ATTEMPT_MARKER:
+            close_attempt()
+            continue
+        if line == "Bottom-up Update completed successfully":
+            pending = None
+            continue
+        kind, fields = _checkpoint_fields(line)
+        if kind is None:
+            continue
+        doc_id = fields.get("doc_id")
+        if kind == "OPEN_BEGIN" and doc_id:
+            # A pending open followed by another open finished without a
+            # checkpoint of its own (an older log); it did not kill the run.
+            pending = {"doc_id": doc_id, "name": fields.get("component", "")}
+            continue
+        if kind == "SAVE_UPLOAD_COMPLETE" and doc_id:
+            saved_ids.add(doc_id)
+        pending = None
+    close_attempt()
+
+    return [s for s in suspects if s["doc_id"] not in saved_ids]
+
+
+def _crash_suspect_sentence(suspects):
+    """Status-box sentence naming the documents a resume will skip."""
+    if not suspects:
+        return ""
+    names = ", ".join(s["name"] or s["doc_id"] for s in suspects)
+    count = len(suspects)
+    noun = "document was" if count == 1 else "documents were"
+    return (
+        f" {count} {noun} open when the previous run died and will be skipped: "
+        f"{names}. Refresh and save it manually, or tick 'Retry documents that "
+        "crashed the previous run'."
+    )
 
 
 def _analyze_resume_state(log_path, fusion_client_version, current_doc_ids):
@@ -1858,6 +1996,7 @@ def _analyze_resume_state(log_path, fusion_client_version, current_doc_ids):
         "resume_start_index": 0,
         "last_saved_index": 0,
         "clear_log": False,
+        "crash_suspects": [],
         "status_message": "No previous log found. A full run will start.",
     }
 
@@ -1910,6 +2049,15 @@ def _analyze_resume_state(log_path, fusion_client_version, current_doc_ids):
         )
         return result
 
+    # Documents the previous attempt died on, restricted to the current order.
+    # They are skipped by default; the dialog offers a retry checkbox.
+    result["crash_suspects"] = [
+        suspect
+        for suspect in _extract_crash_suspects(log_lines)
+        if suspect["doc_id"] in current_doc_ids
+    ]
+    suspect_note = _crash_suspect_sentence(result["crash_suspects"])
+
     last_doc_id, last_saved_index = _extract_last_checkpoint(log_lines)
     if last_doc_id and last_doc_id in current_doc_ids:
         next_index = current_doc_ids.index(last_doc_id) + 1
@@ -1919,6 +2067,19 @@ def _analyze_resume_state(log_path, fusion_client_version, current_doc_ids):
         result["should_resume"] = True
         result["status_message"] = (
             "Resume available. Processing will continue after the last saved document."
+            + suspect_note
+        )
+        return result
+
+    if result["crash_suspects"]:
+        # No save landed, but the attempt died on a document. Restart from the
+        # top as a resume (log appended) so that OPEN_BEGIN record survives and
+        # the document is skipped rather than re-opened.
+        result["should_resume"] = True
+        result["status_message"] = (
+            "Previous run did not complete and save list matches. "
+            "No completed checkpoint was found, so processing will restart from the beginning."
+            + suspect_note
         )
         return result
 

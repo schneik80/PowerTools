@@ -39,6 +39,7 @@ Migrating an assembly after a Fusion update, or bringing every component of a di
 | **Apply Design Doc Intent** | On | Sets each document's design intent from its content (see below) |
 | **Enable Timeline** | Off | Converts direct-modeling documents to parametric (see below) |
 | **Run status** | — | Read-only: fresh run or resume |
+| **Retry documents that crashed the previous run** | Off; shown only when the previous run died with a document open | Off skips those documents; On opens them again |
 | **Upload check interval (seconds)** (Advanced) | 0.5 | How often the upload is polled after each save |
 
 ### Visibility tab
@@ -66,7 +67,7 @@ Each option hides that geometry in the root component of every document before i
 
 1. **Resume check.** The existing log, if any, is read: the Fusion version and the document list are compared with the current ones to decide between a fresh run and a resume.
 2. **Traversal and sort.** The assembly is walked into a dependency graph and sorted so every document is processed after the documents it references.
-3. **Per document**, in that order: open; update its references; enable the timeline if asked; apply the visibility options; apply design intent; run Update Contexts; rebuild; save with the comment `Auto save in Fusion: <version>, by rebuild assembly.`; wait for the upload to complete; close; write a `CHECKPOINT|SAVE_UPLOAD_COMPLETE` line.
+3. **Per document**, in that order: write a `CHECKPOINT|OPEN_BEGIN` line; open; update its references; enable the timeline if asked; apply the visibility options; apply design intent; run Update Contexts; rebuild; save with the comment `Auto save in Fusion: <version>, by rebuild assembly.`; wait for the upload to complete; close; write a `CHECKPOINT|SAVE_UPLOAD_COMPLETE` line.
 4. **Root.** **Get All Latest** and **Update All From Parent** run on the root, then its contexts are updated, and it is saved and its upload confirmed.
 5. **Report.** The completion dialog and the log's summary.
 
@@ -103,8 +104,11 @@ The log records the Fusion version, the document list and a checkpoint line for 
 | *Previous run completed successfully. Log will be reset for a new run.* | The last run finished |
 | *Previous run did not complete, but the document save list has changed. A full run will start.* | The assembly changed |
 | *Resume available. Processing will continue after the last saved document.* | The run picks up after the last checkpoint |
+| *… 1 document was open when the previous run died and will be skipped: <name>. …* | Appended to either of the two lines above. The previous run ended, usually by a Fusion crash, while that document was open. The run skips it unless **Retry documents that crashed the previous run** is on |
 
 Resume detection reads the default log location. To force a fresh start, delete the log file from your temporary folder.
+
+A document that is skipped as a crash suspect keeps its old references. Open it yourself, click **Refresh** in the Quick Access Toolbar, and save it; its parent then picks up the new version when the run updates the parent's references.
 
 ## Limitations
 
@@ -119,6 +123,7 @@ Resume detection reads the default log location. To force a fresh start, delete 
 | *No document references found* | The document has no external references | Run it on an assembly with linked components |
 | A document is skipped | It is locked or read-only, or in the Standard Components project | Check hub permissions and whether another user has it open |
 | Run status offers a full run after an interruption | Different Fusion build, or the document list changed | Accept the full run |
+| Fusion crashes on the same document every time the run resumes | A native fault inside Fusion's reference update on that document | Leave **Retry documents that crashed the previous run** off; refresh and save the document by hand, then resume |
 | Upload wait times out | Slow network or large file | Increase the interval; check connectivity |
 | The live log viewer does not open | Console.app or PowerShell unavailable | Open the log file from your temporary folder |
 

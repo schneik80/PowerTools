@@ -41,8 +41,9 @@ mitigation for that.
   - **Main**: `update_contexts` (on), `rebuild_all` (on), `skip_standard` (on),
     `skip_saved` (off), `skip_configurations` (on), `apply_intent` (on),
     `enable_timeline` (off), read-only `resume_status` text box showing the
-    plan's `status_message`, and an `Advanced` group with `pause_time`
-    (upload poll interval, default `0.5`).
+    plan's `status_message`, `retry_crash_suspects` (off; added only when the
+    plan's `crash_suspects` is non-empty), and an `Advanced` group with
+    `pause_time` (upload poll interval, default `0.5`).
   - **Visibility**: `hide_origins`, `hide_joints`, `hide_sketches`,
     `hide_jointorigins`, `hide_canvases`, `hide_ucs` (all off).
   - **Logging**: `enable_log` (on), read-only `log_path`, `browse_log`
@@ -94,7 +95,11 @@ mitigation for that.
      `saved`; add to `saved`; advance the progress bar.
    - `app.data.findFileById(docid)`; `_configuration_label(data_file)` skips
      configuration members / configured designs when `skip_configurations`;
-     `pump_events_for(0.25)`; `app.documents.open(document, True)`.
+     `pump_events_for(0.25)`; `CHECKPOINT|OPEN_BEGIN|doc_id=…|component=…|timestamp=…`;
+     `app.documents.open(document, True)`. A failed open writes
+     `CHECKPOINT|OPEN_FAILED|doc_id=…` and continues. Before any of this, a
+     document in `crash_suspect_ids` (below) is skipped with a log line
+     unless the `retry_crash_suspects` checkbox was on.
    - `opened_doc.updateAllReferences()`; activate `FusionSolidEnvironment` if
      needed; `des = Design.cast(app.activeProduct)`.
    - Options in order: `enable_timeline_in_document` (Direct → Parametric,
@@ -113,8 +118,9 @@ mitigation for that.
      document=active_doc, pre_save_version=…, log_fn=write_log_entry)`.
    - `close_processed_document(docid, name)`: re-acquires `app.activeDocument`,
      closes it only if it is not the top document and its `dataFile.id` equals
-     the expected id, then pumps 0.25 s. On a failed upload the document is
-     closed and the loop continues without a checkpoint.
+     the expected id, then pumps 0.25 s. On a failed upload
+     `CHECKPOINT|SAVE_FAILED|doc_id=…` is written, the document is closed and
+     the loop continues.
    - `CHECKPOINT|SAVE_UPLOAD_COMPLETE|doc_id=…|component=…|saved_index=…|total=…|timestamp=…`.
 9. Root: `GetAllLatestCmd` then `ContextUpdateAllFromParentCmd` through
    `execute_command_with_timeout` (retries `execute()` with pumped waits, 120 s
@@ -182,6 +188,22 @@ the root's checkpoint has no `doc_id` and is skipped) gives
 `resume_start_index = index(doc_id) + 1` and `last_saved_index`. The order is
 computed twice per invocation (dialog preview, then execution).
 
+**Crash suspects.** `_extract_crash_suspects(log_lines)` scans the same log
+for a `CHECKPOINT|OPEN_BEGIN|doc_id=…` that is still the last checkpoint line
+when a `----- Resume attempt -----` marker (`RESUME_ATTEMPT_MARKER`) or the end
+of the log arrives: the attempt opened that document and never recorded
+anything after it, which is what a native fault looks like from Python. Any
+later checkpoint (`SAVE_UPLOAD_COMPLETE`, `OPEN_FAILED`, `SAVE_FAILED`, the
+next document's `OPEN_BEGIN`, the root checkpoint) or the completion line
+clears the pending open; a suspect that a later attempt saved is dropped. The
+result, filtered to `current_doc_ids`, is `result["crash_suspects"]`
+(`[{"doc_id", "name"}]`); `_crash_suspect_sentence` appends it to the status
+message. When suspects exist but no save ever landed, the run still restarts
+at index 0 but as a resume (`should_resume`), so the log is appended rather
+than rewritten and the `OPEN_BEGIN` record survives. `command_created` adds
+the `retry_crash_suspects` checkbox (default off) only when the list is
+non-empty; `command_execute` skips suspects unless it is on.
+
 ## Updating contexts
 
 Fusion exposes no API for assembly contexts. `update_contexts_in_document` runs
@@ -194,6 +216,15 @@ in Fusion's own app log.
 
 ## Crash mitigations
 
+- **Crash suspects skipped on resume** (`_extract_crash_suspects`,
+  `retry_crash_suspects`): the document an attempt died on is not re-opened
+  by the next attempt. Both 2026-10-20 crashes on `ADSKMVG91G2F5W`
+  (pre-production) faulted in `Entity::unsubscribe` under
+  `XRefUpdater`'s destructor inside `updateAllReferences` on one document,
+  with Fusion's app log reporting leaked `FusionComponent`/`ACTComponent`
+  entities and `Corrupted Passive Ref with invalid segment`; the second crash
+  was the resume re-opening it. A manual Refresh in the QAT on that document
+  succeeded, so the fault is document-specific and Fusion-side.
 - **Autosave suspended for the run** (`_suspend_autosave` / `_restore_autosave`):
   Fusion's automatic-versioning thread and save-on-close can save a dirty
   document inside one of the loop's event pumps and invalidate objects the loop
@@ -223,7 +254,11 @@ in Fusion's own app log.
   (doc-id column), `_extract_last_checkpoint` (skips the root checkpoint),
   `_analyze_resume_state` decisions: resume after last saved, resume past the
   last document, full run on changed order, on version mismatch, cleared after
-  a completed run.
+  a completed run; `_extract_crash_suspects` (dangling open, cleared by any
+  later checkpoint or the next open, one suspect across repeated attempts,
+  kept when skipped, dropped once saved) and the suspect-aware resume
+  decisions (named in the status, restart-as-resume without a checkpoint,
+  suspects outside the current order ignored).
 - `tests/test_bottomupupdate_autosave.py` — suspend/restore pair: both switches,
   exact prior values, idempotence, failure is a logged no-op.
 - `tests/test_bottomupupdate_config_label.py` — `_configuration_label` on

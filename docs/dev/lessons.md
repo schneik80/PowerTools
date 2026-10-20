@@ -999,6 +999,25 @@ Do not regress these (`a06e049`, `266e2c2`):
   doc claim that has not been checked against the source is not verified --
   the review found notes naming handlers, helpers, anchors and placements
   that did not match the code.
+- **A resume must not re-open the document the previous attempt died on.**
+  Bottom-Up Update crashed twice on 2026-10-20 (`ADSKMVG91G2F5W`,
+  pre-production): identical CER stacks, a segfault in `Entity::unsubscribe`
+  under `XRefUtil::XRefUpdater`'s destructor inside
+  `FusionDocument.updateAllReferences()`, on the same document both times,
+  with Fusion's app log reporting leaked `FusionComponent`/`ACTComponent`
+  entities for the two freshly saved children and thirty
+  `NEUTRON_BUG_ALERT(Corrupted Passive Ref with invalid segment)` lines. The
+  sibling assembly with the same shape had passed the same step thirty
+  seconds earlier, and a manual Refresh in the QAT on the crashing document
+  succeeded: document-specific, Fusion-side, and uncatchable from Python. The
+  second crash was self-inflicted -- resume keyed only on the last
+  `SAVE_UPLOAD_COMPLETE`, so it opened the same document again. The run now
+  writes `CHECKPOINT|OPEN_BEGIN` before every open; an open with no later
+  checkpoint in its attempt marks a crash suspect that the next attempt
+  skips unless asked to retry (`_extract_crash_suspects`). The general
+  shape: when a step can fault natively, record *intent* before it, not
+  just success after it, or the recovery path repeats the fault. CER
+  folders `1792507440453` and `1792511551459`.
 
 ---
 
