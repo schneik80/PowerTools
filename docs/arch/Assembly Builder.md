@@ -95,9 +95,13 @@ The **no target project** banner (from `hasTargetProject`) takes precedence: eve
 node is built with `addNewExternalComponent(name, folder, transform)`, so without
 a folder nothing can be created. Fusion has no active-project-changed event, so
 the page re-checks on demand (Re-check button, window focus, visibility change).
-The **save required** banner appears only when the graph has shared nodes or
-parameter-document nodes and the document is unsaved, because both need the
-root's `DataFile`. `create_assembly_from_graph` repeats both checks and returns
+The **save required** banner appears whenever the document is unsaved. Each
+child is pinned to its `DataFolder` the moment `addNewExternalComponent` runs,
+and `resolve_target_folder` returns the root's own folder only for a saved
+root (for an unsaved one it can only offer the project root). Saving first
+makes Fusion's Save dialog the folder picker, so the children are created
+beside the root; shared nodes and parameter-document nodes need the root's
+`DataFile` anyway. `create_assembly_from_graph` repeats both checks and returns
 an actionable `Error:` message if either gate was bypassed.
 
 ## Assembly creation (`create_assembly_from_graph`)

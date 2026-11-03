@@ -407,7 +407,7 @@
 
 <div class="save-banner" id="saveBanner">
     <span class="save-banner-icon">⚠</span>
-    <span>This design has shared parts or global parameters. Save the document (Ctrl+S) to enable Create Assembly.</span>
+    <span>Save the document (Ctrl+S) and choose its folder to enable Create Assembly. The new components are created in the same folder.</span>
 </div>
 
 <div class="save-banner" id="projectBanner">
@@ -573,15 +573,6 @@
         return ids;
     }
 
-    function graphHasParamDocNodes() {
-        var data = editor.export();
-        var nodes = data.drawflow.Home.data;
-        for (var k in nodes) {
-            if (nodes[k].name === 'paramdoc') return true;
-        }
-        return false;
-    }
-
     window.addParamDocNode = function(paramId, paramName) {
         // Each parameter document may be added only once.
         if (graphParamDocIds()[paramId]) return;
@@ -654,34 +645,15 @@
         }
     }
 
-    // A node is "shared" when more than one *structural* connection feeds its
-    // inputs (more than one parent). Param-doc links also land on input_1, so
-    // they are excluded here — mirrors the Fusion-side find_shared_nodes.
-    function graphHasSharedNodes() {
-        var data = editor.export();
-        var nodes = data.drawflow.Home.data;
-        for (var k in nodes) {
-            var inp = nodes[k].inputs || {};
-            var count = 0;
-            for (var ik in inp) {
-                var conns = inp[ik].connections || [];
-                for (var c = 0; c < conns.length; c++) {
-                    var src = nodes[conns[c].node];
-                    if (src && src.name !== 'paramdoc') count++;
-                }
-            }
-            if (count > 1) return true;
-        }
-        return false;
-    }
-
-    // Both shared parts (addByInsert) and global parameters (derive into
-    // external components) require the root to have a DataFile, i.e. a save.
-    // Until then, show the banner and block Create. A plain unsaved tree with
-    // no shared parts and no parameter sets is fine.
+    // Create always needs a saved root. Each child is pinned to a DataFolder
+    // the moment it is created, and for an unsaved root the only folder Python
+    // can resolve is the project root -- so the children landed there while
+    // the root went wherever the user chose in Fusion's Save dialog later
+    // (#36). Saving first makes that dialog the folder picker and the children
+    // are created beside the root. Shared parts (addByInsert) and global
+    // parameters (derive) need the root's DataFile anyway.
     function refreshShareGate() {
-        var needsSave = graphHasSharedNodes() || graphHasParamDocNodes();
-        var saveBlocked = needsSave && !docIsSaved;
+        var saveBlocked = !docIsSaved;
         var projectBlocked = !hasProject;
         var saveBanner = document.getElementById('saveBanner');
         var projectBanner = document.getElementById('projectBanner');
@@ -896,9 +868,8 @@
     };
 
     window.createAssembly = function() {
-        // Defensive: the button is disabled while shared parts or global
-        // parameters need a save.
-        if ((graphHasSharedNodes() || graphHasParamDocNodes()) && !docIsSaved) {
+        // Defensive: the button is disabled while the document is unsaved.
+        if (!docIsSaved) {
             refreshShareGate();
             return;
         }

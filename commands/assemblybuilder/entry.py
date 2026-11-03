@@ -905,25 +905,32 @@ def create_assembly_from_graph(graph_data: dict) -> str:
     if not design:
         return "Error: No active Fusion design."
 
-    # Detect shared (reused) parts and global-parameter links. Both need the
-    # root document to have a DataFile (shared: addByInsert; params: open the
-    # external component to derive). The palette shows a banner and disables
-    # Create until saved — this is a defensive fallback if that gate is missed.
+    # The root must be saved before anything is generated. Every child is
+    # created with addNewExternalComponent(name, folder, transform) and is
+    # pinned to that folder from that moment; for an unsaved root the only
+    # folder we can resolve is the project root, so the children ended up
+    # there while the root went wherever the user chose in Fusion's Save
+    # dialog afterwards (#36). Saving first makes that dialog the folder
+    # picker and lets the children be created beside the root. Shared parts
+    # and parameter links need the root's DataFile anyway. The palette shows a
+    # banner and disables Create until saved — this is the fallback if that
+    # gate is missed.
     shared_node_ids = find_shared_nodes(nodes, root_node_id)
     has_shared = len(shared_node_ids) > 0
     param_links = collect_param_links(nodes)
 
-    if (has_shared or param_links) and not doc.isSaved:
+    if not doc.isSaved:
         return (
-            "Error: This design has shared parts or global parameters and "
-            "must be saved first. Save the document (Ctrl+S) and try again."
+            "Error: Save the document first (Ctrl+S) and choose its folder; "
+            "the new components are created in the same folder. Then try "
+            "Create Assembly again."
         )
 
-    # Target folder for the external components. Resolved defensively:
-    # app.data.activeProject.rootFolder raises InternalValidationError('id.size()')
-    # when the Data Panel has no project in context, which previously propagated
-    # up and aborted the build. The palette also gates Create on this, so this is
-    # the belt-and-braces fallback.
+    # Target folder for the external components: the saved root's own folder.
+    # Resolved defensively: app.data.activeProject.rootFolder raises
+    # InternalValidationError('id.size()') when the Data Panel has no project
+    # in context, which previously propagated up and aborted the build. The
+    # palette also gates Create on this, so this is the belt-and-braces fallback.
     folder = cache.resolve_target_folder(CMD_NAME)
     if folder is None:
         return (

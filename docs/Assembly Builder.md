@@ -14,7 +14,7 @@ SolidWorks Premium ships Treehouse for this: plan the structure of an assembly a
 - The document must be new (unsaved), or saved but still empty: no timeline features, bodies, sketches or child components.
 - The design's intent must be Assembly or Hybrid.
 - To generate, a project must be active in the Data Panel; the palette opens without one but **Create Assembly** stays disabled until you pick one.
-- With shared children or parameter links in the graph, the document must be saved before generating.
+- To generate, the document must be saved. The folder you choose when saving is where every generated component is created.
 
 If the document is not new-or-empty, or has Part intent, a message says what to change and the palette does not open.
 
@@ -31,7 +31,7 @@ If the document is not new-or-empty, or has Part intent, a message says what to 
 5. Double-click a node's name to rename it; the name becomes the component name.
 6. To derive a parameter set into components, select its button under **Global Parameters** in the sidebar and connect the resulting node to each component. Each set can be on the canvas once.
 7. Use **Arrange** to lay the graph out as an org chart, **Fit** to recentre, Ctrl+scroll or the zoom buttons to zoom, **Clear All** to start over.
-8. If a banner asks you to save, save (**Ctrl+S**); if it says *No target project*, open a project in the Data Panel and select **Re-check** (the palette also re-checks when it regains focus).
+8. If a banner asks you to save, save (**Ctrl+S**) and choose the folder the assembly belongs in; the generated components are created in that folder. If the banner says *No target project*, open a project in the Data Panel and select **Re-check** (the palette also re-checks when it regains focus).
 9. Select **Create Assembly**.
 
 Generation runs in three passes:
@@ -40,7 +40,7 @@ Generation runs in three passes:
 2. **Shared children.** When the graph has shared children or parameter links, the document is saved once (comment `Assembly Builder: flushing components`) so the new documents exist in the cloud, and each shared child is inserted into its additional parents by reference.
 3. **Parameters.** For every component linked to a parameter node, the component document is opened, the set is derived in as favorites at the start of its timeline, and the document is saved. A cancellable progress dialog shows one step per document, and each upload is awaited (up to 120 seconds) so versions are current. The root then updates all references and is saved with the comment `Updated with Assembly Builder`.
 
-The palette hides when generation finishes. New documents are created in the active document's folder when it is saved, or in the active project's root folder when it is not; you can move them afterwards in the Data Panel.
+The palette hides when generation finishes. New documents are created in the same folder as the root document; you can move them afterwards in the Data Panel.
 
 ## Options
 

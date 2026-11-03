@@ -665,6 +665,15 @@ than integers, so a hardcoded table could not be tested against the real enums
 either. Names this build does not carry are reported, not guessed at.
 -- `commands/matchunits/logic.py`
 
+**`addNewExternalComponent(name, folder, transform)` pins the child to
+`folder` the moment it runs, so do not create children under a root that has
+not been saved yet.** For an unsaved root the only folder
+`cache.resolve_target_folder` can offer is the project root; the children went
+there while the root itself landed wherever the user chose in Fusion's Save
+dialog afterwards (#36, reported from a real project). Requiring the save first
+turns that dialog into the folder picker and the children are created beside
+the root. -- `commands/assemblybuilder/entry.py`
+
 ---
 
 ## UI placement
