@@ -52,7 +52,7 @@ The palette hides when generation finishes. New documents are created in the sam
 | **Arrange**, **Fit**, zoom, **Clear All** | Layout and view |
 | **Create Assembly** | Generate. Disabled while a banner shows |
 
-The root node is the document you are building into: it cannot be deleted and keeps the document's name. Parameter nodes are read-only. The palette follows Fusion's light or dark theme.
+The root node is the document you are building into: it cannot be deleted and shows the document's name, which updates when you save a new document under its real name. Parameter nodes are read-only. The palette follows Fusion's light or dark theme.
 
 ## Importing a SysML physical view
 

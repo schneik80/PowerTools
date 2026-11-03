@@ -79,6 +79,7 @@ KNOWN_NON_COMMAND_PT_LITERALS = {
     "PTND_history_thumbTick": "custom event: dochistory thumbnail poll",
     "PTAT_assemblyPalette_finishInsert": "custom event: assemblypalette insert",
     "PTAT_assemblyPalette_thumbTick": "custom event: assemblypalette thumbnails",
+    "PTAT_assemblyBuilder_documentSaved": "custom event: assemblybuilder root-name refresh",
     "PTAT_externalize_runner": "custom event: externalize batch runner",
     # Secondary command / control definitions owned by the file that uses them.
     "PTAT_assemblyPalette": "assemblypalette LAUNCH_CMD_ID (launch button)",

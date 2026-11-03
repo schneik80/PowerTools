@@ -674,6 +674,18 @@ dialog afterwards (#36, reported from a real project). Requiring the save first
 turns that dialog into the folder picker and the children are created beside
 the root. -- `commands/assemblybuilder/entry.py`
 
+**A readable `DataFile` is not yet an insertable one.** After a save that
+uploads new external documents, `parentDocument.dataFile` first raises, then
+returns an object, and `addByInsert(dataFile, transform, True)` on that object
+still raises `InternalValidationError : group` until the upload has fully
+processed. Seen on ADSKMVG91G2F5W (macOS, 2026-11-03): the DataFile came back
+35 s after the flush save, the insert failed, and the identical call succeeded
+a minute later through the MCP. Wait for `DataFile.isComplete` (documented
+for exactly this: "especially useful when a new file is being saved or
+uploaded") before inserting, and retry the insert briefly; a single attempt on
+a freshly uploaded file is a coin toss. `DataFile.refresh` is not the tool: it
+takes a handler argument and is a synchronous cloud round-trip. -- `commands/assemblybuilder/entry.py`
+
 ---
 
 ## UI placement

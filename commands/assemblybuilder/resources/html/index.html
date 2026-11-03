@@ -970,8 +970,14 @@
         handle: function(action, data) {
             try {
                 if (action === 'setDocumentName') {
+                    // Pushed on open and again after a save (the Save dialog
+                    // is where a new document gets its name). Update the
+                    // node's data, not only the visible field, so an export
+                    // carries the new name too.
                     rootDocName = data;
                     if (rootNodeId) {
+                        try { editor.updateNodeDataFromId(rootNodeId, { name: data }); }
+                        catch (e) { console.log('updateNodeDataFromId failed:', e); }
                         var el = container.querySelector('#node-' + rootNodeId + ' .node-name-input');
                         if (el) el.value = data;
                     }

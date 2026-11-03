@@ -11,6 +11,7 @@
 
 import json
 import os
+import threading
 import time
 
 import adsk.core
@@ -68,6 +69,16 @@ _active_project_ref = None
 # Python-side guard for the same thing.
 _build_in_progress = False
 
+# documentSaved fires while Fusion is still saving, so that handler may read
+# nothing but isSaved. The document's name (DataFile.name once saved, which is
+# what Fusion's Save dialog just assigned) is read later, on a main-loop turn
+# reached through a timer and this custom event. One refresh is enough for a
+# burst of saves (the flush save fires documentSaved once per child).
+_NAME_EVENT_ID = "PTAT_assemblyBuilder_documentSaved"
+_NAME_EVENT_DELAY_SECONDS = 0.5
+_name_event_handler = None
+_name_refresh_pending = False
+
 
 def start():
     cmd_def = ui.commandDefinitions.addButtonDefinition(
@@ -80,11 +91,27 @@ def start():
         control = panel.controls.addCommand(cmd_def)
         control.isPromoted = IS_PROMOTED
 
+    # Deferred follow-up to documentSaved. unregister-then-register gives a
+    # clean slate if the add-in was reloaded without restarting Fusion.
+    global _name_event_handler
+    try:
+        app.unregisterCustomEvent(_NAME_EVENT_ID)
+    except Exception:
+        pass
+    name_event = app.registerCustomEvent(_NAME_EVENT_ID)
+    _name_event_handler = _DocumentSavedSettledHandler()
+    name_event.add(_name_event_handler)
+
 
 def stop():
     palette = ui.palettes.itemById(PALETTE_ID)
     if palette:
         palette.deleteMe()
+
+    try:
+        app.unregisterCustomEvent(_NAME_EVENT_ID)
+    except Exception:
+        pass
 
     panel = _ui_bootstrap.get_power_tools_panel()
     if panel:
@@ -244,6 +271,28 @@ def _os_is_dark() -> bool:
     return True
 
 
+def _doc_display_name(doc) -> str:
+    """The name the root node shows for *doc*.
+
+    ``Document.name`` carries the version suffix once a document is saved
+    ("Gearbox v3"); ``DataFile.name`` is the bare name the user typed in the
+    Save dialog, so it is preferred when there is one.
+    """
+    if doc is None:
+        return "Untitled"
+    try:
+        if doc.isSaved:
+            df = doc.dataFile
+            if df is not None and df.name:
+                return df.name
+    except Exception:
+        ptutil.log(f"{CMD_NAME}: dataFile name lookup failed — using document name")
+    try:
+        return doc.name or "Untitled"
+    except Exception:
+        return "Untitled"
+
+
 def _gather_palette_state() -> dict:
     """Collect the deterministic init state for the palette in one place."""
     doc = app.activeDocument
@@ -293,7 +342,7 @@ def _gather_palette_state() -> dict:
     folder = cache.resolve_target_folder(CMD_NAME)
 
     return {
-        "docName": doc.name,
+        "docName": _doc_display_name(doc),
         "theme": "dark" if is_dark else "light",
         "saved": bool(doc.isSaved),
         "paramDocs": param_entries,
@@ -352,7 +401,13 @@ def _send_target_project(palette: adsk.core.Palette) -> None:
 
 
 def document_saved(args: adsk.core.DocumentEventArgs):
-    """Push the active document's save state to the palette gate."""
+    """Push the active document's save state to the palette gate.
+
+    This fires while Fusion's saver is still running, so it reads only
+    ``isSaved``. The document's new name is picked up by
+    ``_DocumentSavedSettledHandler`` on a later main-loop turn.
+    """
+    global _name_refresh_pending
     palette = ui.palettes.itemById(PALETTE_ID)
     if not palette:
         return
@@ -360,6 +415,54 @@ def document_saved(args: adsk.core.DocumentEventArgs):
     state = "saved" if (doc and doc.isSaved) else "unsaved"
     ptutil.log(f"{CMD_NAME}: Document saved — notifying palette ({state}).")
     palette.sendInfoToHTML("setSaveState", state)
+
+    if _name_refresh_pending:
+        return
+    _name_refresh_pending = True
+    timer = threading.Timer(_NAME_EVENT_DELAY_SECONDS, _fire_name_event)
+    timer.daemon = True  # never hold Fusion open on a pending refresh
+    timer.start()
+
+
+def _fire_name_event() -> None:
+    """Hand the name refresh to the main thread. Runs on the timer's thread.
+
+    Nothing here may touch the Fusion API beyond ``fireCustomEvent`` —
+    including ptutil.log. Its return value is meaningless (False even on
+    success), so it is ignored.
+    """
+    try:
+        app.fireCustomEvent(_NAME_EVENT_ID)
+    except Exception:
+        pass
+
+
+class _DocumentSavedSettledHandler(adsk.core.CustomEventHandler):
+    """Push the saved document's name to the root node, after the save.
+
+    A first save goes through Fusion's Save dialog, where the user names the
+    document; the root node was created with "Untitled" and keeps showing it
+    until this runs. The save state is pushed again as well, now that it is
+    settled.
+    """
+
+    def notify(self, args):
+        global _name_refresh_pending
+        _name_refresh_pending = False
+        try:
+            palette = ui.palettes.itemById(PALETTE_ID)
+            if not palette:
+                return
+            doc = app.activeDocument
+            if doc is None or not doc.isValid:
+                return
+            name = _doc_display_name(doc)
+            state = "saved" if doc.isSaved else "unsaved"
+            ptutil.log(f"{CMD_NAME}: save settled — root node '{name}', {state}.")
+            palette.sendInfoToHTML("setDocumentName", name)
+            palette.sendInfoToHTML("setSaveState", state)
+        except Exception:
+            ptutil.handle_error(CMD_NAME)
 
 
 def palette_closed(args: adsk.core.UserInterfaceGeneralEventArgs):
@@ -769,6 +872,70 @@ def _resolve_target_data_file(occ, label: str, progress=None):
         ptutil.pump_events_for(0.05)
 
 
+def _wait_for_data_file_complete(data_file, label: str, progress=None) -> bool:
+    """Pump until *data_file* reports ``isComplete``, or give up after 120 s.
+
+    A readable DataFile is not yet an insertable one. In a run on
+    ADSKMVG91G2F5W (2026-11-03) ``_resolve_target_data_file`` returned Part 2's
+    DataFile 35 s after the flush save and ``addByInsert`` on it still raised
+    ``InternalValidationError : group``; the same call succeeded once the
+    upload had settled. ``isComplete`` is the documented signal: "especially
+    useful when a new file is being saved or uploaded ... returns true when all
+    of the processing has been completed". It can raise while the upload is
+    in flight; a raise is treated as "not yet". (``refresh`` is not used: it
+    is a synchronous cloud round-trip the reference says is rarely needed.)
+    """
+    t0 = time.monotonic()
+    last_hb = t0
+    while True:
+        try:
+            if data_file.isComplete:
+                return True
+        except Exception:
+            pass
+        if progress is not None and progress.wasCancelled:
+            return False
+        now = time.monotonic()
+        if now - t0 > 120.0:
+            ptutil.log(f"{CMD_NAME}: '{label}' never reported isComplete — giving up")
+            return False
+        if now - last_hb >= 5.0:
+            ptutil.log(
+                f"{CMD_NAME}: waiting for '{label}' upload to complete "
+                f"({now - t0:.0f}s)…"
+            )
+            last_hb = now
+        ptutil.pump_events_for(0.25)
+
+
+def _insert_with_retry(target_comp, data_file, transform, label: str):
+    """``addByInsert`` with a short retry, for the window after ``isComplete``.
+
+    Returns the occurrence, or ``None`` after the last attempt failed (a
+    ``None`` return and a raise are both failures; the last error is logged).
+    """
+    attempts = 6
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            inserted = target_comp.occurrences.addByInsert(data_file, transform, True)
+            if inserted is not None:
+                return inserted
+            last_error = "returned None"
+        except Exception as e:
+            last_error = str(e)
+        if attempt < attempts:
+            ptutil.log(
+                f"  Shared insert of '{label}' attempt {attempt}/{attempts} "
+                f"failed ({last_error}); retrying…"
+            )
+            ptutil.pump_events_for(2.0)
+    ptutil.log(
+        f"  Shared insert of '{label}' failed after {attempts} attempts: {last_error}"
+    )
+    return None
+
+
 def _derive_param_links(
     param_links: dict,
     root_node_id: int,
@@ -1167,9 +1334,12 @@ def create_assembly_from_graph(graph_data: dict) -> str:
                 target_comp = parent_comp
 
             try:
-                # The flush save uploads the child asynchronously and its
-                # DataFile raises until that lands (see _resolve_target_data_file),
-                # so wait for it the same way pass 3 does.
+                # The flush save uploads the child asynchronously. Its
+                # DataFile raises until the upload starts to land (see
+                # _resolve_target_data_file) and addByInsert raises
+                # "InternalValidationError : group" until it has fully
+                # processed (see _wait_for_data_file_complete), so both are
+                # awaited before the insert, which still retries briefly.
                 data_file = _resolve_target_data_file(src_occ, child_name)
                 if data_file is None:
                     ptutil.log(
@@ -1177,15 +1347,11 @@ def create_assembly_from_graph(graph_data: dict) -> str:
                         f"(external doc not flushed)"
                     )
                     continue
-                # addByInsert returns None on failure instead of raising.
-                inserted = target_comp.occurrences.addByInsert(
-                    data_file, transform, True
+                _wait_for_data_file_complete(data_file, child_name)
+                inserted = _insert_with_retry(
+                    target_comp, data_file, transform, child_name
                 )
                 if inserted is None:
-                    ptutil.log(
-                        f"  Shared insert returned nothing for {child_name} "
-                        f"into {target_comp.name}"
-                    )
                     continue
                 shared_insert_count += 1
                 ptutil.log(

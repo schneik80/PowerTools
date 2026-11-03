@@ -60,7 +60,14 @@ three passes around one flush save.
     the returned message is shown as a native `messageBox` (critical icon when
     it starts with `Error:`).
 - `document_saved`: reads only `activeDocument.isSaved` and pushes
-  `setSaveState`, which drives the page's save-required gate.
+  `setSaveState`, which drives the page's save-required gate. It fires while
+  Fusion's saver is still running, so the document's new name is not read
+  there: a `threading.Timer` fires the custom event `_NAME_EVENT_ID`
+  (registered in `start()`, unregistered in `stop()`, one pending refresh at
+  a time), and `_DocumentSavedSettledHandler` pushes `setDocumentName`
+  (`_doc_display_name`: `DataFile.name` once saved, else `Document.name`) and
+  `setSaveState` again on that later main-loop turn. The page writes the name
+  into the root node's data and field.
 - `palette_navigating`: `http*` URLs open externally. `command_destroy` clears
   `local_handlers`.
 
@@ -147,10 +154,12 @@ parent) and `collect_param_links` (`target node id -> [paramdoc nodes]`).
 - **Pass 2 — shared inserts.** For each deferred entry the parent component is
   re-derived from `created_map` (or the root) rather than reusing the pass-1
   proxy. The child's `DataFile` is awaited with `_resolve_target_data_file`
-  (the upload is asynchronous and the property raises until it lands), then
-  `addByInsert(dataFile, transform, True)` inserts the reference. A missing
-  `DataFile` or a `None` return from `addByInsert` (it does not raise on
-  failure) is logged and skipped, and only a real insert is counted.
+  (the upload is asynchronous and the property raises until it starts to
+  land), then with `_wait_for_data_file_complete` (`DataFile.isComplete`,
+  120 s cap: a readable `DataFile` is not yet an insertable one), then `_insert_with_retry` calls `addByInsert(dataFile, transform,
+  True)` up to six times two seconds apart. A missing `DataFile`, a `None`
+  return (it does not raise on every failure) or a raise on the last attempt
+  is logged and skipped, and only a real insert is counted.
 - **Pass 3 — parameters.** `_derive_param_links` shows a cancellable
   `ProgressDialog`, resolves each `paramdoc` node to a `DataFile`
   (`_resolve_param_data_file`: `_param_doc_map`, then `findFileById` on the
@@ -193,7 +202,8 @@ sequenceDiagram
     end
     loop Pass 2: deferred_inserts
         Py->>F: _resolve_target_data_file (pump until DataFile readable)
-        Py->>F: parent.occurrences.addByInsert(dataFile, transform, True)
+        Py->>F: _wait_for_data_file_complete (isComplete)
+        Py->>F: _insert_with_retry: addByInsert(dataFile, transform, True)
     end
     opt param_links
         Py->>Py: _derive_param_links (ProgressDialog)
