@@ -61,6 +61,12 @@ local_handlers = []
 # name -> adsk.core.DataFile
 _param_doc_map: dict = {}
 _active_project_ref = None
+# True while create_assembly_from_graph runs. The run pumps events (flush
+# save, upload waits, progress dialog) while the palette is still open, so a
+# second click on Create Assembly would re-enter it on the same document and
+# build the tree twice. The page disables its button on send; this is the
+# Python-side guard for the same thing.
+_build_in_progress = False
 
 
 def start():
@@ -368,9 +374,17 @@ def palette_navigating(args: adsk.core.NavigationEventArgs):
 
 
 def palette_incoming(html_args: adsk.core.HTMLEventArgs):
+    global _build_in_progress
     ptutil.log(f"{CMD_NAME}: Palette incoming event.")
 
     message_action = html_args.action
+
+    if _build_in_progress and message_action in ("createAssembly", "importSysml"):
+        ptutil.log(
+            f"{CMD_NAME}: ignoring '{message_action}' — a build is already running."
+        )
+        html_args.returnData = "OK"
+        return
 
     if message_action == "recheckProject":
         # Lightweight re-resolve of the target project — fired by the banner's
@@ -400,12 +414,21 @@ def palette_incoming(html_args: adsk.core.HTMLEventArgs):
         return
 
     if message_action == "createAssembly":
+        _build_in_progress = True
         try:
             graph_data = json.loads(html_args.data)
             message = create_assembly_from_graph(graph_data)
         except Exception:
             ptutil.handle_error(CMD_NAME)
             message = "Error: Assembly creation failed. See the Text Commands log for details."
+        finally:
+            _build_in_progress = False
+            # Re-enable the page's Create button (it disabled itself on send).
+            # The palette is hidden on success, so this only matters when the
+            # run stopped early and the user needs to fix something and retry.
+            palette = ui.palettes.itemById(PALETTE_ID)
+            if palette:
+                palette.sendInfoToHTML("setBuildState", "idle")
 
         # Show every outcome as a native Fusion dialog rather than the
         # palette's browser alert(). "OK" is the silent sentinel returned by
@@ -425,10 +448,10 @@ def palette_incoming(html_args: adsk.core.HTMLEventArgs):
         html_args.returnData = "OK"
         return
 
-    # Default handler for other messages
-    message_data: dict = json.loads(html_args.data)
+    # Default handler for other messages. A raise here is swallowed by the
+    # palette event, so the payload is logged as text rather than parsed.
     ptutil.log(
-        f"Action: {message_action}, Data: {message_data}",
+        f"Action: {message_action}, Data: {html_args.data}",
         adsk.core.LogLevels.InfoLogLevel,
     )
     html_args.returnData = "OK"
@@ -606,6 +629,33 @@ def find_root_node_id(nodes: dict) -> int:
     return None
 
 
+def find_blank_name_nodes(nodes: dict, root_node_id: int) -> list:
+    """Structural nodes reachable from the root whose name is blank.
+
+    The page binds the name field straight into ``data.name``, so a cleared
+    field arrives as ``""`` (the key exists, so no default applies) and Fusion
+    would be asked to create a component with no name. Returns
+    ``[(node_id, node_type), ...]`` in walk order; empty when every name is
+    usable.
+    """
+    blank: list = []
+    seen: set = set()
+
+    def walk(parent_id: int) -> None:
+        for child_id in get_structural_child_ids(nodes, parent_id):
+            if child_id in seen:
+                continue
+            seen.add(child_id)
+            node = nodes.get(str(child_id), {})
+            name = node.get("data", {}).get("name")
+            if not isinstance(name, str) or not name.strip():
+                blank.append((child_id, node.get("name", "part")))
+            walk(child_id)
+
+    walk(root_node_id)
+    return blank
+
+
 def find_shared_nodes(nodes: dict, root_node_id: int) -> set:
     """Find component nodes that have more than one structural parent."""
     shared = set()
@@ -686,9 +736,9 @@ def _resolve_target_data_file(occ, label: str, progress=None):
     externalize._save_to_cloud). Until the upload finishes,
     parentDocument.dataFile raises "Failed to get temporary file" — that race
     (not a stale proxy: the original code opened the first target's DataFile
-    fine) is why only the first param target worked. So spin on doEvents()
-    until the DataFile is available, trying each property INDEPENDENTLY
-    because Fusion attribute access raises rather than returning None.
+    fine) is why only the first param target worked. So pump events until the
+    DataFile is available, trying each property INDEPENDENTLY because Fusion
+    attribute access raises rather than returning None.
 
     Returns the DataFile *object* (not its id): data-panel DataFile objects
     survive document open/close, and a just-flushed doc's id is not yet
@@ -716,7 +766,7 @@ def _resolve_target_data_file(occ, label: str, progress=None):
                 f"({now - t0:.0f}s)…"
             )
             last_hb = now
-        adsk.doEvents()
+        ptutil.pump_events_for(0.05)
 
 
 def _derive_param_links(
@@ -731,12 +781,10 @@ def _derive_param_links(
 
     Returns (derived_count, error_messages).
     """
-    derived = 0
-    errors: list[str] = []
-
     # Show progress up front: resolving each external doc's id requires a
-    # doEvents() spin (async cloud flush), so the dialog must already be live
-    # to report status and honor Cancel.
+    # pumped wait (async cloud flush), so the dialog must already be live
+    # to report status and honor Cancel. The finally guarantees it is taken
+    # down again if anything in the run raises.
     progress = ui.createProgressDialog()
     progress.isCancelButtonShown = True
     progress.cancelButtonText = "Cancel"
@@ -748,6 +796,25 @@ def _derive_param_links(
         max(len(param_links), 1) + 1,
         0,
     )
+    try:
+        return _derive_param_links_with_progress(
+            progress, param_links, root_node_id, root_design, created_map, root_doc
+        )
+    finally:
+        progress.hide()
+
+
+def _derive_param_links_with_progress(
+    progress,
+    param_links: dict,
+    root_node_id: int,
+    root_design: adsk.fusion.Design,
+    created_map: dict,
+    root_doc: adsk.core.Document,
+) -> tuple:
+    """Body of _derive_param_links; *progress* is already shown."""
+    derived = 0
+    errors: list[str] = []
 
     # Build work items, capturing DataFile objects now (they survive the
     # open/close churn that invalidates design/occurrence proxies).
@@ -856,20 +923,35 @@ def _derive_param_links(
         progress.progressValue = done
 
     # Final step: back on the root assembly, pull all references to latest
-    # and save with a clear comment.
+    # and save with a clear comment. The root handle was captured before the
+    # open/save/close churn above, and handles held across pumped waits can
+    # fault natively rather than raise, so it is validated and then
+    # re-acquired from the application after activation.
     progress.message = "Updating assembly references to latest…"
-    cache.safe_activate(root_doc, CMD_NAME)
-    adsk.doEvents()
+    live_root = None
     try:
-        root_doc.updateAllReferences()
+        if root_doc.isValid:
+            cache.safe_activate(root_doc, CMD_NAME)
+            adsk.doEvents()
+            live_root = app.activeDocument
+            if live_root is not None and not live_root.isValid:
+                live_root = None
     except Exception as e:
-        ptutil.log(f"{CMD_NAME}: updateAllReferences failed: {e}")
-    try:
-        root_doc.save("Updated with Assembly Builder")
-    except Exception as e:
-        ptutil.log(f"{CMD_NAME}: final root save failed: {e}")
+        ptutil.log(f"{CMD_NAME}: root document re-acquire failed: {e}")
+        live_root = None
+    if live_root is None:
+        errors.append("root document is no longer valid; references not updated")
+        ptutil.log(f"{CMD_NAME}: root document handle invalid after derive pass")
+    else:
+        try:
+            live_root.updateAllReferences()
+        except Exception as e:
+            ptutil.log(f"{CMD_NAME}: updateAllReferences failed: {e}")
+        try:
+            live_root.save("Updated with Assembly Builder")
+        except Exception as e:
+            ptutil.log(f"{CMD_NAME}: final root save failed: {e}")
     progress.progressValue = total
-    progress.hide()
 
     return derived, errors
 
@@ -904,6 +986,25 @@ def create_assembly_from_graph(graph_data: dict) -> str:
     design = adsk.fusion.Design.cast(app.activeProduct)
     if not design:
         return "Error: No active Fusion design."
+
+    # The command gate checked this when the palette opened; check it again
+    # here because the design may have changed since (a previous run on it,
+    # components added by hand). Generating into a populated root would
+    # duplicate or interleave the tree.
+    if design.rootComponent.occurrences.count > 0:
+        return (
+            "Error: The active design already has components. Assembly "
+            "Builder generates into an empty design only."
+        )
+
+    blank = find_blank_name_nodes(nodes, root_node_id)
+    if blank:
+        kinds = ", ".join(f"{kind} node {nid}" for nid, kind in blank[:5])
+        more = f" and {len(blank) - 5} more" if len(blank) > 5 else ""
+        return (
+            f"Error: {len(blank)} node(s) have no name ({kinds}{more}). "
+            "Name every node before creating."
+        )
 
     # The root must be saved before anything is generated. Every child is
     # created with addNewExternalComponent(name, folder, transform) and is
@@ -950,6 +1051,9 @@ def create_assembly_from_graph(graph_data: dict) -> str:
 
     created_count = 0
     shared_insert_count = 0
+    # Nodes Fusion refused to create ("name: reason"). A parent that fails
+    # takes its subtree with it, which the log makes visible.
+    create_errors: list[str] = []
     # Track created nodes: node_id -> occurrence (first creation)
     created_map: dict[int, adsk.fusion.Occurrence] = {}
     # Repeat encounters of a shared node, resolved after a save flushes the
@@ -983,11 +1087,20 @@ def create_assembly_from_graph(graph_data: dict) -> str:
 
             ptutil.log(f"  Creating external component: {child_name} ({child_type})")
 
-            occ = parent_comp.occurrences.addNewExternalComponent(
-                child_name, folder, transform
-            )
+            # Fusion raises for a name it will not accept and returns None for
+            # other failures; either way the rest of the tree should still be
+            # built and the failure named in the result, not abort the run.
+            try:
+                occ = parent_comp.occurrences.addNewExternalComponent(
+                    child_name, folder, transform
+                )
+            except Exception as e:
+                ptutil.log(f"  Failed to create: {child_name}: {e}")
+                create_errors.append(f"{child_name}: {e}")
+                continue
             if not occ:
-                ptutil.log(f"  Failed to create: {child_name}")
+                ptutil.log(f"  Failed to create: {child_name} (no occurrence returned)")
+                create_errors.append(f"{child_name}: no occurrence returned")
                 continue
 
             created_count += 1
@@ -1028,6 +1141,11 @@ def create_assembly_from_graph(graph_data: dict) -> str:
         except Exception as e:
             ptutil.log(f"{CMD_NAME}: Flush save failed: {e}")
         adsk.doEvents()
+        # Re-acquire the design after the pumped save; the handle captured
+        # before it is what pass 2 reads the root component from.
+        live_design = adsk.fusion.Design.cast(app.activeProduct)
+        if live_design is not None:
+            design = live_design
 
     # Pass 2: insert shared components by reference into their other parents.
     if deferred_inserts:
@@ -1049,14 +1167,26 @@ def create_assembly_from_graph(graph_data: dict) -> str:
                 target_comp = parent_comp
 
             try:
-                data_file = src_occ.component.parentDesign.parentDocument.dataFile
-                if not data_file:
+                # The flush save uploads the child asynchronously and its
+                # DataFile raises until that lands (see _resolve_target_data_file),
+                # so wait for it the same way pass 3 does.
+                data_file = _resolve_target_data_file(src_occ, child_name)
+                if data_file is None:
                     ptutil.log(
                         f"  No DataFile for shared component: {child_name} "
                         f"(external doc not flushed)"
                     )
                     continue
-                target_comp.occurrences.addByInsert(data_file, transform, True)
+                # addByInsert returns None on failure instead of raising.
+                inserted = target_comp.occurrences.addByInsert(
+                    data_file, transform, True
+                )
+                if inserted is None:
+                    ptutil.log(
+                        f"  Shared insert returned nothing for {child_name} "
+                        f"into {target_comp.name}"
+                    )
+                    continue
                 shared_insert_count += 1
                 ptutil.log(
                     f"  Inserted shared ref: {child_name} into {target_comp.name}"
@@ -1081,6 +1211,11 @@ def create_assembly_from_graph(graph_data: dict) -> str:
         palette.isVisible = False
 
     result_msg = f"Created {created_count} components successfully."
+    if create_errors:
+        result_msg += (
+            f" Warning: {len(create_errors)} component(s) could not be created "
+            f"— see Text Commands log."
+        )
     if shared_insert_count:
         result_msg += f" ({shared_insert_count} shared reference(s) inserted.)"
     elif deferred_inserts:

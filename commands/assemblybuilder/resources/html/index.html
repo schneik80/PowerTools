@@ -425,6 +425,10 @@
     var rootDocName = ptInit.docName || 'Untitled';
     var rootNodeId = null;
     var docIsSaved = !!ptInit.saved;
+    // True from the moment createAssembly is sent until Python replies with
+    // setBuildState 'idle'. The run pumps events for a long time while this
+    // page is still live, so the button must not accept a second click.
+    var buildRunning = false;
     // Whether a target project could be resolved for new external components.
     // Undefined (older init) is treated as present so we never false-block.
     var hasProject = ptInit.hasTargetProject !== false;
@@ -663,7 +667,10 @@
         // to avoid stacking two warnings.
         if (projectBanner) projectBanner.classList.toggle('visible', projectBlocked);
         if (saveBanner) saveBanner.classList.toggle('visible', saveBlocked && !projectBlocked);
-        if (btn) btn.disabled = saveBlocked || projectBlocked;
+        if (btn) {
+            btn.disabled = saveBlocked || projectBlocked || buildRunning;
+            btn.textContent = buildRunning ? 'Creating…' : 'Create Assembly';
+        }
     }
 
     // Fusion emits no active-project event, so we re-check on demand: the
@@ -868,12 +875,15 @@
     };
 
     window.createAssembly = function() {
-        // Defensive: the button is disabled while the document is unsaved.
-        if (!docIsSaved) {
+        // Defensive: the button is disabled while the document is unsaved or
+        // a run is already in flight.
+        if (!docIsSaved || buildRunning) {
             refreshShareGate();
             return;
         }
         var graphData = editor.export();
+        buildRunning = true;
+        refreshShareGate();
         // All validation and result messaging is handled by Fusion-side
         // ui.messageBox dialogs — no browser alert()s.
         try {
@@ -881,6 +891,8 @@
         } catch (e) {
             console.log('Not running inside Fusion palette. Graph:',
                 JSON.stringify(graphData, null, 2));
+            buildRunning = false;
+            refreshShareGate();
         }
     };
 
@@ -973,6 +985,11 @@
                 } else if (action === 'setSaveState') {
                     // data is 'saved' or 'unsaved'
                     docIsSaved = (data === 'saved');
+                    refreshShareGate();
+                } else if (action === 'setBuildState') {
+                    // data is 'idle' once Python has finished a createAssembly
+                    // run, successful or not.
+                    buildRunning = (data !== 'idle');
                     refreshShareGate();
                 } else if (action === 'setParamDocs') {
                     // data is a JSON array of {id, name}

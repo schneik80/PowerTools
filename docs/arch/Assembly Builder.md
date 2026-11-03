@@ -66,8 +66,16 @@ three passes around one flush save.
 
 Page → Python messages: `createAssembly`, `importSysml`, `recheckProject`.
 Python → page (`sendInfoToHTML`): `setDocumentName`, `setTheme`, `setSaveState`,
-`setParamDocs`, `setTargetProject`, `applySysmlGraph`. The pattern is described
-in [Palette to Python RPC](architecture.md#palette-to-python-rpc).
+`setParamDocs`, `setTargetProject`, `applySysmlGraph`, `setBuildState`. The
+pattern is described in [Palette to Python RPC](architecture.md#palette-to-python-rpc).
+
+A `createAssembly` run pumps events for a long time (flush save, upload waits,
+the parameters progress dialog) while the palette is still live, so it must
+not be re-entered. The page sets `buildRunning` on send, which disables the
+button and relabels it *Creating…*; Python sets `_build_in_progress` for the
+duration and drops any further `createAssembly` / `importSysml` message, and
+replies `setBuildState "idle"` in a `finally` so the page recovers after an
+early return.
 
 ## Data and state
 
@@ -118,35 +126,51 @@ on the same input port as the structural parent, so they must be filtered
 before counting parents), `find_shared_nodes` (more than one structural
 parent) and `collect_param_links` (`target node id -> [paramdoc nodes]`).
 
+- **Up-front checks.** The root must still be empty (the command gate ran
+  when the palette opened; the design may have changed since), and
+  `find_blank_name_nodes` rejects a graph with a nameless reachable component
+  (the page binds the field straight into `data.name`, so a cleared field
+  arrives as `""`, not as a missing key).
 - **Pass 1 — build.** `create_children` recurses top-down from the root
   component, calling `addNewExternalComponent(child_name, folder, transform)`
-  and setting `parentDesign.designIntent` from `INTENT_MAP`. The first
-  encounter of a shared node creates it; every later encounter is appended to
-  `deferred_inserts`. `assembly` / `hybrid` children recurse.
+  and setting `parentDesign.designIntent` from `INTENT_MAP`. A raise or a
+  `None` from that call is logged, recorded in `create_errors` (reported as a
+  warning in the result) and skipped with its subtree; the rest of the tree
+  is still built. The first encounter of a shared node creates it; every
+  later encounter is appended to `deferred_inserts`. `assembly` / `hybrid`
+  children recurse.
 - **Flush.** If there are deferred inserts or param links targeting external
   components, one `doc.save("Assembly Builder: flushing components")` turns
   every new external document into a `DataFile`. Root-only param links do not
-  need it.
+  need it. The `Design` is re-acquired from `app.activeProduct` after the
+  pumped save.
 - **Pass 2 — shared inserts.** For each deferred entry the parent component is
   re-derived from `created_map` (or the root) rather than reusing the pass-1
-  proxy, and `addByInsert(dataFile, transform, True)` inserts the reference.
-  A missing `DataFile` is logged and skipped.
+  proxy. The child's `DataFile` is awaited with `_resolve_target_data_file`
+  (the upload is asynchronous and the property raises until it lands), then
+  `addByInsert(dataFile, transform, True)` inserts the reference. A missing
+  `DataFile` or a `None` return from `addByInsert` (it does not raise on
+  failure) is logged and skipped, and only a real insert is counted.
 - **Pass 3 — parameters.** `_derive_param_links` shows a cancellable
   `ProgressDialog`, resolves each `paramdoc` node to a `DataFile`
   (`_resolve_param_data_file`: `_param_doc_map`, then `findFileById` on the
   project and `app.data`, then a rescan), and for each target component waits in
   `_resolve_target_data_file` until `parentDocument.dataFile` /
   `designDataFile` is readable — the flush save uploads asynchronously and the
-  property raises until it lands, so the loop spins on `adsk.doEvents()` with a
-  120 s cap, a 5 s heartbeat and the dialog's Cancel. It keeps the `DataFile`
+  property raises until it lands, so the loop pumps `ptutil.pump_events_for`
+  with a 120 s cap, a 5 s heartbeat and the dialog's Cancel. It keeps the `DataFile`
   object, not its id: a just-flushed document's id is not yet resolvable
   through `findFileById`, whereas the object survives open/close. Each target
   is opened, `_derive_param_set` derives favorite parameters (mirrors Link
   Global Parameters: derive input at timeline position 0, params doc closed
   afterwards), the target is saved with `"Updated with Assembly Builder"` and
   the upload awaited with `ptutil.wait_for_upload`, then closed. Finally the
-  root is re-activated (`cache.safe_activate`), `updateAllReferences()` pulls
-  the derived versions, and the root is saved.
+  root handle is checked with `isValid`, re-activated (`cache.safe_activate`)
+  and re-acquired from `app.activeDocument` (handles held across pumped waits
+  can fault natively rather than raise), `updateAllReferences()` pulls the
+  derived versions, and the root is saved. The progress dialog is shown by
+  `_derive_param_links` and hidden in its `finally`; the body runs in
+  `_derive_param_links_with_progress`.
 - The palette is hidden and a summary counts created components, shared
   references inserted, parameter sets derived, and any warnings.
 
@@ -168,12 +192,13 @@ sequenceDiagram
         Py->>F: doc.save("Assembly Builder: flushing components")
     end
     loop Pass 2: deferred_inserts
+        Py->>F: _resolve_target_data_file (pump until DataFile readable)
         Py->>F: parent.occurrences.addByInsert(dataFile, transform, True)
     end
     opt param_links
         Py->>Py: _derive_param_links (ProgressDialog)
         loop each external target
-            Py->>F: _resolve_target_data_file (doEvents until DataFile readable)
+            Py->>F: _resolve_target_data_file (pump until DataFile readable)
             Py->>F: documents.open, _derive_param_set, save, wait_for_upload, close
         end
         Py->>F: safe_activate(root), updateAllReferences, save
@@ -273,10 +298,14 @@ reflects that (`refreshParamDocButtons`). Layout is top-to-bottom
   generates its fixture with `commands/exportsysml/render` so a change on
   either side fails; and page-contract checks that `importSysml` /
   `applySysmlGraph` strings, the `nodeTypes` keys and `entry.INTENT_MAP` agree.
-- `entry.py` is Fusion-bound and is not exercised by the suite beyond
-  `_read_sysml_text` and `INTENT_MAP`; nothing here is verified in Fusion on
-  this branch except by the AST guards in `tests/test_command_contract.py` and
-  `tests/test_command_abort.py`, which import it under the `adsk` stub. The
+- `tests/test_assemblybuilder_graph.py` — the `adsk`-free graph helpers in
+  `entry.py` (imported under the `adsk` stub): root selection,
+  `find_blank_name_nodes` (reachability, whitespace, missing key, a shared
+  child reported once), `find_shared_nodes` and `collect_param_links`
+  ignoring paramdoc links when counting parents.
+- The rest of `entry.py` is Fusion-bound and is not exercised by the suite
+  beyond `_read_sysml_text` and `INTENT_MAP`, and the AST guards in
+  `tests/test_command_contract.py` and `tests/test_command_abort.py`. The
   icon set is not pinned in `tests/test_command_icons.py`.
 
 ## Learnings

@@ -781,6 +781,18 @@ applies after restart. -- `6f06624`
 only.** `scrollbar-width`/`scrollbar-color` make Chromium drop the
 pseudo-elements. -- `d5bfc76`, `f104dcc`
 
+**A palette-driven run that pumps events must lock its trigger on both
+sides.** Assembly Builder's Create Assembly saves, waits on uploads and shows a
+progress dialog, all from `incomingFromHTML`, and every pumped wait delivers
+page events, so the still-visible palette could start a second run on the same
+document. The page sets a `buildRunning` flag on send (button disabled and
+relabelled), Python holds `_build_in_progress` for the duration and drops
+repeat messages, and a `finally` replies `setBuildState "idle"` so the page
+recovers after an early return. While there: a `ProgressDialog` is hidden in a
+`finally`, a pass that reads a just-flushed child's `DataFile` waits for the
+upload the same way the next pass already did, and `addByInsert`'s `None`
+return is not counted as a success. -- `commands/assemblybuilder/entry.py`
+
 ---
 
 ## Python and portability
